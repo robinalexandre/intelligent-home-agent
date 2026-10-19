@@ -1,0 +1,11 @@
+# Minimal stack: the agent alone, listening on localhost. Put an HTTPS reverse proxy
+# (Caddy, Traefik, nginx...) in front of it before exposing it; see docs/deployment.md.
+name: intelligent-home-agent
+
+services:
+  agent:
+    build: .
+    env_file: .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
