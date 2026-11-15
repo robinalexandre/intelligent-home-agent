@@ -162,6 +162,11 @@ class Strings:
     # The titles of the briefing and the recap when they run by themselves (tasks.py).
     morning_briefing_title: str
     evening_recap_title: str
+    # News of what runs in the background for the user (progress.py).
+    progress_line: str
+    progress_waiting: str
+    progress_late: str
+    progress_share: str
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -317,6 +322,10 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix='Pause the HomePod "{name}"',
         departure_player_playing='🔊 "{name}" is still playing.',
         departure_player_fix='Pause "{name}"',
+        progress_line="{label}: {state}",
+        progress_waiting="waiting",
+        progress_late="longer than expected, {minutes} min",
+        progress_share="~{percent}% ({minutes} min of ~{estimate})",
     ),
     "fr": Strings(
         name="French",
@@ -475,6 +484,10 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix="Mettre le HomePod « {name} » en pause",
         departure_player_playing="🔊 « {name} » joue encore.",
         departure_player_fix="Mettre « {name} » en pause",
+        progress_line="{label} : {state}",
+        progress_waiting="en attente",
+        progress_late="plus long que prévu, {minutes} min",
+        progress_share="~{percent} % ({minutes} min sur ~{estimate})",
     ),
 }
 
