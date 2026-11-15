@@ -40,6 +40,8 @@ from intelligent_home_agent.drive_content import (
     build_drive_contents,
     model_ocr,
 )
+from intelligent_home_agent.engine import NoApi, SubscriptionFirst
+from intelligent_home_agent.engines import check_subscription, subscription_engine
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.home_devices import (
     build_home_device_tools,
@@ -344,6 +346,7 @@ def build_registry(
                 country=settings.home_country,
                 timezone=settings.timezone,
                 language=settings.language,
+                engine=subscription_engine(settings, settings.web_search_model),
             )
         )
     elif settings.web_search_enabled:
@@ -358,7 +361,8 @@ def build_registry(
         )
         registry.extend(
             build_engine_web_tools(
-                llm,
+                # The answer written from the results: on the Claude subscription first.
+                SubscriptionFirst(subscription_engine(settings, settings.web_search_model), llm),
                 engine,
                 model=settings.web_search_model,
                 max_results=settings.web_search_results,
@@ -483,7 +487,10 @@ def add_drives(
             "listed by name, only text layers are indexed.",
             settings.llm_provider,
         )
-    ocr = model_ocr(llm, settings.drive_ocr_model) if settings.drive_ocr_enabled else None
+    ocr = None
+    if settings.drive_ocr_enabled:
+        plan = subscription_engine(settings, settings.drive_ocr_model)
+        ocr = model_ocr(llm, settings.drive_ocr_model, plan)
     contents = build_drive_contents(drives, data, ocr)
     registry.extend(build_drive_content_tools(contents, ocr=ocr is not None))
     for drive in drives:
@@ -678,7 +685,23 @@ def build_agent(
     home: httpx.AsyncClient | None = None,
 ) -> Agent:
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
-    llm = build_llm_client(settings.llm_provider, key, settings.llm_base_url)
+    check_subscription(settings)
+    # The Claude subscription (docs/subscription.md): it takes the turns it can, the API
+    # the others; without an API key, NoApi stands there and says what needs one.
+    keyless = settings.subscription_enabled and key is None
+    llm: LLMClient = (
+        NoApi() if keyless else build_llm_client(settings.llm_provider, key, settings.llm_base_url)
+    )
+    engine = subscription_engine(settings, settings.subscription_model or settings.llm_model)
+    if engine is not None:
+        log.info(
+            "engine: Claude subscription (%s) for %s, %s",
+            settings.subscription_model or settings.llm_model,
+            "every display" if keyless else ", ".join(settings.subscription_displays),
+            "no API key for the rest"
+            if keyless
+            else f"the API ({settings.llm_model}) for the rest",
+        )
     kept = build_kept(settings, http)
     registry = build_registry(settings, ha, http, llm, home, kept)
     return Agent(
@@ -693,6 +716,9 @@ def build_agent(
         max_history_messages=settings.max_history_messages,
         memory=kept.prompt_text,
         journal=kept.journal,
+        engine=engine,
+        engine_displays=frozenset(settings.subscription_displays),
+        api_fallback=not keyless,
     )
 
 

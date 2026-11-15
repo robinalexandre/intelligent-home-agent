@@ -963,3 +963,113 @@ def test_departure_is_pushed_to_ntfy(make_client, respx_mock):
     assert push.calls[0].request.url.params["title"] == "Nova · Leaving home"
     assert "1. Turn off the lights" in push.calls[0].request.content.decode()
     assert client.post("/v1/departure", json={"push": True}, headers=AUTH).json()["reply"]
+
+
+def subscription_env(monkeypatch, **env):
+    base_env(monkeypatch)
+    monkeypatch.setenv("ENGINE", "subscription")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test")
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+
+def test_the_subscription_is_off_by_default_and_only_for_claude(monkeypatch):
+    base_env(monkeypatch)
+    settings = main.Settings(_env_file=None)
+    assert settings.engine == "api" and not settings.subscription_enabled
+    assert main.subscription_engine(settings, settings.llm_model) is None
+    # A token alone turns nothing on.
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test")
+    assert not main.Settings(_env_file=None).subscription_enabled
+
+    monkeypatch.setenv("ENGINE", "subscription")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
+    with pytest.raises(ValueError, match="claude setup-token"):
+        main.Settings(_env_file=None)
+    subscription_env(monkeypatch, LLM_PROVIDER="openai", LLM_MODEL="some-model")
+    with pytest.raises(ValueError, match="needs LLM_PROVIDER=anthropic"):
+        main.Settings(_env_file=None)
+    subscription_env(monkeypatch, LLM_PROVIDER="anthropic", SUBSCRIPTION_DISPLAYS="chat, sms")
+    with pytest.raises(ValueError, match="sms"):
+        main.Settings(_env_file=None)
+
+
+def test_the_subscription_answers_the_chat_and_the_api_the_rest(monkeypatch, data_dir):
+    subscription_env(monkeypatch, SUBSCRIPTION_DISPLAYS="chat, notification")
+    fake = object()
+    monkeypatch.setattr(main, "build_llm_client", lambda *args: fake)
+    settings = main.Settings(_env_file=None)
+    assert settings.subscription_enabled
+    assert settings.subscription_displays == ["chat", "notification"]
+
+    agent = main.build_agent(settings, None, None)
+
+    engine = agent.engine
+    assert engine is main.subscription_engine(settings, settings.llm_model)
+    assert engine._model == settings.llm_model and engine._config_dir == data_dir / "claude"
+    assert agent._client is fake and agent._api_fallback
+    assert agent._engine_displays == {"chat", "notification"}
+
+    # The user's own Claude Code folder, exported in the shell, is never the agent's.
+    monkeypatch.setenv("SUBSCRIPTION_MODEL", "claude-test-large")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(data_dir / "elsewhere"))
+    other = main.build_agent(main.Settings(_env_file=None), None, None).engine
+    assert other is not engine and other._model == "claude-test-large"
+    assert other._config_dir == data_dir / "claude"
+
+
+def test_the_subscription_alone_needs_no_api_key(monkeypatch):
+    from intelligent_home_agent.engine import NoApi
+
+    subscription_env(monkeypatch, CODE_EXECUTION_ENABLED="true")
+    monkeypatch.delenv("LLM_API_KEY")
+    settings = main.Settings(_env_file=None)
+    assert settings.llm_api_key is None and settings.subscription_enabled
+
+    agent = main.build_agent(settings, None, None)
+
+    assert isinstance(agent._client, NoApi) and not agent._api_fallback
+    assert agent.engine is not None
+    # What only the API does is not offered: the code sandbox.
+    assert "run_code" not in agent.tools.names()
+    # Without the subscription, Claude still needs its key.
+    monkeypatch.setenv("ENGINE", "api")
+    with pytest.raises(ValueError, match="needs LLM_API_KEY"):
+        main.Settings(_env_file=None)
+
+
+def test_without_the_agent_sdk_the_subscription_is_absent_and_says_so(monkeypatch, caplog):
+    from intelligent_home_agent import engines
+
+    subscription_env(monkeypatch)
+    monkeypatch.setattr(engines, "sdk_installed", lambda: False)
+    fake = object()
+    monkeypatch.setattr(main, "build_llm_client", lambda *args: fake)
+    settings = main.Settings(_env_file=None)
+
+    agent = main.build_agent(settings, None, None)
+
+    # With an API key the agent runs on it, and the log says what to install.
+    assert agent.engine is None and agent._client is fake
+    assert 'pip install ".[subscription]"' in caplog.text
+
+    monkeypatch.delenv("LLM_API_KEY")
+    with pytest.raises(RuntimeError, match="isn't installed"):
+        main.build_agent(main.Settings(_env_file=None), None, None)
+
+
+def test_searches_and_scans_go_to_the_subscription_first(monkeypatch):
+    subscription_env(monkeypatch, WEB_SEARCH_ENABLED="true")
+    settings = main.Settings(_env_file=None)
+    seen = {}
+
+    def spy(llm, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(main, "build_web_tools", spy)
+    main.build_registry(settings, ha=None, http=None, llm=None)
+    # An engine of its own, on the small model the searches use.
+    assert seen["engine"] is main.subscription_engine(settings, settings.web_search_model)
+    assert seen["engine"]._model == settings.web_search_model != settings.llm_model

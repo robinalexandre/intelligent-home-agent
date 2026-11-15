@@ -176,8 +176,6 @@ class Settings(BaseSettings):
     # Code process per turn, a few seconds a chat can wait for and a voice hardly can. The
     # API answers the others; without LLM_API_KEY the subscription answers everywhere.
     subscription_displays: CsvList = ["chat"]
-    # Claude Code's own files (its config, its transcripts). Empty: DATA_DIR/claude.
-    claude_config_dir: str = ""
 
     # --- Home Assistant (optional: without a token, the home tools are off) ------------
     ha_url: str = "http://homeassistant.local:8123"

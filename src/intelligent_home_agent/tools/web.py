@@ -14,7 +14,9 @@ run at all: it waits for the user's go, shown whole (``ParkInstead``).
 Two ways to search, chosen by ``WEB_SEARCH_BACKEND``:
 
 - ``native``: the provider's own server-side search tool (Anthropic's ``web_search``),
-  for providers in ``llm.WEB_SEARCH_PROVIDERS``;
+  for providers in ``llm.WEB_SEARCH_PROVIDERS``; on a Claude subscription
+  (ENGINE=subscription), Claude Code's own WebSearch first, in a run that only sees the
+  query too, and the API's tool for the searches the subscription can't take;
 - a search engine (:data:`ENGINES`: DuckDuckGo, a SearXNG instance, Brave, Tavily): our
   code fetches the results and the model the user chose writes the answer from them, so
   search works with any provider, a local model included.
@@ -30,12 +32,15 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from intelligent_home_agent.engine import ClaudeCodeEngine, NoApiKey, subscription_first
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.llm import LLMClient
 from intelligent_home_agent.tools.base import ParkInstead, Tool, ToolContext, ToolError
 from intelligent_home_agent.tools.web_pages import urls_in
 
 MAX_CONTINUATIONS = 3
+# On the subscription: a search, maybe a second one, then the answer.
+SUBSCRIPTION_TURNS = 6
 # Searches one request may run on its own, after public pages too: a query can be steered
 # by what a page said, but carries nothing private (the leak check sees to that).
 MAX_SEARCHES = 3
@@ -276,18 +281,21 @@ def build_engine_web_tools(
         listed = "\n\n".join(
             f"[{i}] {r.title}\n{r.url}\n{r.snippet}" for i, r in enumerate(results, 1)
         )
-        response = await client.create(
-            model=model,
-            max_tokens=800,
-            system=_RESULTS_SYSTEM,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Question: {query}\n\n<search_results>\n{listed}\n"
-                    "</search_results>",
-                }
-            ],
-        )
+        try:
+            response = await client.create(
+                model=model,
+                max_tokens=800,
+                system=_RESULTS_SYSTEM,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Question: {query}\n\n<search_results>\n{listed}\n"
+                        "</search_results>",
+                    }
+                ],
+            )
+        except NoApiKey as exc:
+            raise ToolError(str(exc)) from exc
         # Its sources: addresses the search put forward, having seen nothing of the request.
         ctx.offer_urls(r.url for r in results)
         return {
@@ -308,8 +316,11 @@ def build_web_tools(
     country: str | None,
     timezone: str,
     language: str = "en",
+    engine: ClaudeCodeEngine | None = None,
 ) -> list[Tool]:
-    """Search with the provider's own server-side search tool."""
+    """Search with the provider's own server-side search tool. engine: the subscription,
+    which searches with Claude Code's own WebSearch first; the API's search tool takes the
+    searches it can't."""
     location: dict[str, Any] = {"type": "approximate", "timezone": timezone}
     if country:
         location["country"] = country
@@ -324,6 +335,21 @@ def build_web_tools(
 
     async def web_search(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         query = checked_query(args, ctx)
+
+        async def on_subscription(engine: ClaudeCodeEngine) -> str:
+            return await engine.complete(
+                _SYSTEM, query, builtin=["WebSearch"], max_turns=SUBSCRIPTION_TURNS
+            )
+
+        try:
+            answer = await subscription_first(engine, on_subscription, lambda: on_api(query))
+        except NoApiKey as exc:
+            raise ToolError(str(exc)) from exc
+        # Its sources: the request may open them, as the search saw nothing of it.
+        ctx.offer_urls(urls_in(answer))
+        return {"query": query, "answer": answer}
+
+    async def on_api(query: str) -> str:
         messages: list[dict[str, Any]] = [{"role": "user", "content": query}]
         for _ in range(MAX_CONTINUATIONS):
             response = await client.create(
@@ -335,10 +361,7 @@ def build_web_tools(
             )
             content = response.content
             if response.stop_reason != "pause_turn":
-                answer = _final_text(content)
-                # Its sources: the request may open them, as the search saw nothing of it.
-                ctx.offer_urls(urls_in(answer))
-                return {"query": query, "answer": answer}
+                return _final_text(content)
             # A long search was paused: send it back unchanged to let it finish.
             messages = [*messages, {"role": "assistant", "content": content}]
         raise ToolError("The web search took too long.")

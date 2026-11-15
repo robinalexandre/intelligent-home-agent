@@ -26,9 +26,9 @@ _ENGINES: dict[tuple[str, str], ClaudeCodeEngine] = {}
 
 
 def config_dir(settings: Settings) -> Path:
-    """Claude Code's own files, with what the agent keeps."""
-    if settings.claude_config_dir:
-        return Path(settings.claude_config_dir)
+    """Claude Code's own files (its config, its transcripts), with what the agent keeps.
+    Never the CLAUDE_CONFIG_DIR of the shell that starts the agent: that one is the user's
+    own Claude Code, whose settings and sessions are not the agent's."""
     return Path(settings.data_dir) / "claude"
 
 
