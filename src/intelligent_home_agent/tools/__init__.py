@@ -4,6 +4,7 @@ from intelligent_home_agent.tools.assistant_reminders import (
     build_assistant_reminder_tools,
 )
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError, ToolRegistry
+from intelligent_home_agent.tools.browser import RemoteBrowser, build_browser_tools
 from intelligent_home_agent.tools.calendar import (
     CalDavCalendar,
     build_calendar_tools,
@@ -84,6 +85,7 @@ __all__ = [
     "OpenMeteo",
     "RcloneDrive",
     "ReminderRepo",
+    "RemoteBrowser",
     "Router",
     "Tool",
     "ToolContext",
@@ -92,6 +94,7 @@ __all__ = [
     "TurnedDown",
     "WebPages",
     "build_assistant_reminder_tools",
+    "build_browser_tools",
     "build_calendar_tools",
     "build_code_tools",
     "build_document_tools",
