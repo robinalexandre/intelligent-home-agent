@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
-import contextlib
 import hashlib
 import logging
 import re
@@ -36,6 +35,11 @@ from intelligent_home_agent.conversations import (
 )
 from intelligent_home_agent.departure import Departure
 from intelligent_home_agent.departure import record as record_departure
+from intelligent_home_agent.drive_content import (
+    build_drive_content_tools,
+    build_drive_contents,
+    model_ocr,
+)
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.home_devices import (
     build_home_device_tools,
@@ -59,6 +63,7 @@ from intelligent_home_agent.tools import (
     Investigator,
     KnowledgeBase,
     LocalFile,
+    LocalTrash,
     Memory,
     MergedCalendar,
     OpenMeteo,
@@ -72,6 +77,8 @@ from intelligent_home_agent.tools import (
     build_calendar_tools,
     build_calendar_write_tools,
     build_draft_tools,
+    build_drive_tools,
+    build_drives,
     build_email_tools,
     build_engine_web_tools,
     build_general_tools,
@@ -325,6 +332,8 @@ def build_registry(
     if settings.kb_url and settings.kb_token:
         kb = KnowledgeBase(http, settings.kb_url, settings.kb_token.get_secret_value())
         registry.extend(build_knowledge_tools(kb))
+    if settings.drives_enabled:
+        add_drives(registry, settings, http, llm)
     if settings.web_search_enabled and settings.web_search_backend == "native":
         registry.extend(
             build_web_tools(
@@ -439,6 +448,49 @@ def build_document_side_tools(
 def _model(name: str) -> str:
     """A model's name, or nothing when the setting switches that kind off."""
     return "" if name.strip().casefold() in {"off", "none"} else name.strip()
+
+
+def add_drives(
+    registry: ToolRegistry, settings: Settings, http: httpx.AsyncClient, llm: LLMClient
+) -> None:
+    """The file drives of the rclone sidecar: their tools, and the jobs that keep the
+    index of names and the index of contents fresh."""
+    data = Path(settings.data_dir)
+    assert settings.drive_url and settings.drive_password
+    trash = LocalTrash(
+        data / "drive-trash",
+        keep_days=settings.drive_trash_days,
+        max_item_bytes=settings.drive_trash_max_item_mb * 1024**2,
+        max_total_bytes=settings.drive_trash_max_total_mb * 1024**2,
+    )
+    drives = build_drives(
+        http,
+        settings.drive_url,
+        settings.drive_user,
+        settings.drive_password.get_secret_value(),
+        settings.drives,
+        data_dir=data,
+        trash=trash,
+        index_max_age=settings.drive_index_hours * 3600,
+    )
+    registry.extend(build_drive_tools(drives, language=settings.language))
+    registry.jobs += [drive.keep_index_fresh for drive in drives]
+    if not settings.drive_content:
+        return
+    if settings.drive_ocr == "model" and not settings.drive_ocr_enabled:
+        log.warning(
+            "DRIVE_OCR=model needs a provider that reads PDFs, not %s: scanned PDFs stay "
+            "listed by name, only text layers are indexed.",
+            settings.llm_provider,
+        )
+    ocr = model_ocr(llm, settings.drive_ocr_model) if settings.drive_ocr_enabled else None
+    contents = build_drive_contents(drives, data, ocr)
+    registry.extend(build_drive_content_tools(contents, ocr=ocr is not None))
+    for drive in drives:
+        if drive.name in contents:
+            registry.jobs.append(
+                lambda d=drive: contents[d.name].keep_fresh(lambda: d.index)  # type: ignore[misc]
+            )
 
 
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
@@ -792,27 +844,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.ntfy_url:
         token = settings.ntfy_token.get_secret_value() if settings.ntfy_token else None
         app.state.ntfy = Ntfy(http, settings.ntfy_url, token)
+    # What the tools keep doing in the background (a drive's index kept fresh).
+    registry = getattr(app.state.agent, "tools", None)
+    jobs = [asyncio.create_task(job()) for job in getattr(registry, "jobs", [])]
     # Home devices: the departure check and the pet supplies watch (docs/home-devices.md).
-    tools = getattr(app.state.agent, "tools", None)
-    devices = getattr(tools, "devices", {})
+    devices = getattr(registry, "devices", {})
     app.state.departure = None
-    if settings.departure_check and tools is not None:
-        check = Departure(tools, language=settings.language, tv_name=settings.android_tv_name)
+    if settings.departure_check and isinstance(registry, ToolRegistry):
+        check = Departure(registry, language=settings.language, tv_name=settings.android_tv_name)
         app.state.departure = check if check.watches_something else None
-    background: list[asyncio.Task] = []
     if (pets := build_pet_alerts(settings, devices)) is not None:
         s = strings(settings.language)
         ntfy = app.state.ntfy
-        background.append(
+        jobs.append(
             asyncio.create_task(pets.watch(lambda text: ntfy.send(s.pet_alert_title, text)))
         )
     try:
         yield
     finally:
-        for task in background:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
         if "petkit" in devices:
             await devices["petkit"].aclose()
         if ha is not None:

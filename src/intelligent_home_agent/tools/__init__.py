@@ -12,6 +12,8 @@ from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.contacts import CardDavBirthdays, MergedCalendar
 from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
 from intelligent_home_agent.tools.documents import build_document_tools
+from intelligent_home_agent.tools.drive_trash import LocalTrash
+from intelligent_home_agent.tools.drives import RcloneDrive, build_drive_tools, build_drives
 from intelligent_home_agent.tools.general import build_general_tools
 from intelligent_home_agent.tools.generation import Gemini, OpenAI, build_generation_tools
 from intelligent_home_agent.tools.github import GitHub, build_github_tools
@@ -72,7 +74,9 @@ __all__ = [
     "LocalFile",
     "Memory",
     "MergedCalendar",
+    "LocalTrash",
     "OpenMeteo",
+    "RcloneDrive",
     "ReminderRepo",
     "Router",
     "Tool",
@@ -87,6 +91,8 @@ __all__ = [
     "build_document_tools",
     "build_calendar_write_tools",
     "build_draft_tools",
+    "build_drive_tools",
+    "build_drives",
     "build_email_tools",
     "build_engine_web_tools",
     "build_general_tools",

@@ -23,7 +23,8 @@ dependencies = [
     "defusedxml>=0.7",
     # Investigations (tools/osint.py): a photo's metadata and the copy put online for a
     # reverse image search, a PDF's author and dates, a site's DNS records. Pillow and pypdf
-    # also serve the documents the agent makes (tools/documents.py, pdf_pages.py).
+    # also serve the documents the agent makes (tools/documents.py, pdf_pages.py), and pypdf
+    # the text of the PDFs in a drive (drive_content.py).
     "pillow>=10",
     "pypdf>=6.0",
     "dnspython>=2.6",

@@ -48,6 +48,7 @@ ANSWERS = [
     "",  # no other devices
     "",  # memory: local files
     "",  # no knowledge base
+    "",  # no file drives
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
@@ -135,11 +136,11 @@ NOTHING_ELSE = ["", "", "", "weather", "short", "", "", ""]
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
-    # No Home Assistant, Hue, no other devices, memory in local files, a knowledge base,
-    # access, node name,
-    # channel.
-    answers += ["n", "y", "http://192.168.1.20", "", "", "y", "someone/notes", "funnel"]
-    answers += ["agent"]
+    # No Home Assistant, Hue, no other devices, memory in local files, a knowledge base, no
+    # file drives,
+    # access, node name, channel.
+    answers += ["n", "y", "http://192.168.1.20", "", "", "y", "someone/notes", ""]
+    answers += ["funnel", "agent"]
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
     assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
@@ -166,7 +167,8 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     # No web pages, investigations: with a domain, the agent knows its public address.
     # Then no Home Assistant, no Hue, no other devices, no memory.
     answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "", "off"]
-    answers += ["", "caddy", "", "agent.example.com", "siri"]
+    # No knowledge base, no file drives.
+    answers += ["", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
     assert env["PUBLIC_URL"] == "https://agent.example.com"
@@ -185,6 +187,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         *NOTHING_ELSE,
         "n",
         "",
+        "",  # no other devices
         "",  # memory: local files
         "",
         "",
@@ -194,6 +197,29 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     (tmp_path / "other").mkdir()
     env, output = run_with(tmp_path / "other", answers, ["", "", ""])
     assert "LLM_API_KEY, TUNNEL_TOKEN, WEB_SEARCH_API_KEY." in output
+
+
+def test_file_drives_get_a_sidecar_a_password_and_their_list(tmp_path, monkeypatch):
+    # Anthropic, nothing else; then two drives (one read-only) and scans read by the model.
+    answers = ["", *START, "", "claude-test", *NOTHING_ELSE, "", "n", "", "", "", ""]
+    answers += ["y", "drive", "", "", "y", "sftp", "Bad Name", "nas", "n", "n", "y"]
+    answers += ["", "siri"]
+    env, output = run_with(tmp_path, answers, ["sk-secret"])
+    assert json.loads(env["DRIVES"]) == [
+        {"name": "gdrive", "remote": "gdrive:", "backend": "drive"},
+        {"name": "nas", "remote": "nas:", "backend": "sftp", "read_only": True},
+    ]
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/drive.yml"
+    assert len(env["DRIVE_PASSWORD"]) == 48 and env["DRIVE_PASSWORD"] not in output
+    assert env["DRIVE_OCR"] == "model" and "docs/drives.md" in output
+
+    from intelligent_home_agent.config import Settings
+
+    for name in ("GITHUB_TOKEN", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=tmp_path / ".env")
+    assert [d.name for d in settings.drives] == ["gdrive", "nas"] and settings.drives[1].read_only
+    assert not settings.drives_enabled  # compose/drive.yml sets DRIVE_URL
 
 
 def test_without_docker_no_compose_question(tmp_path):
@@ -232,7 +258,7 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive"}
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}

@@ -15,6 +15,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import secrets
 import sys
 import urllib.parse
@@ -70,6 +71,8 @@ COMPOSE_FILES = {
     "traefik": "traefik",
 }
 
+# A short name suggested for a drive, by rclone type, when the type itself reads badly.
+DRIVE_NAMES = {"drive": "gdrive", "iclouddrive": "icloud", "google photos": "photos"}
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 COMPASS = "N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW".split()
 SECTIONS = {
@@ -131,6 +134,7 @@ SECRET_KEYS = {
     "SEARXNG_SECRET",
     "KB_TOKEN",
     "KB_GITHUB_TOKEN",
+    "DRIVE_PASSWORD",
     "HUE_APP_KEY",
     "NUKI_API_TOKEN",
     "PETKIT_PASSWORD",
@@ -380,6 +384,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
         files.append("compose/searxng.yml")
     if env.pop("_COMPOSE_KB", None):
         files.append("compose/kb.yml")
+    if env.pop("_COMPOSE_DRIVE", None):
+        files.append("compose/drive.yml")
     if len(files) > 1:
         # ":" on every system, Windows included.
         env["COMPOSE_PATH_SEPARATOR"] = ":"
@@ -631,6 +637,41 @@ def ask_knowledge(p: Prompter, env: dict[str, str]) -> None:
     env["_COMPOSE_KB"] = "1"
 
 
+def ask_drives(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# File drives: the assistant finds, reads and files your documents")
+    p.say("  Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, S3...: anything rclone")
+    p.say("  reaches, several at once. docs/drives.md lists them and how each one logs in.")
+    if not p.yes("Use one?", False):
+        return
+    drives: list[dict[str, object]] = []
+    while True:
+        backend = p.ask(
+            "Service, by its rclone type (drive = Google Drive, iclouddrive, onedrive, "
+            "dropbox, box, pcloud, webdav, smb, sftp, s3...; empty: another one)"
+        )
+        suggested = DRIVE_NAMES.get(backend, re.sub(r"[^a-z0-9_]", "", backend.lower()))
+        taken = {d["name"] for d in drives}
+        while not re.fullmatch(r"[a-z][a-z0-9_]{0,19}", name := p.ask("Short name", suggested)) or (
+            name in taken
+        ):
+            p.say("  A new name of lowercase letters, digits or _, starting with a letter.")
+        drive: dict[str, object] = {"name": name, "remote": f"{name}:"}
+        if backend:
+            drive["backend"] = backend
+        if not p.yes("May the assistant add, move and delete files there (no: read only)?", True):
+            drive["read_only"] = True
+        drives.append(drive)
+        if not p.yes("Another drive?", False):
+            break
+    env["DRIVES"] = json.dumps(drives, separators=(",", ":"))
+    env["DRIVE_PASSWORD"] = secrets.token_hex(24)
+    env["_COMPOSE_DRIVE"] = "1"
+    if env["LLM_PROVIDER"] == "anthropic" and p.yes(
+        "Have the model read scanned PDFs so they can be searched (a paid request each)?", False
+    ):
+        env["DRIVE_OCR"] = "model"
+
+
 def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
     p.say("\n# How will you reach the assistant?")
     channels = p.choose("Channels", CHANNELS, ["siri"])
@@ -711,6 +752,7 @@ GROUPS = [
     ),
     ("Memory", ["MEMORY_STORE", "MEMORY_REPO"]),
     ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
+    ("File drives", ["DRIVE_PASSWORD", "DRIVES", "DRIVE_OCR"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
 ]
 
@@ -763,8 +805,10 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     ask_memory(p, env)
     if docker:
         ask_knowledge(p, env)
+        ask_drives(p, env)
     address = ask_access(p, env) if docker else None
     env.pop("_COMPOSE_KB", None)
+    env.pop("_COMPOSE_DRIVE", None)
     env.pop("_COMPOSE_OLLAMA", None)
     env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
@@ -795,6 +839,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         if "compose/ollama.yml" in env.get("COMPOSE_FILE", ""):
             p.say(f"  Then: docker compose exec ollama ollama pull {env['LLM_MODEL']}")
         p.say(f"  The agent will answer at {address}")
+        if "DRIVES" in env:
+            p.say("  Drives: log each one in before asking about your files (docs/drives.md).")
     else:
         p.say("  Start: pip install -e . && uvicorn intelligent_home_agent.main:app")
     p.say("  Check: docs/setup.md, step 6. Clients authenticate with AGENT_API_TOKEN from .env.")

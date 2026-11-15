@@ -76,6 +76,25 @@ class Strings:
     draft_line: str
     draft_files: str
     draft_check: str
+    # File drives (tools/drives.py): how a write reads in the list of what waits. A place
+    # is a drive's label and a path; an item of the local trash is where it was.
+    drive_place: str
+    drive_renamed: str
+    drive_create_folder: str
+    drive_copy: str
+    drive_move: str
+    drive_copy_folder: str
+    drive_move_folder: str
+    drive_save: str
+    drive_delete_file: str
+    drive_delete_empty_folder: str
+    drive_delete_folder: str
+    drive_delete_file_without_copy: str
+    drive_delete_folder_without_copy: str
+    drive_trash_item: str
+    drive_trash_unknown: str
+    drive_restore: str
+    drive_purge: str
     # Home devices (docs/home-devices.md): how a parked action reads.
     lock_door_summary: str
     unlock_door_summary: str
@@ -185,6 +204,25 @@ LANGUAGES: dict[str, Strings] = {
             "Files attached after reading content written by others ({files}): check the "
             "recipients before sending."
         ),
+        drive_place="{drive}: {path}",
+        drive_renamed=' as "{name}"',
+        drive_create_folder="Create the folder {place}",
+        drive_copy="Copy {source} into {target}{renamed}",
+        drive_move="Move {source} into {target}{renamed}",
+        drive_copy_folder="Copy the folder {source} into {target}{renamed}",
+        drive_move_folder="Move the folder {source} into {target}{renamed}",
+        drive_save='Save "{name}" into {place}',
+        drive_delete_file="Delete the file {place}",
+        drive_delete_empty_folder="Delete the empty folder {place}",
+        drive_delete_folder="Delete the folder {place} and everything in it",
+        drive_delete_file_without_copy="Delete the file {place} without keeping a copy",
+        drive_delete_folder_without_copy=(
+            "Delete the folder {place} and everything in it, without keeping a copy"
+        ),
+        drive_trash_item="{place} ({files} file(s))",
+        drive_trash_unknown="local copy {id}",
+        drive_restore="Put {item} back in its drive, replacing nothing",
+        drive_purge="Erase for good the local copy of {item}",
         lock_door_summary='Lock the door "{name}" (Nuki)',
         unlock_door_summary='Unlock the door "{name}" (Nuki)',
         unlatch_door_summary='Open the door "{name}": unlock it and pull the latch (Nuki)',
@@ -305,6 +343,25 @@ LANGUAGES: dict[str, Strings] = {
             "Fichiers joints après lecture d'un contenu écrit par d'autres ({files}) : "
             "vérifie les destinataires avant d'envoyer."
         ),
+        drive_place="{drive} : {path}",
+        drive_renamed=" sous le nom « {name} »",
+        drive_create_folder="Créer le dossier {place}",
+        drive_copy="Copier {source} dans {target}{renamed}",
+        drive_move="Déplacer {source} dans {target}{renamed}",
+        drive_copy_folder="Copier le dossier {source} dans {target}{renamed}",
+        drive_move_folder="Déplacer le dossier {source} dans {target}{renamed}",
+        drive_save="Enregistrer « {name} » dans {place}",
+        drive_delete_file="Supprimer le fichier {place}",
+        drive_delete_empty_folder="Supprimer le dossier vide {place}",
+        drive_delete_folder="Supprimer le dossier {place} et tout son contenu",
+        drive_delete_file_without_copy="Supprimer le fichier {place} sans en garder de copie",
+        drive_delete_folder_without_copy=(
+            "Supprimer le dossier {place} et tout son contenu, sans en garder de copie"
+        ),
+        drive_trash_item="{place} ({files} fichier(s))",
+        drive_trash_unknown="copie locale {id}",
+        drive_restore="Remettre {item} dans son drive, sans rien remplacer",
+        drive_purge="Effacer pour de bon la copie locale de {item}",
         lock_door_summary="Verrouiller la porte « {name} » (Nuki)",
         unlock_door_summary="Déverrouiller la porte « {name} » (Nuki)",
         unlatch_door_summary="Ouvrir la porte « {name} » : déverrouiller et tirer le pêne (Nuki)",
