@@ -231,12 +231,24 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_github_pull_requests",
         "get_assistant_reminders",
         "web_search",
+        "find_exercise_photos",
+        "generate_image",
+        "generate_video",
+        "run_code",
         "open_web_page",
         "inspect_file",
         "domain_lookup",
         "osm_lookup",
         "reverse_image_search",
+        "list_drive_folder",
+        "search_drive_files",
+        "read_drive_file",
+        "save_file_to_drive",
+        "delete_drive_file",
+        "list_drive_trash",
+        "search_drive_content",
     }
+    assert registry.jobs == []
     # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
     # down, and the journal's search.
     kept = {
@@ -259,9 +271,49 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "list_turned_down_alerts",
         "bring_back_alert",
     }
+    # Documents need no account: on with what the documents extra brings.
+    assert {"list_saved_files", "read_saved_file", "create_pdf", "fill_pdf"} <= names
+    assert {"read_pdf_layout", "copy_pdf_pages", "draw_image", "make_animation"} <= names
     # The core's own tools are always there: what waits for a go, and long results.
     assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
     assert "ask_in_poll" not in names
+
+
+def test_documents_pictures_and_the_sandbox_follow_their_settings(monkeypatch):
+    class Sandboxed:
+        files = object()
+
+    base_env(monkeypatch)
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("HOME_COUNTRY", "US")
+    monkeypatch.setenv("EXERCISE_PHOTOS_ENABLED", "true")
+    monkeypatch.setenv("CODE_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("GENERATION_OPENAI_BASE_URL", "http://192.168.1.50:8080/v1")
+    monkeypatch.setenv("GENERATION_OPENAI_VIDEO_MODEL", "off")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, ha=None, http=object(), llm=Sandboxed())
+    names = registry.names()
+    assert {"find_exercise_photos", "save_exercise_photos", "generate_image", "run_code"} <= names
+    assert "generate_video" not in names  # that server makes no video
+    described = {d["name"]: d["description"] for d in registry.definitions()}
+    assert "US Letter paper" in described["create_pdf"]  # PAPER_SIZE=auto, from the country
+
+    # The sandbox is Anthropic's: with another provider, or an SDK without files, no tool.
+    assert "run_code" not in main.build_registry(settings, ha=None, http=None, llm=None).names()
+    monkeypatch.setenv("LLM_PROVIDER", "mistral")
+    monkeypatch.setenv("LLM_MODEL", "some-model")
+    monkeypatch.setenv("GENERATION_GEMINI_API_KEY", "gkey")
+    monkeypatch.setenv("GENERATION_DEFAULT_PROVIDER", "gemini")
+    monkeypatch.setenv("DOCUMENTS_ENABLED", "false")
+    monkeypatch.setenv("PAPER_SIZE", "a4")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, ha=None, http=None, llm=Sandboxed())
+    names = registry.names()
+    assert "run_code" not in names and {"generate_image", "generate_video"} <= names
+    assert not names & {"create_pdf", "list_saved_files", "draw_image", "find_exercise_photos"}
+    schema = {d["name"]: d["input_schema"] for d in registry.definitions()}
+    assert schema["generate_image"]["properties"]["provider"]["enum"] == ["gemini", "openai"]
+    assert schema["generate_video"]["properties"]["provider"]["enum"] == ["gemini"]
 
 
 MAIL_WRITES = {
@@ -750,3 +802,27 @@ def test_files_can_stay_in_memory_only(make_client, data_dir):
     conv = restarted.app.state.store.peek("c")
     assert conv is not None and "chart.png" not in conv.files
     assert list((data_dir / "files").iterdir()) == []
+
+
+def test_what_the_tools_do_in_the_background_runs_while_the_app_does(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    base_env(monkeypatch)
+    get_settings.cache_clear()
+    started, stopped = [], []
+
+    async def job():
+        started.append(1)
+        try:
+            await asyncio.sleep(3600)
+        finally:
+            stopped.append(1)
+
+    stub = StubAgent()
+    stub.tools = SimpleNamespace(jobs=[job])
+    monkeypatch.setattr(main, "build_agent", lambda settings, ha, http, home=None: stub)
+    with TestClient(main.app) as client:
+        assert client.get("/health").status_code == 200
+        assert started == [1] and stopped == []
+    assert stopped == [1]

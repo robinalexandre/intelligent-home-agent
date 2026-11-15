@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -32,6 +33,11 @@ from intelligent_home_agent.conversations import (
     ConversationStore,
     FileStore,
 )
+from intelligent_home_agent.drive_content import (
+    build_drive_content_tools,
+    build_drive_contents,
+    model_ocr,
+)
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.home_devices import (
     build_home_device_tools,
@@ -40,7 +46,7 @@ from intelligent_home_agent.home_devices import (
 )
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal
-from intelligent_home_agent.llm import LLMClient, build_llm_client
+from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.shared_links import LINKS
@@ -54,11 +60,13 @@ from intelligent_home_agent.tools import (
     Investigator,
     KnowledgeBase,
     LocalFile,
+    LocalTrash,
     Memory,
     MergedCalendar,
     OpenMeteo,
     ReminderRepo,
     Router,
+    Tool,
     ToolRegistry,
     TurnedDown,
     WebPages,
@@ -66,6 +74,8 @@ from intelligent_home_agent.tools import (
     build_calendar_tools,
     build_calendar_write_tools,
     build_draft_tools,
+    build_drive_tools,
+    build_drives,
     build_email_tools,
     build_engine_web_tools,
     build_general_tools,
@@ -87,8 +97,18 @@ from intelligent_home_agent.tools import (
     build_wind_tools,
     trusted_domains,
 )
+from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
+from intelligent_home_agent.tools.documents import FONT_DIR, build_document_tools, paper_for
+from intelligent_home_agent.tools.generation import (
+    OPENAI_URL,
+    Gemini,
+    OpenAI,
+    Provider,
+    build_generation_tools,
+)
 from intelligent_home_agent.tools.github import API_URL
+from intelligent_home_agent.tools.illustrations import build_illustration_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mcp_client import (
     MCPClient,
@@ -98,6 +118,8 @@ from intelligent_home_agent.tools.mcp_client import (
     TokenSource,
 )
 from intelligent_home_agent.tools.memory import folder_name
+from intelligent_home_agent.tools.pdf_forms import build_pdf_form_tools
+from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -272,6 +294,8 @@ def build_registry(
     if settings.kb_url and settings.kb_token:
         kb = KnowledgeBase(http, settings.kb_url, settings.kb_token.get_secret_value())
         registry.extend(build_knowledge_tools(kb))
+    if settings.drives_enabled:
+        add_drives(registry, settings, http, llm)
     if settings.web_search_enabled and settings.web_search_backend == "native":
         registry.extend(
             build_web_tools(
@@ -303,6 +327,7 @@ def build_registry(
                 language=settings.language,
             )
         )
+    registry.extend(build_document_side_tools(settings, http, llm))
     # What the agent keeps: facts about the user, how-tos, alerts turned down, the journal.
     kept = kept or build_kept(settings, http)
     registry.extend(build_memory_tools(kept.memory, settings.language))
@@ -325,6 +350,109 @@ def build_registry(
     registry.extend(build_long_result_tools())
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
+
+
+def build_document_side_tools(
+    settings: Settings, http: httpx.AsyncClient, llm: LLMClient
+) -> list[Tool]:
+    """Documents, PDFs, drawings, generated pictures and the code sandbox
+    (docs/documents.md), each only when it is switched on and can work here."""
+    language = settings.language
+    tools: list[Tool] = []
+    if settings.documents_enabled:
+        fonts = Path(settings.pdf_font_dir) if settings.pdf_font_dir else FONT_DIR
+        paper = paper_for(settings.paper_size, settings.home_country)
+        tools += build_document_tools(
+            fonts, paper=paper, language=language, country=settings.home_country
+        )
+        tools += build_pdf_form_tools(fonts, language=language)
+        tools += build_pdf_page_tools()
+        bank = http if settings.exercise_photos_enabled else None
+        tools += build_illustration_tools(bank, fonts, language=language)
+    providers: list[Provider] = []
+    if key := settings.generation_gemini_api_key:
+        providers.append(
+            Gemini(
+                http,
+                key.get_secret_value(),
+                _model(settings.generation_gemini_image_model),
+                _model(settings.generation_gemini_video_model),
+            )
+        )
+    if settings.generation_openai_api_key or settings.generation_openai_base_url:
+        key = settings.generation_openai_api_key
+        providers.append(
+            OpenAI(
+                http,
+                key.get_secret_value() if key else "",
+                _model(settings.generation_openai_image_model),
+                _model(settings.generation_openai_video_model),
+                settings.generation_openai_base_url or OPENAI_URL,
+            )
+        )
+    providers.sort(key=lambda p: p.name != settings.generation_default_provider)
+    tools += build_generation_tools(
+        providers,
+        settings.generation_max_images,
+        settings.generation_max_videos,
+        language=language,
+    )
+    if settings.code_execution_enabled:
+        # Anthropic only: the other providers have no sandbox, so run_code stays off.
+        files = getattr(llm, "files", None) if settings.llm_provider == ANTHROPIC else None
+        if files is None:
+            log.warning("CODE_EXECUTION_ENABLED needs LLM_PROVIDER=anthropic: run_code is off")
+        model = settings.code_execution_model or settings.llm_model
+        tools += build_code_tools(llm, files, model, language=language)
+    return tools
+
+
+def _model(name: str) -> str:
+    """A model's name, or nothing when the setting switches that kind off."""
+    return "" if name.strip().casefold() in {"off", "none"} else name.strip()
+
+
+def add_drives(
+    registry: ToolRegistry, settings: Settings, http: httpx.AsyncClient, llm: LLMClient
+) -> None:
+    """The file drives of the rclone sidecar: their tools, and the jobs that keep the
+    index of names and the index of contents fresh."""
+    data = Path(settings.data_dir)
+    assert settings.drive_url and settings.drive_password
+    trash = LocalTrash(
+        data / "drive-trash",
+        keep_days=settings.drive_trash_days,
+        max_item_bytes=settings.drive_trash_max_item_mb * 1024**2,
+        max_total_bytes=settings.drive_trash_max_total_mb * 1024**2,
+    )
+    drives = build_drives(
+        http,
+        settings.drive_url,
+        settings.drive_user,
+        settings.drive_password.get_secret_value(),
+        settings.drives,
+        data_dir=data,
+        trash=trash,
+        index_max_age=settings.drive_index_hours * 3600,
+    )
+    registry.extend(build_drive_tools(drives, language=settings.language))
+    registry.jobs += [drive.keep_index_fresh for drive in drives]
+    if not settings.drive_content:
+        return
+    if settings.drive_ocr == "model" and not settings.drive_ocr_enabled:
+        log.warning(
+            "DRIVE_OCR=model needs a provider that reads PDFs, not %s: scanned PDFs stay "
+            "listed by name, only text layers are indexed.",
+            settings.llm_provider,
+        )
+    ocr = model_ocr(llm, settings.drive_ocr_model) if settings.drive_ocr_enabled else None
+    contents = build_drive_contents(drives, data, ocr)
+    registry.extend(build_drive_content_tools(contents, ocr=ocr is not None))
+    for drive in drives:
+        if drive.name in contents:
+            registry.jobs.append(
+                lambda d=drive: contents[d.name].keep_fresh(lambda: d.index)  # type: ignore[misc]
+            )
 
 
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
@@ -661,9 +789,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.ntfy_url:
         token = settings.ntfy_token.get_secret_value() if settings.ntfy_token else None
         app.state.ntfy = Ntfy(http, settings.ntfy_url, token)
+    # What the tools keep doing in the background (a drive's index kept fresh).
+    registry = getattr(app.state.agent, "tools", None)
+    jobs = [asyncio.create_task(job()) for job in getattr(registry, "jobs", [])]
     try:
         yield
     finally:
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
         if ha is not None:
             await ha.aclose()
         if home is not None:

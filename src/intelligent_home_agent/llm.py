@@ -57,6 +57,9 @@ OPENAI_COMPATIBLE: dict[str, Endpoint] = {
 PROVIDERS = (ANTHROPIC, *OPENAI_COMPATIBLE, CUSTOM)
 # Providers that run the server-side web search tool used by tools/web.py.
 WEB_SEARCH_PROVIDERS = {ANTHROPIC}
+# Providers whose client sends a PDF to the model as a document (the OpenAI-compatible
+# client replaces it with a note): what reads scanned PDFs needs one (drive_content.py).
+DOCUMENT_PROVIDERS = {ANTHROPIC}
 
 
 def needs_key(provider: str) -> bool:
@@ -89,7 +92,11 @@ class AnthropicClient:
     def __init__(self, api_key: str) -> None:
         from anthropic import AsyncAnthropic
 
-        self._messages = AsyncAnthropic(api_key=api_key).messages
+        sdk = AsyncAnthropic(api_key=api_key)
+        self._messages = sdk.messages
+        # The Files API, for the code execution sandbox (tools/code_runner.py); None with
+        # an SDK too old to have it, and run_code is then off.
+        self.files = getattr(sdk, "files", None)
 
     async def create(self, **kwargs: Any) -> LLMResponse:
         response = await self._messages.create(**kwargs)

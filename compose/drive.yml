@@ -1,0 +1,33 @@
+# File drives for the agent (Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, S3...),
+# through rclone running as a sidecar. See docs/drives.md: which services, and how each one
+# is logged in. Needs in .env: DRIVE_PASSWORD (a shared secret you generate) and DRIVES
+# (the list of drives).
+# No published port: rclone's API sits on a network only the agent shares, and it refuses
+# to start without a password. The logins live in the drive_config volume.
+services:
+  agent:
+    environment:
+      DRIVE_URL: http://drive:5572
+    networks: [default, drive]
+
+  drive:
+    image: rclone/rclone:1.75.1
+    entrypoint: ["sh", "-c"]
+    command:
+      - '[ -n "$$RCLONE_RC_PASS" ] || { echo "Set DRIVE_PASSWORD in .env"; exit 1; }; exec rclone rcd --rc-addr=:5572 --rc-serve'
+    environment:
+      RCLONE_RC_USER: agent
+      RCLONE_RC_PASS: ${DRIVE_PASSWORD:-}
+    volumes:
+      - drive_config:/config/rclone
+    # The agent reaches it on a network with no way out; it reaches the drives on another.
+    networks: [drive, drive_egress]
+    restart: unless-stopped
+
+networks:
+  drive:
+    internal: true
+  drive_egress:
+
+volumes:
+  drive_config:

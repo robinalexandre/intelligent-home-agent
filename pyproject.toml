@@ -22,7 +22,9 @@ dependencies = [
     "python-docx>=1.1",
     "defusedxml>=0.7",
     # Investigations (tools/osint.py): a photo's metadata and the copy put online for a
-    # reverse image search, a PDF's author and dates, a site's DNS records.
+    # reverse image search, a PDF's author and dates, a site's DNS records. Pillow and pypdf
+    # also serve the documents the agent makes (tools/documents.py, pdf_pages.py), and pypdf
+    # the text of the PDFs in a drive (drive_content.py).
     "pillow>=10",
     "pypdf>=6.0",
     "dnspython>=2.6",
@@ -34,12 +36,28 @@ dependencies = [
 crypt = [
     "cryptography>=42",
 ]
+# PDFs written, forms filled, drawings rendered (docs/documents.md). The Docker image
+# installs it; without it those tools are simply absent.
+documents = [
+    "fpdf2>=2.8.4",
+    # Filling PDF forms: pdfminer.six gives the text's positions.
+    "pdfminer.six>=20250506",
+    # Renders the drawings the agent writes in SVG (Rust, no system library, loads nothing
+    # from the network).
+    "resvg-py>=0.5",
+]
+# Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
+video = ["av>=11"]
 dev = [
     "cryptography>=42",
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "respx>=0.21",
     "ruff>=0.6",
+    # The documents extra, so its tests run.
+    "fpdf2>=2.8.4",
+    "pdfminer.six>=20250506",
+    "resvg-py>=0.5",
 ]
 
 [build-system]

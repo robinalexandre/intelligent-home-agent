@@ -1253,8 +1253,9 @@ def build_draft_tools(mailboxes: list[ImapMailbox], language: str = "en") -> lis
         Tool(
             name="save_email_draft",
             description=(
-                "Save an email as a draft in one of the user's mailboxes, with files they sent "
-                "as attachments. Nothing is sent: the user reviews and sends it from their mail "
+                "Save an email as a draft in one of the user's mailboxes, with kept files "
+                "(sent by the user, kept from an email, read from a drive or made here) as "
+                "attachments. Nothing is sent: the user reviews and sends it from their mail "
                 f"app. Accounts: {names} (default the first)."
             ),
             input_schema={
@@ -1267,7 +1268,7 @@ def build_draft_tools(mailboxes: list[ImapMailbox], language: str = "en") -> lis
                     "attachments": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Names of files the user sent in this conversation.",
+                        "description": "Names of files kept in this conversation.",
                     },
                     "account": {"type": "string"},
                 },

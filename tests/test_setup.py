@@ -33,6 +33,9 @@ ANSWERS = [
     "w, sw",
     "",  # min knots: default
     "n",  # no more spots
+    "letter",  # paper
+    "gemini",  # generated pictures
+    "y",  # code sandbox
     "n",  # no Home Assistant
     "",  # no Hue
     "y",  # CalDAV
@@ -44,11 +47,12 @@ ANSWERS = [
     "y",  # contacts' birthdays
     "",  # memory: local files
     "",  # no knowledge base
+    "",  # no file drives
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
 ]
-SECRETS = ["sk-very-secret", "caldav-pass", ""]
+SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
 
 def scripted(answers):
@@ -92,6 +96,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
          "directions": ["W", "SW"], "min_knots": 12.0}
     ]  # fmt: skip
     assert env["CALDAV_PASSWORD"] == "caldav-pass"
+    assert env["PAPER_SIZE"] == "letter" and env["CODE_EXECUTION_ENABLED"] == "true"
+    assert env["GENERATION_GEMINI_API_KEY"] == "gen-secret"
     assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
     assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
@@ -100,7 +106,7 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
     output = "\n".join(printed)
-    for secret in ("sk-very-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
+    for secret in ("sk-very-secret", "gen-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
         assert secret not in output
     assert "LLM_API_KEY = (set)" in output
     assert "COMPOSE_FILE" not in env and "http://127.0.0.1:8000" in output
@@ -121,16 +127,18 @@ def run_with(tmp_path, answers, secrets_typed):
 
 
 # Name, no user name, language, time zone; then after the model and the search: web pages,
-# no investigations, no city, no sections, no activities.
+# no investigations, no city, no sections, no activities, the usual paper and no
+# generated pictures.
 START = ["", "", "en", "UTC"]
-NOTHING_ELSE = ["", "", "", "weather", "short", ""]
+NOTHING_ELSE = ["", "", "", "weather", "short", "", "", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
-    # No Home Assistant, Hue, memory in local files, a knowledge base, access, node name,
-    # channel.
-    answers += ["n", "y", "http://192.168.1.20", "", "y", "someone/notes", "funnel", "agent"]
+    # No Home Assistant, Hue, memory in local files, a knowledge base, no file drives,
+    # access, node name, channel.
+    answers += ["n", "y", "http://192.168.1.20", "", "y", "someone/notes", ""]
+    answers += ["funnel", "agent"]
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
     assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
@@ -157,7 +165,8 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     # No web pages, investigations: with a domain, the agent knows its public address.
     # Then no Home Assistant, no Hue, no memory.
     answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "off"]
-    answers += ["", "caddy", "", "agent.example.com", "siri"]
+    # No knowledge base, no file drives.
+    answers += ["", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
     assert env["PUBLIC_URL"] == "https://agent.example.com"
@@ -178,6 +187,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         "",
         "",  # memory: local files
         "",
+        "",
         "cloudflare",
         "siri",
     ]
@@ -186,12 +196,37 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     assert "LLM_API_KEY, TUNNEL_TOKEN, WEB_SEARCH_API_KEY." in output
 
 
+def test_file_drives_get_a_sidecar_a_password_and_their_list(tmp_path, monkeypatch):
+    # Anthropic, nothing else; then two drives (one read-only) and scans read by the model.
+    answers = ["", *START, "", "claude-test", *NOTHING_ELSE, "", "n", "", "", ""]
+    answers += ["y", "drive", "", "", "y", "sftp", "Bad Name", "nas", "n", "n", "y"]
+    answers += ["", "siri"]
+    env, output = run_with(tmp_path, answers, ["sk-secret"])
+    assert json.loads(env["DRIVES"]) == [
+        {"name": "gdrive", "remote": "gdrive:", "backend": "drive"},
+        {"name": "nas", "remote": "nas:", "backend": "sftp", "read_only": True},
+    ]
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/drive.yml"
+    assert len(env["DRIVE_PASSWORD"]) == 48 and env["DRIVE_PASSWORD"] not in output
+    assert env["DRIVE_OCR"] == "model" and "docs/drives.md" in output
+
+    from intelligent_home_agent.config import Settings
+
+    for name in ("GITHUB_TOKEN", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=tmp_path / ".env")
+    assert [d.name for d in settings.drives] == ["gdrive", "nas"] and settings.drives[1].read_only
+    assert not settings.drives_enabled  # compose/drive.yml sets DRIVE_URL
+
+
 def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
     # No Home Assistant, no Hue, memory in a repository (asked twice: owner/repo), channel.
     answers += [*NOTHING_ELSE, "n", "", "github", "notes", "someone/config", "siri"]
     env, output = run_with(tmp_path, answers, ["", "gh-write-secret"])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
+    # Not Anthropic: the code sandbox is not offered. No country: A4.
+    assert env["PAPER_SIZE"] == "a4" and "CODE_EXECUTION_ENABLED" not in env
     assert (env["MEMORY_STORE"], env["MEMORY_REPO"]) == ("github", "someone/config")
     assert env["GITHUB_TOKEN"] == "gh-write-secret" and "gh-write-secret" not in output
     assert "MEMORY_CRYPT_KEY" in output and "Still empty" not in output
@@ -204,10 +239,17 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive"}
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
+    from intelligent_home_agent.tools.documents import LETTER_COUNTRIES, PAPER_SIZES, paper_for
+
+    assert set(setup.PAPERS) == set(PAPER_SIZES)
+    assert {c.casefold() for c in setup.LETTER_COUNTRIES} == {
+        c for c in LETTER_COUNTRIES if len(c) == 2
+    }
+    assert all(paper_for("auto", c) == "letter" for c in setup.LETTER_COUNTRIES)
 
 
 def test_existing_env_is_kept_unless_confirmed(tmp_path):
