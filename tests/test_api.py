@@ -157,6 +157,7 @@ def test_briefing_uses_the_language_and_a_fresh_conversation(make_client):
         "reply": "echo: Fais-moi le récap du soir",
         "actions": [],
         "pushed": False,
+        "delivered": False,
     }
     assert client.stub.calls == [
         ("briefing-evening", "Fais-moi le récap du soir", "Rappels: sport")
@@ -212,6 +213,11 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "create_reminder",
     } <= names
     assert not names & {
+        "start_job",
+        "ask_job",
+        "list_jobs",
+        "stop_job",
+        "allow_coder_permission",
         "list_entities",
         "call_service",
         "get_surf_forecast",
@@ -241,6 +247,9 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "list_repositories",
         "browse_repository",
         "check_dependencies",
+        "list_servers",
+        "restart_server",
+        "deploy_server_project",
         "schedule_task",
         "list_scheduled_tasks",
         "web_search",
@@ -253,6 +262,9 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "domain_lookup",
         "osm_lookup",
         "reverse_image_search",
+        "ask_in_poll",
+        "read_whatsapp_chats",
+        "mark_whatsapp_chats_read",
         "list_drive_folder",
         "search_drive_files",
         "read_drive_file",
@@ -864,6 +876,7 @@ def test_home_and_health_tools_come_with_their_settings(monkeypatch, tmp_path):
         "get_home_security_status",
         "get_pet_devices_status",
         "get_tv_state",
+        "navigate_tv",
         "get_apple_media_state",
         "get_body_measurements",
         "note_delivery",
@@ -904,7 +917,7 @@ def test_the_home_network_client_reaches_the_devices_whatever_the_home_coordinat
     monkeypatch.setattr(
         main,
         "build_home_device_tools",
-        lambda settings, home, http, found: seen.update(home=home, http=http) or [],
+        lambda settings, home, http, found, llm=None: seen.update(home=home, http=http) or [],
     )
     main.build_registry(main.Settings(_env_file=None), None, "cloud", None, "home-network")
     assert seen == {"home": "home-network", "http": "cloud"}
@@ -1126,6 +1139,7 @@ def test_an_apple_id_moves_reminders_to_icloud_with_notes_and_find_my(monkeypatc
 def test_the_remote_browser_needs_its_address_and_its_page_and_a_vpn_key_for_abroad(
     monkeypatch, tmp_path
 ):
+    pytest.importorskip("playwright", reason="needs the browser extra")
     base_env(monkeypatch)
     monkeypatch.setenv("BROWSER_CDP_HOST", "browser")
     settings = main.Settings(_env_file=None)

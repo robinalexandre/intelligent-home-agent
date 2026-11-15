@@ -16,17 +16,20 @@ you had just sent the request. The reply goes out as a push notification.
 
 ### What it needs
 
-A way to reach you when you asked nothing: **`NTFY_URL`** ([ntfy](integrations.md), a
-free push app). Without it there are no tasks and no task tools. Nothing else to set up.
+A way to reach you when you asked nothing: a **chat channel** (WhatsApp or Telegram,
+[chat.md](chat.md)) or **`NTFY_URL`** ([ntfy](integrations.md), a free push app).
+Without either there are no tasks and no task tools. Nothing else to set up.
 
 Every report is also kept (the last 50) and served by `GET /v1/tasks/reports`, with
 `?since=<the "at" of the last one you have>` for the newer ones only. A client that
 prefers fetching to being pushed, such as a Home Assistant automation that reads the
 report aloud, can use that.
 
-A chat channel, when one is configured, takes the reports instead of ntfy; in a chat you
-can also answer a report ("yes" to what it proposes). A push can't be answered, so a
-task that runs through ntfy only reads and reports: what would need your go is left out.
+A chat channel, when one is configured, takes the reports first (ntfy only gets one the
+chat could not take). A task then runs in the chat's conversation: you can answer its
+report, what it proposes waits for your go as a choice to tick under it, and the files
+it made are sent with it. A push can't be answered, so a task that runs through ntfy
+only reads and reports: what would need your go is left out.
 
 ### The briefing and the recap by themselves
 
@@ -188,8 +191,9 @@ NOTES_CRYPT_KEY=<git-crypt export-key, base64, one line>
 
 ## What is not there
 
-- No task without a push channel (`NTFY_URL`), and no answer to a push: what needs your
-  yes is not parked by a task sent through ntfy.
-- A file the assistant made during a task is not attached to the notification.
+- No task without a chat channel or a push channel (`NTFY_URL`), and no answer to a
+  push: what needs your yes is not parked by a task sent through ntfy.
+- A file the assistant made during a task is sent in a chat, not attached to a push
+  notification.
 - Seconds: tasks are checked once a minute (`TASKS_POLL_SECONDS`).
 - One list of tasks per agent: there are no separate users.

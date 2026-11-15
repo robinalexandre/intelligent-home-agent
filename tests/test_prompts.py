@@ -2,6 +2,12 @@ from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.prompts import PromptConfig, build_system_prompt
 
 ALL_TOOLS = {
+    "start_job",
+    "ask_job",
+    "list_jobs",
+    "stop_job",
+    "allow_coder_permission",
+    "refuse_coder_permission",
     "call_service",
     "get_weather",
     "get_calendar_events",
@@ -28,6 +34,11 @@ ALL_TOOLS = {
     "browse_repository",
     "search_repository",
     "check_dependencies",
+    "list_servers",
+    "list_server_projects",
+    "get_server_project_logs",
+    "restart_server",
+    "deploy_server_project",
     "schedule_task",
     "list_scheduled_tasks",
     "update_scheduled_task",
@@ -71,6 +82,9 @@ ALL_TOOLS = {
     "domain_lookup",
     "osm_lookup",
     "reverse_image_search",
+    "read_whatsapp_chats",
+    "mark_whatsapp_chats_read",
+    "ask_in_poll",
     "list_drive_folder",
     "search_drive_files",
     "search_drive_content",
@@ -79,6 +93,7 @@ ALL_TOOLS = {
     "save_file_to_drive",
     "delete_drive_file",
     "control_tv",
+    "navigate_tv",
     "control_apple_media",
     "lock_door",
     "get_home_security_status",
@@ -263,6 +278,21 @@ def test_documents_and_pictures_are_mentioned_only_when_their_tools_exist():
     assert "kept files were read" not in bare
 
 
+def test_the_chat_channel_rules_come_only_with_a_channel_and_only_in_the_chat():
+    def shown(display, tools=ALL_TOOLS):
+        cfg = PromptConfig(assistant_name="Nova", language="en", timezone="UTC", tools=set(tools))
+        return build_system_prompt(cfg, display=display)
+
+    text = shown("chat")
+    assert "ask it with ask_in_poll" in text and "A voice message comes as" in text
+    assert "Other WhatsApp chats: read_whatsapp_chats" in text
+    assert "WhatsApp chats" in text.split("Untrusted content")[1]
+    assert "ask_in_poll" not in shown("voice")
+    # A client that only says display "chat" (no channel set up) has no polls to offer.
+    bare = shown("chat", ALL_TOOLS - {"ask_in_poll", "read_whatsapp_chats"})
+    assert "ask_in_poll" not in bare and "read_whatsapp_chats" not in bare
+
+
 def test_drives_are_described_by_what_is_on():
     full = prompt()
     assert "search_drive_content finds them by what they say" in full
@@ -298,6 +328,28 @@ def test_reminders_come_from_icloud_when_it_is_set_up_else_from_the_phone():
     assert "get_reminders" not in phone and "Find My" not in phone
 
 
+def test_the_tv_navigator_is_only_explained_when_it_is_there():
+    text = prompt(tools=set(ALL_TOOLS))
+    assert "navigate_tv, with the goal as one sentence" in text
+    without = prompt(tools=ALL_TOOLS - {"navigate_tv"})
+    assert "navigate_tv" not in without and "control_tv to turn it on" in without
+
+
+def test_servers_are_explained_with_what_the_provider_can_do():
+    without = prompt(tools=ALL_TOOLS - {"list_servers"})
+    assert "hosting provider" not in without
+    text = prompt(tools=set(ALL_TOOLS))
+    assert "list_servers, then the tools" in text and "Docker projects" in text
+    assert "Actions (restart, snapshot, deploy) only on the user's clear request" in text
+    assert "your servers" in text.split("Untrusted content")[1]
+    plain = prompt(
+        tools=ALL_TOOLS
+        - {"list_server_projects", "get_server_project_logs", "deploy_server_project"}
+    )
+    assert "Docker" not in plain.split("hosting provider")[1].split("\n- ")[0]
+    assert "Actions (restart, snapshot) only" in plain
+
+
 def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
     without = prompt(
         tools=ALL_TOOLS
@@ -323,3 +375,11 @@ def test_the_remote_browser_is_explained_when_it_is_there_and_abroad_only_with_a
     assert "browser_open with country" not in text
     assert "browser_open with country" in prompt(browser_abroad=True)
     assert "browser_open" not in prompt(tools=ALL_TOOLS - {"browser_open"})
+
+
+def test_coding_jobs_are_only_named_when_their_tools_exist():
+    text = prompt()
+    assert "start_job hands work" in text and "refuse_coder_permission" in text
+    assert "the coding jobs' reports" in text
+    without = prompt(tools=ALL_TOOLS - {"start_job", "list_jobs", "allow_coder_permission"})
+    assert "start_job" not in without and "coder" not in without

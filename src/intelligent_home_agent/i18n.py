@@ -81,6 +81,35 @@ class Strings:
     draft_line: str
     draft_files: str
     draft_check: str
+    # A chat in a messaging app (chat_session.py, whatsapp.py, telegram.py): what the code
+    # says there by itself, the choice that lists what waits for the user's go and its
+    # two closing options, and what it answers to the user's picks.
+    chat_stopped: str
+    chat_file_unreadable: str
+    chat_voice_unclear: str
+    chat_still_working: str
+    chat_reminders_not_created: str
+    chat_choice_expired: str
+    waiting_in_poll: str
+    poll_name: str
+    poll_validate: str
+    poll_cancel: str
+    poll_see_above: str
+    poll_cancelled: str
+    poll_cancelled_note: str
+    poll_nothing_ticked: str
+    go_done: str
+    go_failed: str
+    go_note: str
+    # Marking other WhatsApp chats as read (tools/whatsapp_chats.py).
+    whatsapp_mark_read_summary: str
+    # Sets the register of a voice message for the speech model (transcription.py).
+    voice_prompt: str
+    # News of what runs in the background (progress.py).
+    progress_waiting: str
+    progress_late: str
+    progress_share: str
+    progress_item: str
     # Apple Reminders and Find My (tools/reminders.py, tools/find_my.py): their writes as
     # the user reads them before giving their go.
     reminder_create_summary: str
@@ -196,6 +225,42 @@ class Strings:
     # The titles of the briefing and the recap when they run by themselves (tasks.py).
     morning_briefing_title: str
     evening_recap_title: str
+    # The user's servers at a hosting provider (tools/hosting.py): an action as the user
+    # reads it before giving their go, and what a compose file asks for that gives a
+    # container power over the host.
+    hosting_server_summary: str
+    hosting_project_summary: str
+    hosting_actions: dict[str, str]
+    hosting_deploy_summary: str
+    hosting_deploy_warning: str
+    hosting_risky: dict[str, str]
+    # Coding jobs (docs/jobs.md): how their writes read before the user's go, the line the
+    # code writes above a coder's report, and the few words a runner adds to the coder's.
+    job_on_repo: str
+    job_start_summary: str
+    job_ask_summary: str
+    job_stop_summary: str
+    job_label: str
+    job_news_title: str
+    job_head: str
+    job_idle_head: str
+    job_done_head: str
+    job_failed_head: str
+    job_stopped_head: str
+    job_gone: str
+    job_call_refused: str
+    job_evaluation: str
+    job_budget_reached: str
+    # The nightly review (docs/review.md).
+    review_title: str
+    review_pull_request: str
+    # A permission prompt of Claude Code in the coder (coder_approvals.py).
+    coder_permission_title: str
+    coder_permission_where: str
+    coder_permission_question: str
+    coder_permission_summary: str
+    coder_permission_in_app: str
+    coder_permission_timeout: str
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -265,6 +330,38 @@ LANGUAGES: dict[str, Strings] = {
             "Files attached after reading content written by others ({files}): check the "
             "recipients before sending."
         ),
+        chat_stopped=(
+            "I'm restarting and didn't finish answering this message: send it again in a minute."
+        ),
+        chat_file_unreadable=(
+            "I can't get this file: PDF, images, text, voice messages and office files "
+            "only, {megabytes} MB at most."
+        ),
+        chat_voice_unclear="I couldn't make out this voice message, can you write it?",
+        chat_still_working=(
+            "⏳ Still on your request ({minutes} min). I'll be back as soon as it's done."
+        ),
+        chat_reminders_not_created=(
+            "I can't create reminders on your phone from this chat, ask by voice: {titles}."
+        ),
+        chat_choice_expired="This one is too old for me: ask me again.",
+        waiting_in_poll="🕒 *Waiting for your go*, pick below 👇",
+        poll_name="Which ones do I do? Tick, then Go",
+        poll_validate="✅ Go",
+        poll_cancel="❌ Cancel",
+        poll_see_above="{number}. → see no. {number} above",
+        poll_cancelled="Cancelled, I do nothing from this list.",
+        poll_cancelled_note="Cancelled.",
+        poll_nothing_ticked="Nothing ticked: tick what I should do, then Go.",
+        go_done="✅ {summary}{note}",
+        go_failed="❌ {summary}: {error}",
+        go_note=" ({note})",
+        whatsapp_mark_read_summary="Mark as read on WhatsApp the messages of: {names}",
+        voice_prompt="Voice message to my assistant: remind me tomorrow, tonight, next week.",
+        progress_waiting="waiting",
+        progress_late="longer than expected, {minutes} min",
+        progress_share="~{percent}% ({minutes} min of ~{estimate})",
+        progress_item="{label}: {state}",
         reminder_create_summary='Create the reminder "{title}"{where}{when}{notes}',
         reminder_update_summary="Change the reminder {reminder}: {what}",
         reminder_complete_summary="Tick the reminder {reminder}",
@@ -392,6 +489,52 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix='Pause the HomePod "{name}"',
         departure_player_playing='🔊 "{name}" is still playing.',
         departure_player_fix='Pause "{name}"',
+        hosting_server_summary="{provider}: {what} on the server {server}",
+        hosting_project_summary="{provider}: {what} “{project}” on the server {server}",
+        hosting_actions={
+            "restart_project": "restart",
+            "start_project": "start",
+            "stop_project": "stop",
+            "update_project": "update (pull and recreate)",
+            "restart_server": "restart the whole server",
+            "snapshot_replacing": "take a snapshot (it replaces the previous one)",
+            "snapshot_kept": "take a snapshot (kept, and billed, until you delete it)",
+            "deploy_project": "deploy the Docker project",
+        },
+        hosting_deploy_summary="{head};{warning} compose: {compose}",
+        hosting_deploy_warning=" ⚠️ {risks};",
+        hosting_risky={
+            "privileged": "privileged",
+            "host_network": "the host's network",
+            "host_pid": "the host's processes",
+            "cap_add": "added capabilities",
+            "docker_socket": "the Docker socket",
+            "host_folder": "a folder of the host mounted",
+        },
+        job_on_repo=" on {repo}",
+        job_start_summary='Start the job "{title}"{where}: {request}',
+        job_ask_summary="Tell job {job}: {message}",
+        job_stop_summary="Stop job {job}",
+        job_label="Job {id}",
+        job_news_title="Coding jobs",
+        job_head='🛠️ Job {id} "{title}"',
+        job_idle_head='🛠️ Job {id} "{title}" waits for your answer',
+        job_done_head='✅ Job {id} "{title}" is done',
+        job_failed_head='❌ Job {id} "{title}" failed',
+        job_stopped_head='⏹️ Job {id} "{title}" stopped',
+        job_gone="⚠️ The runner no longer knows this session: job closed. Start it again if needed.",
+        job_call_refused="⛔ Call to {tool} refused: nobody watches the run.",
+        job_evaluation="Evaluation: {result}. {explanation}",
+        job_budget_reached="💸 The session's budget is reached: the job is paused.",
+        review_title="Nightly review of {day}",
+        review_pull_request="🌙 {title}: a pull request to read",
+        coder_permission_title="Claude Code asks",
+        coder_permission_where=", {folder}",
+        coder_permission_question="🔐 Claude (code{where}) asks: {tool}",
+        coder_permission_summary="Allow Claude Code{where}: {tool} {detail}",
+        coder_permission_in_app="🔐 Claude (code{where}) waits for your go in the Claude "
+        "app: {tool}.",
+        coder_permission_timeout="⏱️ No answer: the request stays open in the Claude app.",
     ),
     "fr": Strings(
         name="French",
@@ -464,6 +607,42 @@ LANGUAGES: dict[str, Strings] = {
             "Fichiers joints après lecture d'un contenu écrit par d'autres ({files}) : "
             "vérifie les destinataires avant d'envoyer."
         ),
+        chat_stopped=(
+            "Je redémarre et je n'ai pas fini de répondre à ce message : renvoie-le-moi "
+            "dans une minute."
+        ),
+        chat_file_unreadable=(
+            "Je ne peux pas récupérer ce fichier : PDF, images, texte, vocaux et fichiers "
+            "bureautiques seulement, {megabytes} Mo max."
+        ),
+        chat_voice_unclear="Je n'ai pas réussi à comprendre ce vocal, tu peux me l'écrire ?",
+        chat_still_working=(
+            "⏳ Toujours sur ta demande ({minutes} min). Je reviens vers toi dès que c'est fini."
+        ),
+        chat_reminders_not_created=(
+            "Je ne peux pas créer de rappel sur ton téléphone depuis ce chat, demande-le à "
+            "la voix : {titles}."
+        ),
+        chat_choice_expired="Celui-ci est trop ancien pour moi : redemande-moi.",
+        waiting_in_poll="🕒 *En attente de ton accord*, choisis ci-dessous 👇",
+        poll_name="Je fais lesquels ? Coche, puis Valider",
+        poll_validate="✅ Valider",
+        poll_cancel="❌ Annuler",
+        poll_see_above="{number}. → détail n°{number} ci-dessus",
+        poll_cancelled="Annulé, je ne fais rien de cette liste.",
+        poll_cancelled_note="Annulé.",
+        poll_nothing_ticked="Rien de coché : coche ce que je fais, puis Valider.",
+        go_done="✅ {summary}{note}",
+        go_failed="❌ {summary} : {error}",
+        go_note=" ({note})",
+        whatsapp_mark_read_summary="Marquer comme lus sur WhatsApp les messages de : {names}",
+        voice_prompt=(
+            "Message vocal à mon assistant : rappelle-moi demain, ce soir, la semaine prochaine."
+        ),
+        progress_waiting="en attente",
+        progress_late="plus long que prévu, {minutes} min",
+        progress_share="~{percent} % ({minutes} min sur ~{estimate})",
+        progress_item="{label} : {state}",
         reminder_create_summary="Créer le rappel « {title} »{where}{when}{notes}",
         reminder_update_summary="Modifier le rappel {reminder} : {what}",
         reminder_complete_summary="Cocher le rappel {reminder}",
@@ -599,6 +778,52 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix="Mettre le HomePod « {name} » en pause",
         departure_player_playing="🔊 « {name} » joue encore.",
         departure_player_fix="Mettre « {name} » en pause",
+        hosting_server_summary="{provider} : {what} sur le serveur {server}",
+        hosting_project_summary="{provider} : {what} « {project} » sur le serveur {server}",
+        hosting_actions={
+            "restart_project": "redémarrer",
+            "start_project": "démarrer",
+            "stop_project": "arrêter",
+            "update_project": "mettre à jour (pull et recréer)",
+            "restart_server": "redémarrer tout le serveur",
+            "snapshot_replacing": "prendre un snapshot (remplace le précédent)",
+            "snapshot_kept": "prendre un snapshot (gardé, et facturé, jusqu'à sa suppression)",
+            "deploy_project": "déployer le projet Docker",
+        },
+        hosting_deploy_summary="{head} ;{warning} compose : {compose}",
+        hosting_deploy_warning=" ⚠️ {risks} ;",
+        hosting_risky={
+            "privileged": "privileged",
+            "host_network": "réseau de l'hôte",
+            "host_pid": "processus de l'hôte",
+            "cap_add": "capacités ajoutées",
+            "docker_socket": "socket Docker",
+            "host_folder": "dossier de l'hôte monté",
+        },
+        job_on_repo=" sur {repo}",
+        job_start_summary="Lancer le job « {title} »{where} : {request}",
+        job_ask_summary="Dire au job {job} : {message}",
+        job_stop_summary="Arrêter le job {job}",
+        job_label="Job {id}",
+        job_news_title="Jobs de code",
+        job_head="🛠️ Job {id} « {title} »",
+        job_idle_head="🛠️ Job {id} « {title} » attend ta réponse",
+        job_done_head="✅ Job {id} « {title} » terminé",
+        job_failed_head="❌ Job {id} « {title} » en échec",
+        job_stopped_head="⏹️ Job {id} « {title} » arrêté",
+        job_gone="⚠️ Le runner ne connaît plus cette session : job fermé. Relance-le si besoin.",
+        job_call_refused="⛔ Appel {tool} refusé : personne ne surveille.",
+        job_evaluation="Évaluation : {result}. {explanation}",
+        job_budget_reached="💸 Budget de la session atteint : le job est en pause.",
+        review_title="Revue de la nuit du {day}",
+        review_pull_request="🌙 {title} : une PR à relire",
+        coder_permission_title="Claude Code demande",
+        coder_permission_where=", {folder}",
+        coder_permission_question="🔐 Claude (code{where}) demande : {tool}",
+        coder_permission_summary="Autoriser Claude Code{where} : {tool} {detail}",
+        coder_permission_in_app="🔐 Claude (code{where}) attend ton accord dans l'app "
+        "Claude : {tool}.",
+        coder_permission_timeout="⏱️ Pas de réponse : la demande reste ouverte dans l'app Claude.",
     ),
 }
 

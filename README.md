@@ -24,14 +24,19 @@ spoken morning briefing and evening recap.
   files (a PDF, a photo, a text or office document) for the agent to read.
 - `POST /v1/briefing`: the morning briefing or evening recap, written to be read, optionally
   pushed to your phone and desktop through ntfy. Made for schedulers.
+- A chat with it in WhatsApp (through a WAHA gateway you run) or Telegram (through a
+  bot of your own): write, send files and voice messages, approve what it proposes
+  with a tap, and get its briefings and the tasks it runs by itself there
+  ([docs/chat.md](docs/chat.md)).
 - `POST /v1/departure`: called when you leave home (a phone automation), it says what
   is still unlocked, on or playing among the devices set up, and turns it off on your
   yes ([docs/home-devices.md](docs/home-devices.md#leaving-home)).
 - Tools, each one on only when configured:
   - Home Assistant: find devices, read states, call services, HA weather.
   - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet
-    speaker, a Google TV / Android TV device, an Apple TV and HomePods, a Nuki smart
-    lock, Netatmo cameras and sensors, a PetKit feeder and litter box
+    speaker, a Google TV / Android TV device (and, with its screen read over ADB,
+    finding and starting a film or an episode inside an app), an Apple TV and HomePods,
+    a Nuki smart lock, Netatmo cameras and sensors, a PetKit feeder and litter box
     ([docs/home-devices.md](docs/home-devices.md)).
   - Weigh-ins from a Withings scale, said only when you ask
     ([docs/health.md](docs/health.md)).
@@ -53,9 +58,17 @@ spoken morning briefing and evening recap.
     GitHub repository of yours, notes for your coding sessions (reminders, handoff
     notes), your repositories read-only, and the known flaws in their dependencies
     ([docs/tasks.md](docs/tasks.md)).
+  - Your servers at a hosting provider (Hostinger, Hetzner Cloud): state, metrics,
+    backups, Docker projects and their logs; a restart, a snapshot or a deployment on
+    your yes ([docs/hosting.md](docs/hosting.md)).
   - Connectors: any service that has an MCP server, such as your bank or your hosting
     provider, read freely and changed only on your yes
     ([docs/connectors.md](docs/connectors.md)).
+  - For people who code, off by default: coding jobs handed to Claude Code, which
+    works on one of your GitHub repositories on its own and opens a pull request
+    ([docs/jobs.md](docs/jobs.md)); and a nightly review of the agent's own requests
+    that proposes fixes on your private copy of this repository
+    ([docs/review.md](docs/review.md)).
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - File drives through rclone (Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, an
@@ -149,7 +162,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `WIND_SPOTS`, `SURF_SPOTS`, `WIND_MODEL` | none, none, `best_match` | Spots for the wind and surf tools (JSON); see [docs/outdoor.md](docs/outdoor.md). |
 | `HOME_MOVES` | none | Where home is from a given day, when you move (JSON). |
 | `LIVE_WIND_SOURCES`, `LIVE_WIND_RADIUS_KM`, `METEOFRANCE_APPLICATION_ID` | none, `20`, unset | Wind measured now near the spots: any of `openwindmap`, `metar`, `meteofrance` (France, needs the id). |
-| `ACTIVITY_ALERTS`, `ACTIVITY_ALERTS_LEAD_HOURS`, `ACTIVITY_ALERTS_QUIET_START`, `ACTIVITY_ALERTS_QUIET_END` | none, `24`, `22`, `8` | Activities you are told about when a good window is coming, how early, and the silent hours. They need `NTFY_URL`. |
+| `ACTIVITY_ALERTS`, `ACTIVITY_ALERTS_LEAD_HOURS`, `ACTIVITY_ALERTS_QUIET_START`, `ACTIVITY_ALERTS_QUIET_END` | none, `24`, `22`, `8` | Activities you are told about when a good window is coming, how early, and the silent hours. They need a chat or `NTFY_URL`. |
 | `HA_URL`, `HA_TOKEN` | local URL, unset | Home Assistant; no token means no home tools. |
 | `HA_EXPOSED_DOMAINS` | common domains | Only these entity domains are visible. |
 | `HA_SENSITIVE_DOMAINS` | `lock,alarm_control_panel,cover` | Need a spoken yes in a later request. |
@@ -158,6 +171,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `HUE_BRIDGE_URL`, `HUE_APP_KEY` | unset | Philips Hue lights, straight from the bridge. |
 | `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | unset, `70` | A Devialet Phantom speaker. |
 | `ANDROID_TV_HOST`, `ANDROID_TV_CLIENT_CERT`, `ANDROID_TV_CLIENT_KEY`, `ANDROID_TV_NAME`, `ANDROID_TV_MAX_VOLUME` | unset | A Google TV / Android TV device (`android-tv` extra); `ANDROID_TV_APPS`, `ANDROID_TV_CHANNEL_APP`, `ANDROID_TV_CHANNELS` add apps and live channels. |
+| `ANDROID_TV_NAVIGATOR`, `ANDROID_TV_NAVIGATOR_MODEL`, `ANDROID_TV_NAVIGATOR_ACTIONS` | `false`, a small model, `25` | Find and start something inside an app of that device: a helper model reads the screen over ADB and presses the remote's keys ([docs/home-devices.md](docs/home-devices.md)). |
 | `APPLE_DEVICES`, `APPLE_TV_COMPANION_CREDENTIALS`, `APPLE_TV_AIRPLAY_CREDENTIALS` | unset | Apple TV and HomePods (`apple` extra). |
 | `NUKI_API_TOKEN`, `UNLOCK_TOTP_SECRET`, `UNLOCK_PHRASE` | unset | A Nuki smart lock; a code or secret phrase asked before it opens. |
 | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | unset | Netatmo cameras, weather station, thermostat. |
@@ -184,9 +198,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `NOTES_REPO`, `ASSISTANT_REMINDERS_PATH`, `HANDOFFS_PATH` | unset, `reminders`, `handoffs` | Notes for your coding sessions: `owner/repo` and its folders ([docs/tasks.md](docs/tasks.md)). `ASSISTANT_REMINDERS_REPO` still works. |
 | `NOTES_WRITE` | `false` | Let the agent leave reminders and handoff notes there and close reminders. |
 | `NOTES_CRYPT_KEY` | unset | Optional: the git-crypt key of that repository (`MEMORY_CRYPT_KEY` when it also holds the memory). |
-| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need `NTFY_URL`. |
+| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need a chat channel or `NTFY_URL`. |
 | `TASKS_PATH`, `TASKS_POLL_SECONDS` | `tasks`, `60` | The folder (in a repository: `<assistant>/tasks`) and how often it is checked. |
 | `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT` | unset | Send the briefing and the recap every day at that time (`07:30`). |
+| `HOSTING_PROVIDER`, `HOSTING_API_TOKEN` | unset | Your servers at `hostinger` or `hetzner`: read freely, restarted, snapshotted or deployed to on your yes ([docs/hosting.md](docs/hosting.md)). |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
 | `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR` | `true`, `auto`, DejaVu | PDFs, forms and drawings ([docs/documents.md](docs/documents.md)); paper `a4`, `letter` or by country; a folder of fonts. |
 | `EXERCISE_PHOTOS_ENABLED` | `false` | Exercise photos from a public-domain bank. |
@@ -197,7 +212,14 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DRIVE_INDEX_HOURS` | `24` | How old the index of file names may get. |
 | `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
 | `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
+| `JOBS_RUNNER`, `CODER_TOKEN`, `JOBS_GITHUB_TOKEN` | `off`, unset, unset | Coding jobs: `claude_code` (the coder container of `compose/coder.yml`, on your Claude subscription) or `managed` (Anthropic Managed Agents, on the API). The other settings are in [docs/jobs.md](docs/jobs.md). They need `NTFY_URL`. |
+| `REVIEW_REPO`, `REVIEW_AT`, `REVIEW_ALLOW_PUBLIC` | unset, `05:30`, `false` | Nightly review: a coding job reads the day's journal and opens a pull request on your own private copy of this repository. Read [docs/review.md](docs/review.md) first. |
+| `REVIEW_LESSONS_REPO`, `REVIEW_LESSONS_PATH` | unset, `knowledge` | Optional: the review's lessons curated into your knowledge base's notes (needs the `curation` extra). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`, for the tasks the agent runs by itself and for the activity alerts. |
+| `WAHA_URL`, `WAHA_API_KEY`, `WHATSAPP_CHAT_ID` | unset | WhatsApp chat through a WAHA gateway (`compose/waha.yml`): your number as `<digits>@c.us`. Also `AGENT_WAHA_SESSION` (a number of the agent's own), `WHATSAPP_READABLE_CHATS` (groups it may sum up), `WHATSAPP_MARKER`. See [docs/chat.md](docs/chat.md). |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS` | unset, empty | Telegram chat through a bot of your own; only the listed private chats reach the agent. |
+| `CHAT_VOTE_GRACE_SECONDS` | `5` | How long a one-tap answer in a chat can still be changed. |
+| `WHISPER_MODEL`, `WHISPER_LANGUAGES` | empty, `LANGUAGE` | Voice messages sent in a chat, transcribed on this machine (`voice` extra). |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
@@ -248,6 +270,7 @@ and the model you chose writes the answer from the results, in a request of its 
 Siri Shortcuts, Home Assistant Assist, Google Home and Alexa (through Home Assistant),
 ntfy push, and scheduled tasks (cron, Home Assistant, a chat or coding-assistant app):
 see [docs/integrations.md](docs/integrations.md) and [docs/siri-shortcut.md](docs/siri-shortcut.md).
+A chat in WhatsApp or Telegram: [docs/chat.md](docs/chat.md).
 
 ## Security model
 
@@ -336,6 +359,12 @@ The guardrails are enforced in code, not only in the prompt.
   Facts are given to the model as data, not instructions, and are among what a web search
   query may not repeat. Saved chats and files are written readable by the agent's user
   only.
+- **Servers**: the provider's token often opens the whole account, so the agent only
+  calls a fixed list of paths (servers, metrics, backups, firewalls, Docker projects).
+  What it reads there (logs, configs) taints the request. A restart or a snapshot runs
+  only on your own clear request and waits for your go after any read; a deployment
+  always waits, shown with its whole compose file and a warning for settings that give
+  a container power over the host. None of it runs from a scheduled task.
 - **Connectors**: reading from a connected service taints the request like an email. A
   write never runs when asked, even in a clean request: it waits for your go as above,
   shown with its exact arguments; with `writes: off` the write tools don't exist.
@@ -357,6 +386,23 @@ The guardrails are enforced in code, not only in the prompt.
   removing a draft and creating a folder always do; filing never runs by itself in a
   scheduled task. Each saved draft is noted under the reply by the code, with a
   warning when it carries files after content written by others was read.
+- **Chat channels**: only you reach the agent through one. WhatsApp reads the one
+  chat you named; a Telegram bot drops everything that is not a private chat you
+  listed, before reading it. A message that quotes or forwards another, a file and
+  a group's messages are content written by others: what would act then waits for
+  your go, shown as a choice you tick, and only what was shown can run. WhatsApp
+  goes through an unofficial client (WAHA) whose volume is the account itself; the
+  Telegram token is kept out of logs. Voice messages are transcribed on your
+  machine. See [docs/chat.md](docs/chat.md).
+- **Coding jobs** (off by default): only your own message, in a request that read
+  nothing else, starts a job or writes to one; otherwise it waits for your go. The
+  coder runs in a container of its own with none of the agent's secrets, and can
+  touch what its GitHub token can, so scope that token. Its reports are data for the
+  agent. A permission prompt of Claude Code can only be allowed by your own yes.
+- **Nightly review** (off by default): it hands a day of the journal, your
+  conversations, to the coding job, and so to Anthropic and to the pull request it
+  opens. It only runs on a repository GitHub says is private, unless you say
+  otherwise ([docs/review.md](docs/review.md)).
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
   never prints them. The Siri Shortcut files hold the token: don't share them.
 
@@ -367,6 +413,7 @@ src/intelligent_home_agent/   app, agent loop, prompts, settings, tools/
 scripts/                      setup.py (onboarding), build_shortcuts.py (Siri), mcp_login.py,
                               one login or pairing script per device that needs it
 compose/                      one file per way to reach the agent (Caddy, Tailscale...)
+coder/, agents/, environments/  the coding jobs' container, house rules and sandbox
 docs/                         setup step by step, deployment, integrations, Siri Shortcut
 tests/                        pytest, no network
 ```

@@ -1,0 +1,48 @@
+# Coding jobs for people who code: a "coder" container next to the agent runs Claude Code on
+# your Claude subscription, and the agent hands it work on your GitHub repositories (a fix,
+# a feature, a pull request). See docs/jobs.md. Needs in .env: CODER_TOKEN (a shared secret
+# you generate), CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), JOBS_GITHUB_TOKEN (a
+# token on the repositories the coder may work on) and JOBS_RUNNER=claude_code.
+# The coder gets its own secrets and none of the agent's: no env_file here. It keeps its
+# work and Claude Code's transcripts in the coder_work volume.
+services:
+  agent:
+    environment:
+      CODER_URL: http://coder:8100
+    networks: [default, coder]
+
+  coder:
+    build:
+      context: .
+      dockerfile: coder/Dockerfile
+    environment:
+      CODER_TOKEN: ${CODER_TOKEN:?Set CODER_TOKEN in .env}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      GH_TOKEN: ${JOBS_GITHUB_TOKEN:-}
+      GIT_AUTHOR_NAME: ${JOBS_GIT_NAME:-coder}
+      GIT_AUTHOR_EMAIL: ${JOBS_GIT_EMAIL:-coder@invalid}
+      # A runaway guard on Claude Code's own cost estimate per job.
+      CODER_MAX_BUDGET_USD: ${CODER_MAX_BUDGET_USD:-15}
+      # The few words the coder adds to its reports (a restart, an interruption).
+      CODER_LANGUAGE: ${LANGUAGE:-en}
+      # Remote Control (docs/jobs.md): its name in the Claude app, and whether every
+      # repository the token reaches is kept cloned for it.
+      CODER_RC_NAME: ${CODER_RC_NAME:-Home agent code}
+      CODER_SYNC_REPOS: ${CODER_SYNC_REPOS:-false}
+      # Where its permission prompts are posted (the agent asks you).
+      AGENT_URL: http://agent:8000
+    volumes:
+      - coder_work:/work
+    # The agent reaches it on a network with no way out, where the agent answers it only
+    # with the coder's token; it reaches GitHub, Claude and the package registries on
+    # another, which nothing else of the stack is on.
+    networks: [coder, coder_egress]
+    restart: unless-stopped
+
+networks:
+  coder:
+    internal: true
+  coder_egress:
+
+volumes:
+  coder_work:

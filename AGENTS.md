@@ -40,7 +40,7 @@ src/intelligent_home_agent/
   i18n.py           every word the code says to the user, per language
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
   activity_alerts.py  a message when a good window is coming for an activity: the watch,
-                    its tools, what it sends through deliver.py (docs/outdoor.md)
+                    its tools, what it sends with main.tell_user (docs/outdoor.md)
   config.py         settings (env / .env)
   conversations.py  conversation state: messages, files (Attachment), writes waiting for
                     the user's go (Proposal), pending Home Assistant confirmations; what
@@ -50,7 +50,21 @@ src/intelligent_home_agent/
   tasks.py          tasks the agent starts by itself: TaskRunner (a job of the app),
                     TaskReports; main.run_task and run_digest answer them (docs/tasks.md)
   deliver.py        where a report written with nobody asking goes: ReportChannel
-                    (ntfy; add a chat here), Delivery, Outbox (GET /v1/tasks/reports)
+                    (a chat first, then ntfy), Delivery, Outbox (GET /v1/tasks/reports)
+  chat.py           a chat with the agent in a messaging app: the ChatChannel interface
+                    (docs/chat.md); whatsapp.py (through a WAHA gateway) and telegram.py
+                    (a bot, the Bot API) are its two channels
+  chat_session.py   the agent in such a chat, the same for every channel: answers,
+                    what waits for the user's go sent as a choice to tick, the votes
+                    that run it; ChatReports plugs a chat into deliver.py
+  transcription.py  voice messages as text, on the server (the "voice" extra)
+  progress.py       news of work running in the background, said in the chat
+  jobs.py           coding jobs handed to a subagent (docs/jobs.md): JobStore, JobRunner,
+                    the Backend protocol; jobs_claude_code.py (the coder container) and
+                    jobs_managed.py (Anthropic Managed Agents) are its two runners
+  coder_approvals.py  Claude Code's permission prompts in the coder, asked to the user
+  review.py         the nightly review: a quiet coding job over the day's journal
+                    (docs/review.md); curation.py turns its lessons into notes
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
@@ -76,6 +90,8 @@ scripts/setup.py         interactive .env writer (stdlib only)
 compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE;
                          browser*.yml, vpn.yml and browser/ are the remote browser
                          (tools/browser.py, tools/vpn.py, docs/browser.md)
+coder/                   the coder container (its own image, compose/coder.yml): Claude
+                         Code for the coding jobs; agents/coder.md holds its house rules
 scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
 ```
 
@@ -205,6 +221,8 @@ Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/`
 `activity-alerts.json`.
 `tasks/` (unless `TASKS_STORE=github`), `tasks-done.json`, `tasks-reports.json` and
 `task-outbox.json` (which tasks ran, their last reports, what was sent).
+`jobs.json`, `progress-durations.json` and `review-done.json` (coding jobs, how long
+they took, the last night reviewed).
 A feature that keeps a file follows the same pattern: written through a temporary file,
 mode 600, named by the code and never by what a client or a model sent. What must reach
 every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is
@@ -216,8 +234,24 @@ A task's report leaves through `app.state.delivery` (`deliver.Delivery`). A new 
 (a chat) is a class with the attributes of `deliver.ReportChannel` (`name`, `display`,
 `conversation_id`, `reaches`) and `async send(title, text)`. Put it first in
 `main.build_delivery` and name it in `main.reports_reach`, which is what turns the
-tasks on. With a `conversation_id`, tasks run in that conversation and may park writes
-for the user's go there (`main.answer_task`); with `None` (ntfy) nothing is parked.
+tasks on; name it in `main.jobs_reach` too, which turns the coding jobs on. With a
+`conversation_id`, tasks run in that conversation and may park writes for the user's
+go there (`main.answer_task`), and a coding job's report and a permission prompt of
+the coder land there too (`main.report_job`, `ask_coder_permission`); with `None`
+(ntfy) nothing is parked.
+
+## Adding a chat channel
+
+A messaging app is a class with the methods of `chat.ChatChannel`: it brings the
+user's messages (`ChatHandler.answer(text, files, quoted)`), sends text, files and
+choices (`send_choices`, whose ticks come back through `ChatHandler.chose`), and may
+show typing and marks. Build it in `main.build_channels` behind its settings;
+`chat_session.ChatSession` does everything else and `ChatReports` makes it the first
+way out for tasks. Three rules: only the user reaches the handler (drop anyone
+else's messages, votes and taps before anything reads them); a message that quotes
+or forwards another says so (`quoted` "own" or "other"), so its writes wait; sending
+fails with `httpx.HTTPError` and never shows a secret (see `TelegramError`). Its words
+for the user go through `i18n.py`, its tests through `respx`.
 
 ## Adding an LLM provider
 

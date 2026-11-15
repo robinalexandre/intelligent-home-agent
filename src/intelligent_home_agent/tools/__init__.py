@@ -56,6 +56,7 @@ from intelligent_home_agent.tools.web_pages import (
     build_web_page_tools,
     trusted_domains,
 )
+from intelligent_home_agent.tools.whatsapp_chats import build_whatsapp_chat_tools
 from intelligent_home_agent.tools.withings import Withings, WithingsAuth, build_withings_tools
 
 __all__ = [
@@ -137,6 +138,7 @@ __all__ = [
     "build_weather_tools",
     "build_web_page_tools",
     "build_web_tools",
+    "build_whatsapp_chat_tools",
     "build_wind_tools",
     "trusted_domains",
 ]
@@ -147,6 +149,11 @@ from intelligent_home_agent.tools.assistant_notes import (  # noqa: E402
     NotesRepo,
     RepoFolder,
     build_assistant_note_tools,
+)
+from intelligent_home_agent.tools.hosting import (  # noqa: E402
+    HostingApi,
+    build_hosting_provider,
+    build_hosting_tools,
 )
 from intelligent_home_agent.tools.repos import Repositories, build_repository_tools  # noqa: E402
 from intelligent_home_agent.tools.scheduled_tasks import build_task_tools  # noqa: E402
@@ -165,4 +172,11 @@ __all__ += [
     "build_repository_tools",
     "build_task_tools",
     "build_vulnerability_tools",
+    "HostingApi",
+    "build_hosting_provider",
+    "build_hosting_tools",
 ]
+
+from intelligent_home_agent.tools.jobs import build_job_tools  # noqa: E402
+
+__all__ += ["build_job_tools"]

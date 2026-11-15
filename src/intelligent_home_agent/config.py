@@ -5,7 +5,7 @@ setting with a comment.
 """
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, time
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
@@ -272,6 +272,13 @@ class Settings(BaseSettings):
     # and names for those numbers, as JSON: {"news one": 1}. Empty: no live channels.
     android_tv_channel_app: str | None = None
     android_tv_channels: dict[str, Any] = {}
+    # navigate_tv: a helper model that sees the device's screen over ADB and presses the
+    # remote's keys to reach something inside an app. Needs the adb program and the device
+    # paired with scripts/android_tv_adb.py. The model must read pictures; empty: a small
+    # Claude model with Anthropic, LLM_MODEL otherwise. At most that many actions per goal.
+    android_tv_navigator: bool = False
+    android_tv_navigator_model: str = ""
+    android_tv_navigator_actions: int = Field(25, ge=1, le=100)
     # Apple TV and HomePods through pyatv (the apple extra): the profile JSON that
     # `scripts/apple_devices.py profile` prints on the home network, and the Apple TV's
     # pairing from `scripts/apple_devices.py pair`. Empty profile: no tool.
@@ -351,7 +358,7 @@ class Settings(BaseSettings):
     meteofrance_application_id: SecretStr | None = None
     # Activities the agent watches and tells the user about when a good window is coming
     # (activity_alerts.py); the user can also ask for one in a request. Needs a way to
-    # reach the user (NTFY_URL).
+    # reach the user (a chat, or NTFY_URL).
     activity_alerts: CsvList = []
     # How long before a good window the user is told, at most.
     activity_alerts_lead_hours: int = Field(24, ge=1, le=72)
@@ -491,6 +498,12 @@ class Settings(BaseSettings):
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
 
+    # --- The user's servers at a hosting provider (docs/hosting.md) --------------------
+    # The provider and an API token made in its console. Empty: no tool. For a provider
+    # that is not listed but has an MCP server, see MCP_SERVERS above.
+    hosting_provider: Literal["", "hostinger", "hetzner"] = ""
+    hosting_api_token: SecretStr | None = None
+
     # --- Documents, PDFs and pictures (docs/documents.md) ------------------------------
     # The files of the conversation listed and opened, PDFs written, forms filled, pages
     # copied, drawings rendered. Nothing leaves the machine. What needs the "documents"
@@ -581,10 +594,132 @@ class Settings(BaseSettings):
     # Empty: a small Claude model with anthropic.
     drive_ocr_model: str = ""
 
+    # --- Coding jobs handed to a subagent that works on its own (docs/jobs.md) ----------
+    # For people who code; off by default. Who runs them: "claude_code", Claude Code in
+    # the coder container (compose/coder.yml) on the user's Claude subscription, or
+    # "managed", an Anthropic Managed Agents session billed to the API (it needs
+    # LLM_PROVIDER=anthropic and its key). Reports reach the user as the agent's other
+    # reports do (NTFY_URL, a chat): without a way to reach them there are no jobs.
+    jobs_runner: Literal["off", "claude_code", "managed"] = "off"
+    # claude_code: where the coder container is (set by compose/coder.yml) and the secret
+    # both share.
+    coder_url: str | None = None
+    coder_token: SecretStr | None = None
+    # managed: the agent, the environment and the vault scripts/jobs_setup.py creates.
+    jobs_agent_id: str | None = None
+    jobs_environment_id: str | None = None
+    jobs_vault_id: str | None = None
+    # GitHub token with contents and pull-requests write on the repositories the coder may
+    # work on, and nothing else: its scope is what a job can touch. claude_code: the coder
+    # container holds it. managed: the session mounts the repository with it.
+    jobs_github_token: SecretStr | None = None
+    # managed: hard cap on what one job may spend, at list prices, and how many times the
+    # grader may send the coder back to its pull request.
+    jobs_budget_usd: float = Field(10, gt=0)
+    jobs_max_iterations: int = Field(5, ge=1)
+    jobs_workspace: str = "default"
+    # The git identity of the coder's commits (yours, on GitHub).
+    jobs_git_name: str | None = None
+    jobs_git_email: str | None = None
+    # claude_code: the coder's model, chosen by the agent per job from the request's
+    # complexity. managed: the model in agents/coder.md applies.
+    jobs_model_simple: str = "claude-sonnet-5-5"
+    jobs_model_normal: str = "claude-opus-5-5"
+    jobs_model_complex: str = "claude-fable-5-1"
+
+    # --- Nightly review of the agent's own requests (docs/review.md) --------------------
+    # Off by default. Your OWN copy of this repository ("owner/repo", one the jobs' token
+    # can push to): each night, once REVIEW_AT (local time, HH:MM) has passed, a coding
+    # job reads the day before's journal (your conversations) and opens a pull request
+    # there when something is worth fixing. Needs the coding jobs and the journal.
+    review_repo: str | None = None
+    review_at: time = time(5, 30)
+    # The journal only goes to a repository GitHub says is private, unless this is true.
+    review_allow_public: bool = False
+    # Optional: the notes repository your knowledge base indexes ("owner/repo",
+    # GITHUB_TOKEN allowed to write its contents) and its folder; the review's lessons
+    # are curated into notes there. Needs the "curation" extra. Empty: not curated.
+    review_lessons_repo: str | None = None
+    review_lessons_path: str = "knowledge"
+
     # --- Push notifications (ntfy, optional) -------------------------------------------
     # Full topic URL, e.g. https://ntfy.sh/some-long-random-topic or a self-hosted server.
     ntfy_url: str | None = None
     ntfy_token: SecretStr | None = None
+
+    # --- Chat channels: talk to the agent in a messaging app (docs/chat.md) ------------
+    # WhatsApp, through a WAHA gateway (compose/waha.yml) linked to the user's number: the
+    # conversation is their "Message yourself" chat. Off without WAHA_URL, WAHA_API_KEY
+    # and WHATSAPP_CHAT_ID.
+    waha_url: str | None = None
+    waha_api_key: SecretStr | None = None
+    waha_session: str = "default"
+    # Optional: a number of the agent's own, linked to this session, so that its messages
+    # ring on the user's phone. URL and key default to WAHA_URL and WAHA_API_KEY; the
+    # WAHA_* session then only reads WHATSAPP_READABLE_CHATS.
+    agent_waha_url: str | None = None
+    agent_waha_api_key: SecretStr | None = None
+    agent_waha_session: str | None = None
+    # The chat with the user, the only one polled: their own number as <digits>@c.us
+    # (their own chat, or their side of the agent's chat when it has its own number).
+    whatsapp_chat_id: str | None = None
+    # What the agent's messages start with, which tells them from the user's in their own
+    # chat.
+    whatsapp_marker: str = "🤖"
+    whatsapp_poll_seconds: float = 5
+    # Groups and communities of the user's account the agent may read on request, by id
+    # (...@g.us); a community's id brings its groups. Empty: it reads no other chat.
+    whatsapp_readable_chats: CsvList = []
+    # Telegram, through a bot of the user's own (@BotFather gives its token). Only the
+    # private chats listed here reach the agent, by their numeric id; each is a
+    # conversation of its own. Off without both.
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_ids: Annotated[list[int], NoDecode] = []
+    # Another server speaking the Bot API (a self-hosted telegram-bot-api).
+    telegram_api_url: str = "https://api.telegram.org"
+    # A one-tap answer waits this long, so a wrong tap can be changed or taken back.
+    chat_vote_grace_seconds: float = 5
+    # Voice messages, transcribed on this machine by a faster-whisper model (tiny, base,
+    # small, medium...), downloaded once to DATA_DIR/whisper. Needs the "voice" extra.
+    # Empty: a voice message gets a line asking to write instead.
+    whisper_model: str = ""
+    # Languages the user speaks in them; the likeliest is picked for each message. Empty:
+    # LANGUAGE alone.
+    whisper_languages: CsvList = []
+
+    @property
+    def whatsapp_own_number(self) -> bool:
+        return bool(self.agent_waha_session)
+
+    @property
+    def chat_waha(self) -> tuple[str, str, str] | None:
+        """The WAHA session the chat with the user goes through: URL, key, session."""
+        if self.whatsapp_own_number:
+            url = self.agent_waha_url or self.waha_url
+            key = self.agent_waha_api_key or self.waha_api_key
+            session = self.agent_waha_session
+        else:
+            url, key, session = self.waha_url, self.waha_api_key, self.waha_session
+        if not (url and key and session):
+            return None
+        return url, key.get_secret_value(), session
+
+    @property
+    def whatsapp_enabled(self) -> bool:
+        return bool(self.chat_waha and self.whatsapp_chat_id)
+
+    @property
+    def whatsapp_reading_enabled(self) -> bool:
+        """Other chats are read on the user's own account, never the agent's."""
+        return bool(self.waha_url and self.waha_api_key and self.whatsapp_readable_chats)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_ids)
+
+    @property
+    def chat_enabled(self) -> bool:
+        return self.whatsapp_enabled or self.telegram_enabled
 
     @field_validator(
         "ha_exposed_domains",
@@ -597,6 +732,9 @@ class Settings(BaseSettings):
         "live_wind_sources",
         "activity_alerts",
         "web_trusted_domains",
+        "whatsapp_readable_chats",
+        "telegram_chat_ids",
+        "whisper_languages",
         "subscription_displays",
         mode="before",
     )
@@ -657,6 +795,30 @@ class Settings(BaseSettings):
         return value
 
     @property
+    def jobs_enabled(self) -> bool:
+        """Whether a runner of coding jobs is set up (main also wants a way to report)."""
+        if self.jobs_runner == "claude_code":
+            return bool(self.coder_url and self.coder_token)
+        if self.jobs_runner == "managed":
+            # Managed Agents is Anthropic's API: no other provider can run it.
+            return bool(
+                self.llm_provider == ANTHROPIC
+                and self.llm_api_key
+                and self.jobs_agent_id
+                and self.jobs_environment_id
+                and self.jobs_github_token
+            )
+        return False
+
+    @field_validator("review_repo", "review_lessons_repo")
+    @classmethod
+    def _owner_and_name(cls, value: str | None) -> str | None:
+        value = (value or "").strip() or None
+        if value is not None and (value.count("/") != 1 or value.startswith(("http", "/"))):
+            raise ValueError('a repository is written "owner/repo"')
+        return value
+
+    @property
     def drives_enabled(self) -> bool:
         return bool(self.drives and self.drive_url and self.drive_password)
 
@@ -705,6 +867,10 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        if not self.android_tv_navigator_model:
+            self.android_tv_navigator_model = (
+                DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
+            )
         if not self.drive_ocr_model:
             self.drive_ocr_model = (
                 DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
@@ -722,6 +888,12 @@ class Settings(BaseSettings):
         if int(hours) > 23 or int(minutes) > 59:
             raise ValueError('a time of day is "HH:MM", e.g. 07:30')
         return f"{int(hours):02d}:{minutes}"
+
+    @model_validator(mode="after")
+    def _hosting_is_usable(self) -> "Settings":
+        if self.hosting_provider and self.hosting_api_token is None:
+            raise ValueError(f"HOSTING_PROVIDER={self.hosting_provider} needs HOSTING_API_TOKEN")
+        return self
 
     @model_validator(mode="after")
     def _tasks_are_usable(self) -> "Settings":

@@ -8,15 +8,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Add "video" for MP4 animations (some 40 MB more): --build-arg EXTRAS=documents,video.
 # Add "subscription" for Claude on a Claude plan (docs/subscription.md; Claude Code
 # itself, some 400 MB): EXTRAS=documents,subscription.
+# "voice" transcribes the voice messages sent in a chat (docs/chat.md).
+# Add "curation" for the nightly review's lessons curated into notes (docs/review.md).
 # Empty for the smallest image: --build-arg EXTRAS= --build-arg FONT_PACKAGES=
 ARG EXTRAS=documents
 # Fonts for the PDFs and drawings the agent makes: DejaVu covers Latin with accents, Greek,
 # Cyrillic and currency signs in 3 MB. For other scripts see docs/documents.md.
 ARG FONT_PACKAGES=fonts-dejavu-core
+# Other Debian packages a feature needs: adb for the TV navigator (docs/home-devices.md).
+ARG SYSTEM_PACKAGES=
 
 WORKDIR /app
-RUN if [ -n "$FONT_PACKAGES" ]; then apt-get update \
-    && apt-get install -y --no-install-recommends $FONT_PACKAGES \
+RUN if [ -n "$FONT_PACKAGES$SYSTEM_PACKAGES" ]; then apt-get update \
+    && apt-get install -y --no-install-recommends $FONT_PACKAGES $SYSTEM_PACKAGES \
     && rm -rf /var/lib/apt/lists/*; fi
 COPY pyproject.toml README.md ./
 COPY src ./src

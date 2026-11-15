@@ -1,0 +1,41 @@
+# A WhatsApp gateway next to the agent: WAHA (github.com/devlikeapro/waha) runs WhatsApp as
+# a linked device of a number, and the agent talks to you through it. See docs/chat.md:
+# which number to link, how to pair it, and what the agent reads there.
+# Needs in .env: WAHA_API_KEY and WAHA_DASHBOARD_PASSWORD (secrets you generate) and
+# WHATSAPP_CHAT_ID (your number, as <digits>@c.us); WAHA_URL is set here.
+# On a Raspberry Pi or another ARM machine, use the image devlikeapro/waha:arm.
+services:
+  agent:
+    environment:
+      WAHA_URL: http://waha:3000
+    depends_on: [waha]
+
+  waha:
+    image: devlikeapro/waha:latest
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY:?Set WAHA_API_KEY in .env to a long random value}
+      # The dashboard, where you scan the QR code that links the number.
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:?Set WAHA_DASHBOARD_PASSWORD in .env}
+      WHATSAPP_SWAGGER_USERNAME: ${WAHA_DASHBOARD_USERNAME:-admin}
+      WHATSAPP_SWAGGER_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:?Set WAHA_DASHBOARD_PASSWORD in .env}
+      # The engine the agent's WhatsApp code was run with: it brings poll votes.
+      WHATSAPP_DEFAULT_ENGINE: ${WAHA_ENGINE:-GOWS}
+      # Sessions come back by themselves after a restart.
+      WHATSAPP_RESTART_ALL_SESSIONS: "True"
+      # Files you send in the chat are kept a few minutes, for the agent to fetch: only
+      # the kinds it reads (matched by prefix).
+      WHATSAPP_DOWNLOAD_MEDIA: "True"
+      WHATSAPP_FILES_LIFETIME: "600"
+      WHATSAPP_FILES_MIMETYPES: "audio/,text/,image/jpeg,image/png,image/webp,application/pdf,application/rtf,application/zip,application/msword,application/vnd.ms-,application/vnd.openxmlformats-officedocument.,application/vnd.oasis.opendocument.,application/x-iwork-,application/vnd.apple."
+    ports:
+      # For you only, to pair the number: http://127.0.0.1:3000/dashboard. From another
+      # machine, go through an SSH tunnel rather than opening the port.
+      - "127.0.0.1:${WAHA_PORT:-3000}:3000"
+    volumes:
+      # The link to the WhatsApp account: whoever reads this volume is that account.
+      - waha_sessions:/app/.sessions
+    restart: unless-stopped
+
+volumes:
+  waha_sessions:

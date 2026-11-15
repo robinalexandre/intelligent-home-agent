@@ -8,18 +8,26 @@ PetKit) go out directly.
 Three of them rest on unofficial libraries kept in optional extras (``petkit``,
 ``android-tv``, ``apple``): with the settings filled in but the extra missing, the device
 stays off and the log says which extra to install.
+
+The TV device's navigator (``ANDROID_TV_NAVIGATOR``, tools/tv_navigator.py) also needs the
+``adb`` program and a model to drive it: the Claude subscription when there is one, the
+provider's API otherwise. Without one of them it stays off and the log says which.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from intelligent_home_agent.config import Settings
+from intelligent_home_agent.engine import NoApi
+from intelligent_home_agent.engines import subscription_engine
+from intelligent_home_agent.llm import LLMClient
 from intelligent_home_agent.tools.base import Tool
 from intelligent_home_agent.tools.devialet import Devialet, build_devialet_tools
 from intelligent_home_agent.tools.hue import Hue, build_hue_tools
@@ -70,15 +78,55 @@ def petkit_region(settings: Settings) -> str | None:
     return settings.petkit_region or settings.home_country
 
 
+def tv_navigator(settings: Settings, tv: Any, llm: LLMClient | None) -> Any:
+    """The helper that drives the TV device's screen, or None with the reason logged: it
+    needs the adb program, and a model (the subscription first, the API otherwise)."""
+    from intelligent_home_agent.tools.adb import Adb
+    from intelligent_home_agent.tools.tv_navigator import Navigator
+
+    model = settings.android_tv_navigator_model
+    engine = subscription_engine(settings, model)
+    api = None if llm is None or isinstance(llm, NoApi) else llm
+    off = "ANDROID_TV_NAVIGATOR is on but %s. navigate_tv stays off."
+    if shutil.which("adb") is None:
+        log.warning(off, "the adb program is not installed where the agent runs")
+        return None
+    if engine is None and api is None:
+        log.warning(off, "no model can drive it: neither a Claude subscription nor an API")
+        return None
+    log.info(
+        "navigate_tv: driven by %s (%s)",
+        "the Claude subscription" + (", then the API" if api else "") if engine else "the API",
+        model,
+    )
+    adb = Adb(
+        settings.android_tv_host or "",
+        str(Path(settings.data_dir) / "android"),
+        settings.home_proxy_url or settings.ha_proxy_url,
+    )
+    return Navigator(
+        tv,
+        adb,
+        model=model,
+        # NoApi stays as the API when a subscription leads: its error says what is missing.
+        llm=llm,
+        engine=engine,
+        max_actions=settings.android_tv_navigator_actions,
+        language=settings.language,
+    )
+
+
 def build_home_device_tools(
     settings: Settings,
     home: httpx.AsyncClient | None = None,
     http: httpx.AsyncClient | None = None,
     found: dict[str, Any] | None = None,
+    llm: LLMClient | None = None,
 ) -> list[Tool]:
     """home: the client for the home network; http: the one for cloud services; found:
     receives the clients others share (petkit: one session per account, so the supplies
-    watch uses the tools' own) and those to close when the agent stops."""
+    watch uses the tools' own) and those to close when the agent stops; llm: the model's
+    API, for the TV device's navigator."""
     tools: list[Tool] = []
     language = settings.language
     proxy = settings.home_proxy_url or settings.ha_proxy_url
@@ -113,8 +161,11 @@ def build_home_device_tools(
             name=settings.android_tv_name,
         )
         tools.extend(build_android_tv_tools(tv, settings.android_tv_max_volume))
-        # Seam: reaching something inside an app (a film, an episode) needs a helper that
-        # sees the screen (tools/adb.py) and runs its own model loop; not ported yet.
+        if settings.android_tv_navigator:
+            from intelligent_home_agent.tools.tv_navigator import build_navigator_tools
+
+            navigator = tv_navigator(settings, tv, llm)
+            tools.extend(build_navigator_tools(navigator, settings.android_tv_name))
     if settings.apple_devices.strip() and has_extra("pyatv", "apple", "Apple TV and HomePods"):
         from intelligent_home_agent.tools.apple_media import (
             AppleMedia,

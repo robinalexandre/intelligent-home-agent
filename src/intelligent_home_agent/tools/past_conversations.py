@@ -62,7 +62,8 @@ def build_past_conversation_tools(journal: Journal | None) -> list[Tool]:
             day = date.fromisoformat(raw) if raw else journal.now().date()
         except ValueError as exc:
             raise ToolError("date is YYYY-MM-DD, or empty for today.") from exc
-        entries = journal.day(day)
+        # Not the review's own turns: a day read back is what the user asked.
+        entries = [e for e in journal.day(day) if e.get("display") != "review"]
         carry(ctx, entries)
         return {
             "date": day.isoformat(),

@@ -11,7 +11,7 @@ forecast tool judges it:
 
 The code watches, not the model. Every hour it reads the forecast (Open-Meteo, the same
 numbers as the tools) and, when a daylight window of at least ``min_hours`` starts within
-``lead_hours``, sends one message through the delivery seam (deliver.py), once per alert
+``lead_hours``, sends one message (main.tell_user: the chat, else a push), once per alert
 and per day of window. A wind alert can instead watch the wind measured at the spot
 (``when: now``, tools/live_wind.py), looked at every ten minutes. Nothing is sent when
 nothing fits, nor during the quiet hours. The words are the code's: numbers, compass

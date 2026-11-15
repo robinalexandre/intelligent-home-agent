@@ -117,17 +117,16 @@ For a wind sport, an alert can instead watch **the wind measured at the spot**
 ("tell me when it actually blows at North Beach"): it needs a source of measured wind
 (above), is looked at every ten minutes and speaks at most once a day.
 
-**Where they go.** Alerts leave through the same channels as the tasks' reports
-([tasks.md](tasks.md)): a push through ntfy today (`NTFY_URL`), a chat when one is
-configured. Without any, there are no alerts and the agent does not offer them. Like the
-reports, the last ones can also be fetched by a client: `GET /v1/tasks/reports`.
+**Where they go.** In your chat when one is configured (WhatsApp or Telegram,
+[chat.md](chat.md)), else as a push through ntfy (`NTFY_URL`). Without either, there are
+no alerts and the agent does not offer them.
 
 **Setting them.**
 
 - Ask: "tell me when it's good for surf", "alert me 48 hours ahead of a good day for
   hiking in Hilltown". After a request that read a mail or a web page, the alert waits
   for your yes like any write.
-- Or in `.env` (the setup script asks, when a push is configured):
+- Or in `.env` (the setup script asks, when a chat or a push is configured):
 
   ```
   ACTIVITY_ALERTS=wingfoil,cycling     # one alert per activity, at any spot / at home
@@ -139,7 +138,7 @@ reports, the last ones can also be fetched by a client: `GET /v1/tasks/reports`.
   An activity that cannot be judged (surf without a beach, a wind sport without a spot)
   gets no alert, and the log says why.
 
-**Turning one down.** A push has no button, so say it: "not today" pauses the alert
+**Turning one down.** Say it, in the chat or in your next request: "not today" pauses the alert
 until tomorrow, "stop with the surf alerts" turns it off for good (an alert from `.env`
 stays off too, until you ask for it back). "Which alerts do I have?" lists them.
 Turning one down works in any request; bringing one back waits for your yes after a read.

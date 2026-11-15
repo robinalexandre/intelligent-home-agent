@@ -240,6 +240,8 @@ those three choices.
 | Home Assistant Assist (voice satellites, the companion app on Android and watches) | yes | yes | [integrations.md](integrations.md#home-assistant-assist) |
 | Google Home, Alexa | through a Home Assistant routine | yes | [integrations.md](integrations.md) |
 | Push notifications (ntfy, any phone or desktop) | no | yes | `NTFY_URL` in `.env`, then the ntfy app |
+| WhatsApp (through a WAHA gateway you run, `compose/waha.yml`) | yes, in writing, with files and voice messages | yes, and you can answer it | [chat.md](chat.md#whatsapp) |
+| Telegram (a bot of your own) | yes, the same | yes, the same | [chat.md](chat.md#telegram) |
 | A scheduler (cron, Home Assistant, a hosted one) | n/a | yes | `POST /v1/briefing`, [integrations.md](integrations.md) |
 | Your own client | yes | yes | `POST /v1/ask` with `Authorization: Bearer <AGENT_API_TOKEN>` |
 
@@ -253,8 +255,10 @@ Optional data sources, each off until its settings are filled in:
 | Weather, outdoor activities, travel time | no account: Open-Meteo and OpenStreetMap, once the home location is set | [outdoor.md](outdoor.md): spots, measured wind, alerts |
 | GitHub pull requests | a classic token with the `repo` scope | |
 | Connectors ([connectors.md](connectors.md)) | any service with an MCP server reachable over HTTPS: your bank, your hosting provider, an accounting tool | servers that only run as a local command |
+| Servers at a hosting provider ([hosting.md](hosting.md)) | Hostinger VPS (run for real), Hetzner Cloud (written from its documentation, not run) | other providers: as a connector when they have an MCP server |
 | File drives ([drives.md](drives.md)) | anything rclone reaches: Google Drive, iCloud Drive, OneDrive, Dropbox, Box, a NAS over WebDAV, SMB or SFTP, S3 and compatibles; only iCloud Drive was run for real | a drive whose login needs a browser at every start |
 | Knowledge base ([knowledge.md](knowledge.md)) | Markdown notes in a GitHub repository, by hand or curated from your coding sessions by [claude-code-kit](https://github.com/robinalexandre/claude-code-kit) | |
+| Coding jobs ([jobs.md](jobs.md)), for people who code | Claude Code in a container of its own on your Claude subscription (`compose/coder.yml`), or Anthropic Managed Agents on the API | Off by default; the [nightly review](review.md) rests on them. |
 
 ## 6. Check, update, back up
 

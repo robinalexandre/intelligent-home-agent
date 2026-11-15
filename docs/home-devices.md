@@ -9,7 +9,7 @@ Assistant.
 |---|---|---|---|
 | Philips Hue (bridge) | home network | `HUE_BRIDGE_URL`, `HUE_APP_KEY` | `list_hue_lights`, `set_hue_lights`, `activate_hue_scene` |
 | Devialet Phantom speaker | home network | `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | `get_speaker_state`, `get_speaker_track`, `control_speaker` |
-| Google TV / Android TV (TV, projector, box) | home network | `ANDROID_TV_HOST`, `ANDROID_TV_CLIENT_CERT`, `ANDROID_TV_CLIENT_KEY` | `get_tv_state`, `control_tv` |
+| Google TV / Android TV (TV, projector, box) | home network | `ANDROID_TV_HOST`, `ANDROID_TV_CLIENT_CERT`, `ANDROID_TV_CLIENT_KEY`; `ANDROID_TV_NAVIGATOR` | `get_tv_state`, `control_tv`; `navigate_tv` |
 | Apple TV, HomePods | home network | `APPLE_DEVICES` | `get_apple_media_state`, `control_apple_media` |
 | Nuki smart lock | Nuki's cloud | `NUKI_API_TOKEN` | `get_lock_state`, `get_lock_activity`, `lock_door`, `unlock_door` |
 | Netatmo cameras, weather station, thermostat | Netatmo's cloud | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | `get_home_security_status`, `get_camera_events`, `get_netatmo_measures`, `set_camera_monitoring` |
@@ -122,9 +122,63 @@ restart the agent, delete the file. The device lists "Home agent" among its pair
   in standby can't be turned on from here.
 
 What works: on/off, opening an app, a live channel, volume, mute, play/pause/stop,
-next/previous, home, back. What doesn't: reaching something *inside* an app (a film, an
-episode). `tools/adb.py` and `scripts/android_tv_adb.py` are there for whoever builds
-that (it needs a helper that sees the screen), but no tool uses them yet.
+next/previous, home, back. Reaching something *inside* an app (a film, an episode) is
+the navigator's job, below; it is off until you set it up.
+
+### Finding and starting something inside an app (`navigate_tv`)
+
+"Put on the latest episode of that series", "start the replay of last night's match":
+the remote protocol alone can't do that, since it presses keys without seeing anything.
+With `ANDROID_TV_NAVIGATOR=true` the agent gets `navigate_tv`: it hands the goal to a
+helper model that looks at the screen (a screenshot and the names the app gives its
+elements, both read over ADB), presses the remote's keys, types in search fields, and
+stops when the goal is reached or can't be. It takes a minute or two, and at most
+`ANDROID_TV_NAVIGATOR_ACTIONS` (25) actions.
+
+Setting it up, once:
+
+1. **The `adb` program where the agent runs.** With Docker: `SYSTEM_PACKAGES=adb` in
+   `.env`, then `docker compose build`. Without: your system's package (`adb` or
+   `android-tools-adb`).
+2. **ADB on the device.** Settings > System > About, press *Build* seven times; then
+   Developer options > Wireless debugging on. Then, from where the agent runs:
+
+   ```bash
+   python scripts/android_tv_adb.py pair <pairing port> <code>   # "Pair device with pairing code"
+   python scripts/android_tv_adb.py tcpip <port>                  # the port under "IP address & Port"
+   python scripts/android_tv_adb.py check                         # prints the app in front
+   ```
+
+   In Docker: `docker compose exec -T agent python - check < scripts/android_tv_adb.py`.
+   The key stays in `DATA_DIR/android`. Android closes the port when the device
+   *restarts* (standby is not a restart): run `tcpip` again then; the pairing stays.
+3. `ANDROID_TV_NAVIGATOR=true`, and restart the agent.
+
+Which model drives it:
+
+- With a Claude subscription (`ENGINE=subscription`, [subscription.md](subscription.md))
+  it runs on the plan, and on the API only when the plan can't take it (a usage limit).
+- Otherwise it runs on your provider's API, whichever it is: the screenshots go through
+  the same client as the rest, so an OpenAI-compatible server works as long as the
+  model **reads pictures and calls tools**. A text-only model would press keys blind.
+- `ANDROID_TV_NAVIGATOR_MODEL` picks the model. Empty, it is a small Claude model with
+  Anthropic (fast and cheap is what this job wants: one request per key press or so),
+  and `LLM_MODEL` with any other provider.
+- If `adb` is missing, or there is neither a subscription nor an API, `navigate_tv`
+  stays off and the log says why at startup.
+
+What it may and may not do: the helper only has the remote's keys, text entry, opening
+one of the device's apps, and looking. It is told never to buy, rent or sign in, and to
+stop when a screen asks for that; that is an instruction to a model, not a lock, so keep
+purchases behind a PIN on the device, as you would for a child. What apps show is text
+written by others: the helper's report taints the request like a web page would, and
+`navigate_tv` itself is an action, so after a read it waits for your yes. A blank
+screenshot in a video app means a protected video is playing, which the helper takes
+as success when playing was the goal.
+
+What was run for real: this helper was used on one Google TV projector, on the Claude
+subscription with the Anthropic API as fallback, before it was published here. Other
+providers' models go through the same loop but were not tried on a real screen.
 
 ## Apple TV and HomePods
 
