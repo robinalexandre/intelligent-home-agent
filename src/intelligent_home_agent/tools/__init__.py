@@ -142,6 +142,11 @@ from intelligent_home_agent.tools.assistant_notes import (  # noqa: E402
     RepoFolder,
     build_assistant_note_tools,
 )
+from intelligent_home_agent.tools.hosting import (  # noqa: E402
+    HostingApi,
+    build_hosting_provider,
+    build_hosting_tools,
+)
 from intelligent_home_agent.tools.repos import Repositories, build_repository_tools  # noqa: E402
 from intelligent_home_agent.tools.scheduled_tasks import build_task_tools  # noqa: E402
 from intelligent_home_agent.tools.vulnerabilities import (  # noqa: E402
@@ -159,4 +164,7 @@ __all__ += [
     "build_repository_tools",
     "build_task_tools",
     "build_vulnerability_tools",
+    "HostingApi",
+    "build_hosting_provider",
+    "build_hosting_tools",
 ]

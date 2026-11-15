@@ -255,6 +255,7 @@ Optional data sources, each off until its settings are filled in:
 | Weather, outdoor activities, travel time | no account: Open-Meteo and OpenStreetMap, once the home location is set | |
 | GitHub pull requests | a classic token with the `repo` scope | |
 | Connectors ([connectors.md](connectors.md)) | any service with an MCP server reachable over HTTPS: your bank, your hosting provider, an accounting tool | servers that only run as a local command |
+| Servers at a hosting provider ([hosting.md](hosting.md)) | Hostinger VPS (run for real), Hetzner Cloud (written from its documentation, not run) | other providers: as a connector when they have an MCP server |
 | File drives ([drives.md](drives.md)) | anything rclone reaches: Google Drive, iCloud Drive, OneDrive, Dropbox, Box, a NAS over WebDAV, SMB or SFTP, S3 and compatibles; only iCloud Drive was run for real | a drive whose login needs a browser at every start |
 | Knowledge base ([knowledge.md](knowledge.md)) | Markdown notes in a GitHub repository, by hand or curated from your coding sessions by [claude-code-kit](https://github.com/robinalexandre/claude-code-kit) | |
 

@@ -163,6 +163,7 @@ SECRET_KEYS = {
     "HUE_APP_KEY",
     "NUKI_API_TOKEN",
     "PETKIT_PASSWORD",
+    "HOSTING_API_TOKEN",
     "LLM_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "HA_TOKEN",
@@ -683,6 +684,12 @@ DEVICES = {
     "apple": "an Apple TV, HomePods",
     "withings": "a Withings scale (weigh-ins, read-only)",
     "icloud": "Apple Reminders, Notes and Find My, through your iCloud account",
+    "hosting": "your servers at a hosting provider (state, metrics, restarts on your yes)",
+}
+# The providers tools/hosting.py speaks to; any other with an MCP server is a connector.
+HOSTING = {
+    "hostinger": "Hostinger VPS, with their Docker projects (token: hPanel > API)",
+    "hetzner": "Hetzner Cloud (token: Cloud Console > the project > Security > API tokens)",
 }
 DEVICE_STEPS = {
     "petkit": 'install the library: pip install ".[petkit]" (Docker: docs/home-devices.md)',
@@ -709,8 +716,8 @@ def add_extra(env: dict[str, str], name: str) -> None:
 def ask_devices(p: Prompter, env: dict[str, str], *, docker: bool = True) -> None:
     p.say("\n# More of the home, without Home Assistant (docs/home-devices.md, docs/health.md)")
     if not p.yes(
-        "Set up a lock, cameras, a pet feeder, a TV, Apple devices, a scale, or Apple "
-        "Reminders, Notes and Find My?",
+        "Set up a lock, cameras, a pet feeder, a TV, Apple devices, a scale, Apple "
+        "Reminders, Notes and Find My, or your servers at a hosting provider?",
         False,
     ):
         return
@@ -740,6 +747,14 @@ def ask_devices(p: Prompter, env: dict[str, str], *, docker: bool = True) -> Non
                 add_extra(env, "icloud")
         else:
             picked.remove("icloud")
+    if "hosting" in picked:
+        provider = p.pick("  Hosting provider", HOSTING, "hostinger")
+        if token := p.secret("  Its API token (docs/hosting.md)"):
+            env["HOSTING_PROVIDER"] = provider
+            env["HOSTING_API_TOKEN"] = token
+        else:
+            p.say("  No token: add HOSTING_PROVIDER and HOSTING_API_TOKEN to .env later.")
+        p.say("  Another provider with an MCP server: MCP_SERVERS (docs/connectors.md).")
     steps = [(name, DEVICE_STEPS[name]) for name in picked if name in DEVICE_STEPS]
     if steps:
         p.say("  Once .env is written:")
@@ -1033,6 +1048,7 @@ GROUPS = [
         ],
     ),
     ("GitHub", ["GITHUB_TOKEN", "GITHUB_REPOSITORIES", "NOTES_REPO", "NOTES_WRITE"]),
+    ("Servers at a hosting provider", ["HOSTING_PROVIDER", "HOSTING_API_TOKEN"]),
     (
         "Documents and pictures",
         [

@@ -28,6 +28,11 @@ ALL_TOOLS = {
     "browse_repository",
     "search_repository",
     "check_dependencies",
+    "list_servers",
+    "list_server_projects",
+    "get_server_project_logs",
+    "restart_server",
+    "deploy_server_project",
     "schedule_task",
     "list_scheduled_tasks",
     "update_scheduled_task",
@@ -288,6 +293,21 @@ def test_reminders_come_from_icloud_when_it_is_set_up_else_from_the_phone():
     assert "create_reminder puts it on the user's phone" in phone
     assert "reminders from phone_context" in phone
     assert "get_reminders" not in phone and "Find My" not in phone
+
+
+def test_servers_are_explained_with_what_the_provider_can_do():
+    without = prompt(tools=ALL_TOOLS - {"list_servers"})
+    assert "hosting provider" not in without
+    text = prompt(tools=set(ALL_TOOLS))
+    assert "list_servers, then the tools" in text and "Docker projects" in text
+    assert "Actions (restart, snapshot, deploy) only on the user's clear request" in text
+    assert "your servers" in text.split("Untrusted content")[1]
+    plain = prompt(
+        tools=ALL_TOOLS
+        - {"list_server_projects", "get_server_project_logs", "deploy_server_project"}
+    )
+    assert "Docker" not in plain.split("hosting provider")[1].split("\n- ")[0]
+    assert "Actions (restart, snapshot) only" in plain
 
 
 def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():

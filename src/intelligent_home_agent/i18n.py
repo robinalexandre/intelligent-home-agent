@@ -204,6 +204,15 @@ class Strings:
     # The titles of the briefing and the recap when they run by themselves (tasks.py).
     morning_briefing_title: str
     evening_recap_title: str
+    # The user's servers at a hosting provider (tools/hosting.py): an action as the user
+    # reads it before giving their go, and what a compose file asks for that gives a
+    # container power over the host.
+    hosting_server_summary: str
+    hosting_project_summary: str
+    hosting_actions: dict[str, str]
+    hosting_deploy_summary: str
+    hosting_deploy_warning: str
+    hosting_risky: dict[str, str]
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -402,6 +411,28 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix='Pause the HomePod "{name}"',
         departure_player_playing='🔊 "{name}" is still playing.',
         departure_player_fix='Pause "{name}"',
+        hosting_server_summary="{provider}: {what} on the server {server}",
+        hosting_project_summary="{provider}: {what} “{project}” on the server {server}",
+        hosting_actions={
+            "restart_project": "restart",
+            "start_project": "start",
+            "stop_project": "stop",
+            "update_project": "update (pull and recreate)",
+            "restart_server": "restart the whole server",
+            "snapshot_replacing": "take a snapshot (it replaces the previous one)",
+            "snapshot_kept": "take a snapshot (kept, and billed, until you delete it)",
+            "deploy_project": "deploy the Docker project",
+        },
+        hosting_deploy_summary="{head};{warning} compose: {compose}",
+        hosting_deploy_warning=" ⚠️ {risks};",
+        hosting_risky={
+            "privileged": "privileged",
+            "host_network": "the host's network",
+            "host_pid": "the host's processes",
+            "cap_add": "added capabilities",
+            "docker_socket": "the Docker socket",
+            "host_folder": "a folder of the host mounted",
+        },
     ),
     "fr": Strings(
         name="French",
@@ -607,6 +638,28 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix="Mettre le HomePod « {name} » en pause",
         departure_player_playing="🔊 « {name} » joue encore.",
         departure_player_fix="Mettre « {name} » en pause",
+        hosting_server_summary="{provider} : {what} sur le serveur {server}",
+        hosting_project_summary="{provider} : {what} « {project} » sur le serveur {server}",
+        hosting_actions={
+            "restart_project": "redémarrer",
+            "start_project": "démarrer",
+            "stop_project": "arrêter",
+            "update_project": "mettre à jour (pull et recréer)",
+            "restart_server": "redémarrer tout le serveur",
+            "snapshot_replacing": "prendre un snapshot (remplace le précédent)",
+            "snapshot_kept": "prendre un snapshot (gardé, et facturé, jusqu'à sa suppression)",
+            "deploy_project": "déployer le projet Docker",
+        },
+        hosting_deploy_summary="{head} ;{warning} compose : {compose}",
+        hosting_deploy_warning=" ⚠️ {risks} ;",
+        hosting_risky={
+            "privileged": "privileged",
+            "host_network": "réseau de l'hôte",
+            "host_pid": "processus de l'hôte",
+            "cap_add": "capacités ajoutées",
+            "docker_socket": "socket Docker",
+            "host_folder": "dossier de l'hôte monté",
+        },
     ),
 }
 

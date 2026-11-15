@@ -280,6 +280,28 @@ def test_apple_reminders_notes_and_find_my_are_one_of_the_other_devices():
     assert env == {} and "icloud_web" not in "\n".join(printed)
 
 
+def test_servers_at_a_hosting_provider_are_one_of_the_other_services():
+    printed = []
+    read, queue = scripted(["y", "hosting", "hetzner"])
+    env = {}
+    setup.ask_devices(setup.Prompter(read, lambda _: "api-secret", printed.append), env)
+    assert queue == []
+    assert env == {"HOSTING_PROVIDER": "hetzner", "HOSTING_API_TOKEN": "api-secret"}
+    assert "HOSTING_API_TOKEN" in setup.SECRET_KEYS
+    assert "HOSTING_PROVIDER=hetzner" in setup.render(env)
+    assert "api-secret" not in "\n".join(printed) and "docs/connectors.md" in "\n".join(printed)
+
+    # No token: a provider alone would keep the agent from starting, so nothing is set.
+    read, _ = scripted(["y", "hosting", ""])
+    env = {}
+    setup.ask_devices(setup.Prompter(read, lambda _: "", printed.append), env)
+    assert env == {}
+
+    from intelligent_home_agent.tools.hosting import PROVIDERS
+
+    assert set(setup.HOSTING) == set(PROVIDERS)
+
+
 def test_the_remote_browser_gets_a_login_page_on_a_domain_and_the_tailnet_alone_otherwise():
     printed = []
 

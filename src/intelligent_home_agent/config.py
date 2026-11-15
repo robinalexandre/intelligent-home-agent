@@ -431,6 +431,12 @@ class Settings(BaseSettings):
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
 
+    # --- The user's servers at a hosting provider (docs/hosting.md) --------------------
+    # The provider and an API token made in its console. Empty: no tool. For a provider
+    # that is not listed but has an MCP server, see MCP_SERVERS above.
+    hosting_provider: Literal["", "hostinger", "hetzner"] = ""
+    hosting_api_token: SecretStr | None = None
+
     # --- Documents, PDFs and pictures (docs/documents.md) ------------------------------
     # The files of the conversation listed and opened, PDFs written, forms filled, pages
     # copied, drawings rendered. Nothing leaves the machine. What needs the "documents"
@@ -728,6 +734,12 @@ class Settings(BaseSettings):
         if int(hours) > 23 or int(minutes) > 59:
             raise ValueError('a time of day is "HH:MM", e.g. 07:30')
         return f"{int(hours):02d}:{minutes}"
+
+    @model_validator(mode="after")
+    def _hosting_is_usable(self) -> "Settings":
+        if self.hosting_provider and self.hosting_api_token is None:
+            raise ValueError(f"HOSTING_PROVIDER={self.hosting_provider} needs HOSTING_API_TOKEN")
+        return self
 
     @model_validator(mode="after")
     def _tasks_are_usable(self) -> "Settings":

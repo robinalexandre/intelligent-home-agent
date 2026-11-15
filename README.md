@@ -55,6 +55,9 @@ spoken morning briefing and evening recap.
     GitHub repository of yours, notes for your coding sessions (reminders, handoff
     notes), your repositories read-only, and the known flaws in their dependencies
     ([docs/tasks.md](docs/tasks.md)).
+  - Your servers at a hosting provider (Hostinger, Hetzner Cloud): state, metrics,
+    backups, Docker projects and their logs; a restart, a snapshot or a deployment on
+    your yes ([docs/hosting.md](docs/hosting.md)).
   - Connectors: any service that has an MCP server, such as your bank or your hosting
     provider, read freely and changed only on your yes
     ([docs/connectors.md](docs/connectors.md)).
@@ -186,6 +189,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need a chat channel or `NTFY_URL`. |
 | `TASKS_PATH`, `TASKS_POLL_SECONDS` | `tasks`, `60` | The folder (in a repository: `<assistant>/tasks`) and how often it is checked. |
 | `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT` | unset | Send the briefing and the recap every day at that time (`07:30`). |
+| `HOSTING_PROVIDER`, `HOSTING_API_TOKEN` | unset | Your servers at `hostinger` or `hetzner`: read freely, restarted, snapshotted or deployed to on your yes ([docs/hosting.md](docs/hosting.md)). |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
 | `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR` | `true`, `auto`, DejaVu | PDFs, forms and drawings ([docs/documents.md](docs/documents.md)); paper `a4`, `letter` or by country; a folder of fonts. |
 | `EXERCISE_PHOTOS_ENABLED` | `false` | Exercise photos from a public-domain bank. |
@@ -346,6 +350,12 @@ The guardrails are enforced in code, not only in the prompt.
   Facts are given to the model as data, not instructions, and are among what a web search
   query may not repeat. Saved chats and files are written readable by the agent's user
   only.
+- **Servers**: the provider's token often opens the whole account, so the agent only
+  calls a fixed list of paths (servers, metrics, backups, firewalls, Docker projects).
+  What it reads there (logs, configs) taints the request. A restart or a snapshot runs
+  only on your own clear request and waits for your go after any read; a deployment
+  always waits, shown with its whole compose file and a warning for settings that give
+  a container power over the host. None of it runs from a scheduled task.
 - **Connectors**: reading from a connected service taints the request like an email. A
   write never runs when asked, even in a clean request: it waits for your go as above,
   shown with its exact arguments; with `writes: off` the write tools don't exist.

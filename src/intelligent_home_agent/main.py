@@ -148,6 +148,7 @@ from intelligent_home_agent.tools.generation import (
     build_generation_tools,
 )
 from intelligent_home_agent.tools.github import API_URL
+from intelligent_home_agent.tools.hosting import build_hosting_provider, build_hosting_tools
 from intelligent_home_agent.tools.illustrations import build_illustration_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mcp_client import (
@@ -394,6 +395,11 @@ def build_registry(
                 margin_minutes=settings.travel_margin_minutes,
             )
         )
+    if settings.hosting_provider and settings.hosting_api_token:
+        hosting = build_hosting_provider(
+            settings.hosting_provider, settings.hosting_api_token.get_secret_value(), http
+        )
+        registry.extend(build_hosting_tools(hosting, settings.language))
     if settings.github_token:
         token = settings.github_token.get_secret_value()
         registry.extend(build_github_tools(GitHub(http, token)))

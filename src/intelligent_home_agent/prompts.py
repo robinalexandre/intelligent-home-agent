@@ -103,6 +103,8 @@ _PRIVATE_SOURCES = {
     "browse_repository": "your repositories",
     "search_repository": "your repositories",
     "check_dependencies": "your repositories",
+    "list_servers": "your servers",
+    "get_server_project_logs": "your servers",
     "list_deliveries": "the parcels noted from emails",
     "read_drive_file": "files of a drive",
     "read_saved_file": "kept files",
@@ -638,6 +640,21 @@ def _notes_and_tasks(t: set[str] | frozenset[str]) -> list[str]:
             "one, is the default: look there first for anything about their work, projects, "
             "servers, tools or plans before saying you don't know. Start from a folder "
             "listing and open only the files you need."
+        )
+    if "list_servers" in t:
+        projects = (
+            " and Docker projects (list_server_projects, then its config, containers, logs)"
+            if "list_server_projects" in t
+            else ""
+        )
+        deploy = ", deploy" if "deploy_server_project" in t else ""
+        lines.append(
+            "- The user's servers at their hosting provider: list_servers, then the tools "
+            f"that take its server_id read state, metrics, backups and firewalls{projects}. "
+            f"Actions (restart, snapshot{deploy}) only on the user's clear request, "
+            "otherwise ask first; touch only the server and the project they named. If you "
+            "run on that server yourself, say that restarting it (or your own project) "
+            "restarts you."
         )
     if "check_dependencies" in t:
         search = (
