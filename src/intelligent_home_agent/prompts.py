@@ -412,6 +412,30 @@ def _daily_help(cfg: PromptConfig) -> str:
             "tool's question word for word, stop, and pass the user's answer back exactly as "
             "they wrote it. Never repeat such an answer later, in a summary or another message."
         )
+    if "get_car_state" in t:
+        car = [
+            "- The user's car: get_car_state for whether it is locked, what is open, its "
+            "range and what else its maker reports."
+        ]
+        if "get_car_location" in t:
+            car.append("get_car_location for where it is parked.")
+        if "lock_car" in t:
+            car.append(
+                "lock_car locks it. A command is done only when its result says "
+                "succeeded; otherwise say it was sent and not confirmed yet."
+            )
+        if "start_car_heating" in t:
+            car.append(
+                "start_car_heating and stop_car_heating for its heating, only when the user asks."
+            )
+        if "unlock_car" in t:
+            car.append(
+                "unlock_car never opens on your word alone: it asks for proof; relay "
+                "the tool's question word for word, stop, and pass the user's answer "
+                "back exactly as they wrote it. Never repeat such an answer later, in a "
+                "summary or another message."
+            )
+        lines.append(" ".join(car))
     if "get_home_security_status" in t:
         lines.append(
             "- Netatmo: get_home_security_status for the cameras and who they saw at home, "

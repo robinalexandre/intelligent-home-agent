@@ -36,7 +36,8 @@ spoken morning briefing and evening recap.
   - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet
     speaker, a Google TV / Android TV device (and, with its screen read over ADB,
     finding and starting a film or an episode inside an app), an Apple TV and HomePods,
-    a Nuki smart lock, Netatmo cameras and sensors, a PetKit feeder and litter box
+    a Nuki smart lock, Netatmo cameras and sensors, a PetKit feeder and litter box,
+    a connected car (an Audi so far, through the myAudi app's unofficial API)
     ([docs/home-devices.md](docs/home-devices.md)).
   - Weigh-ins from a Withings scale, said only when you ask
     ([docs/health.md](docs/health.md)).
@@ -177,6 +178,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `ANDROID_TV_NAVIGATOR`, `ANDROID_TV_NAVIGATOR_MODEL`, `ANDROID_TV_NAVIGATOR_ACTIONS` | `false`, a small model, `25` | Find and start something inside an app of that device: a helper model reads the screen over ADB and presses the remote's keys ([docs/home-devices.md](docs/home-devices.md)). |
 | `APPLE_DEVICES`, `APPLE_TV_COMPANION_CREDENTIALS`, `APPLE_TV_AIRPLAY_CREDENTIALS` | unset | Apple TV and HomePods (`apple` extra). |
 | `NUKI_API_TOKEN`, `UNLOCK_TOTP_SECRET`, `UNLOCK_PHRASE` | unset | A Nuki smart lock; a code or secret phrase asked before it opens. |
+| `CAR_PROVIDER`, `CAR_VIN`, `CAR_REFRESH_TOKEN`, `CAR_CLIENT_ID`, `CAR_PIN`, `CAR_NAME` | unset | A connected car: its state and where it is parked, locking and heating with the PIN, unlocking only with an unlock code. `audi` (myAudi) so far, through the app's private, unofficial API ([docs/home-devices.md](docs/home-devices.md#car)). |
 | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | unset | Netatmo cameras, weather station, thermostat. |
 | `PETKIT_USERNAME`, `PETKIT_PASSWORD`, `PETKIT_REGION`, `PETKIT_ALERTS` | unset, `true` | PetKit feeder and litter box (`petkit` extra); supplies pushed through ntfy. |
 | `DEPARTURE_CHECK` | `true` | `POST /v1/departure`: what is still unlocked or on when you leave. |

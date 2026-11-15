@@ -13,6 +13,7 @@ Assistant.
 | Apple TV, HomePods | home network | `APPLE_DEVICES` | `get_apple_media_state`, `control_apple_media` |
 | Nuki smart lock | Nuki's cloud | `NUKI_API_TOKEN` | `get_lock_state`, `get_lock_activity`, `lock_door`, `unlock_door` |
 | Netatmo cameras, weather station, thermostat | Netatmo's cloud | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | `get_home_security_status`, `get_camera_events`, `get_netatmo_measures`, `set_camera_monitoring` |
+| A connected car (Audi so far) | the maker's cloud, unofficial API | `CAR_PROVIDER`, `CAR_VIN`, `CAR_REFRESH_TOKEN`, `CAR_CLIENT_ID`, `CAR_PIN`, `CAR_NAME` | `get_car_state`, `get_car_location`, `lock_car`, `unlock_car`, `start_car_heating`, `stop_car_heating` |
 | PetKit feeder, litter box | PetKit's cloud | `PETKIT_USERNAME`, `PETKIT_PASSWORD`, `PETKIT_REGION` | `get_pet_devices_status`, `feed_pet_now`, `clean_litter_box_now` |
 
 `python scripts/setup.py` asks about the lock and the pet devices and names the script to
@@ -220,8 +221,8 @@ Only smart locks are driven; an Opener or a Box is listed but never acted on.
 
 ### Unlock codes
 
-So that opening the door asks for proof only you have, and no injected message can open
-it: either the 6-digit code of an authenticator app, or the letters of a secret phrase at
+So that opening the door, or the [car](#car), asks for proof only you have, and no
+injected message can open it: either the 6-digit code of an authenticator app, or the letters of a secret phrase at
 3 positions the agent draws at random (valid 5 minutes, once).
 
 ```bash
@@ -235,6 +236,81 @@ spaces, accents or punctuation), and writes `UNLOCK_TOTP_SECRET` and `UNLOCK_PHR
 file to add to `.env`. Either one alone is fine (`--totp` or `--phrase`). Each code works
 once; 5 wrong answers in a row block opening for 15 minutes. With a phrase, every answer
 shows 3 of its letters in the conversation: change it now and then (`--phrase` alone).
+
+## Car
+
+`CAR_PROVIDER` names the make of your connected car; the agent then reads it and, when you
+allow it, acts on it through the maker's cloud. The tools are the same whatever the make:
+
+- `get_car_state`: locked or not, open doors and windows, range, fuel or battery level,
+  mileage, and what else the maker reports, with when the car last reported.
+- `get_car_location`: where it is parked, with a map link. Nothing while it is driven.
+- `lock_car`, `start_car_heating` (10 to 60 minutes on an Audi, 30 by default) and
+  `stop_car_heating`: with the maker's PIN (`CAR_PIN`). They wait up to a minute for the
+  car to confirm, and the agent says "done" only once the maker confirms the car carried
+  it out; otherwise it says the command was sent and not confirmed yet.
+- `unlock_car`: only with [unlock codes](#unlock-codes) set, and only on your code or the
+  letters of your phrase, every time. Without unlock codes the tool does not exist. It
+  is never left waiting for a yes: after the agent read anything written by others, it is
+  refused.
+
+`CAR_NAME` is how you call the car ("the Audi"); empty, it is "the car".
+
+### Audi (myAudi): an unofficial API
+
+Audi is the only make so far. **Audi publishes no API for this.** The agent uses the
+private one the myAudi app talks to (CARIAD's), as community projects such as the
+`audi_connect_ha` integration worked it out. That means:
+
+- it is unofficial and unsupported: Audi can change it or close it at any update of its
+  app, and the car's tools then stop working until the code follows;
+- using it may not be allowed by the terms of your myAudi account: read them, and turn
+  this on only if you accept that. It is off by default;
+- it was ported from a setup where it runs on one car and one account; nothing here was
+  run against other models or markets.
+
+To connect, on a computer with a browser (not the server):
+
+```bash
+python scripts/audi_login.py --country GB    # the country of your myAudi account
+```
+
+It opens Audi's web login (two-factor included), catches the answer on
+`http://localhost:8080` (the address the myAudi client is registered with, so the port is
+fixed), reads the car once, and writes `CAR_PROVIDER=audi`, `CAR_REFRESH_TOKEN`,
+`CAR_CLIENT_ID` and `CAR_VIN` to `car-credentials.env` without showing them. Add those
+lines to `.env`, delete the file, and restart the agent. Audi rotates the refresh token on
+each use: the live one is kept in `DATA_DIR/car.json`, and a new login replaces it. When
+Audi refuses the saved login, the tools say to run the script again.
+
+- `CAR_PIN` is the myAudi S-PIN (the security PIN you chose in the app). Without it the
+  agent only reads; with it, it can lock and drive the auxiliary heater, which burns fuel
+  and exists only on cars whose myAudi services list it (`services` in `get_car_state`).
+- Sign in with the myAudi account the car is on (the app shows it under Profile): a
+  browser that remembers another account signs into it silently, and Audi then refuses
+  every read of the car.
+- The account's list of cars can come back empty even on the right account: the script
+  then asks for the VIN, which is all the agent needs.
+
+### Another make
+
+There is no second provider yet: none was written, rather than ship one that was never
+run against a car. A maker that publishes a documented API for owners or developers (some
+do; check yours) is the better base for the next one, as nothing then rests on an app's
+private API. Two ways to add yours:
+
+- If your car is in Home Assistant (many makes have an integration there), the agent
+  already reaches it through Home Assistant, with the same rules for what acts.
+- Otherwise a make is one module beside `tools/audi.py`: a class that subclasses `Car`
+  (`tools/car.py`), sets `vendor`, says in `can()` which of `location`, `lock`, `unlock`
+  and `heating` this car and account allow, and writes `state()` (with the keys `Car`
+  documents: `locked`, `open_doors`, `range_km`, `battery_percent`...), and the methods
+  it can serve. A command returns `SUCCEEDED` only when the maker confirmed the car did
+  it, `PENDING` or `SENT` otherwise. Add it to `providers()` in `tools/car.py`, to the
+  `CAR_PROVIDER` values in `config.py`, and a login script if it needs one. The tools,
+  their rules (what waits for your go, the proof before unlocking, the location kept
+  from the web) and their wording come by themselves; `tests/test_car.py` shows a fake
+  make in a few lines.
 
 ## Netatmo (cameras, weather station, thermostat)
 
@@ -327,6 +403,9 @@ instance). `DEPARTURE_CHECK=false` turns the endpoint off.
   instead, so a message can't switch your lights or lock you out.
 - Opening a door needs your code or your yes, every time (see Nuki above). Turning a
   camera's monitoring off always needs your yes.
+- Unlocking the car needs your code, every time, and is never left waiting; locking
+  it and its heating wait for your go after a read. Where it is parked is your own
+  data, kept from the web like the rest.
 - What these accounts report (who came in, what the cameras saw, the pet's day) is your
   own data: after reading it, a web search in the same request waits for your go.
 - The track a speaker plays is written by whoever streams: reading it counts as reading

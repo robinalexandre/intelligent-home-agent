@@ -77,7 +77,7 @@ src/intelligent_home_agent/
   notify.py         ntfy push
   shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,
-                    Apple TV and HomePods, Nuki, Netatmo, PetKit), each on with its
+                    Apple TV and HomePods, Nuki, Netatmo, PetKit, a car), each on with its
                     settings; unofficial libraries are optional extras
   departure.py      POST /v1/departure: what is still unlocked or on, fixes parked
   pet_alerts.py     the pet supplies watched and pushed through ntfy

@@ -145,6 +145,11 @@ class Strings:
     # Home devices (docs/home-devices.md): how a parked action reads.
     lock_door_summary: str
     unlock_door_summary: str
+    # The car (tools/car.py).
+    car_default_name: str
+    car_lock_summary: str
+    car_heating_start_summary: str
+    car_heating_stop_summary: str
     unlatch_door_summary: str
     camera_on_summary: str
     camera_off_summary: str
@@ -416,6 +421,10 @@ LANGUAGES: dict[str, Strings] = {
         evening_recap_title="Evening recap",
         lock_door_summary='Lock the door "{name}" (Nuki)',
         unlock_door_summary='Unlock the door "{name}" (Nuki)',
+        car_default_name="the car",
+        car_lock_summary="Lock {name}",
+        car_heating_start_summary="Start the heating of {name} for {minutes} min",
+        car_heating_stop_summary="Stop the heating of {name}",
         unlatch_door_summary='Open the door "{name}": unlock it and pull the latch (Nuki)',
         camera_on_summary=(
             "Netatmo: turn on monitoring of the camera {camera}; it detects and records "
@@ -707,6 +716,10 @@ LANGUAGES: dict[str, Strings] = {
         evening_recap_title="Récap du soir",
         lock_door_summary="Verrouiller la porte « {name} » (Nuki)",
         unlock_door_summary="Déverrouiller la porte « {name} » (Nuki)",
+        car_default_name="la voiture",
+        car_lock_summary="Verrouiller {name}",
+        car_heating_start_summary="Allumer le chauffage de {name} pendant {minutes} min",
+        car_heating_stop_summary="Arrêter le chauffage de {name}",
         unlatch_door_summary="Ouvrir la porte « {name} » : déverrouiller et tirer le pêne (Nuki)",
         camera_on_summary=(
             "Netatmo : activer la surveillance de la caméra {camera} ; elle détecte et "

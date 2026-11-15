@@ -875,6 +875,12 @@ def test_home_and_health_tools_come_with_their_settings(monkeypatch, tmp_path):
     off = {
         "get_lock_state",
         "unlock_door",
+        "get_car_state",
+        "get_car_location",
+        "lock_car",
+        "unlock_car",
+        "start_car_heating",
+        "stop_car_heating",
         "get_home_security_status",
         "get_pet_devices_status",
         "get_tv_state",

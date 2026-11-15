@@ -98,6 +98,11 @@ ALL_TOOLS = {
     "navigate_tv",
     "control_apple_media",
     "lock_door",
+    "get_car_state",
+    "get_car_location",
+    "lock_car",
+    "unlock_car",
+    "start_car_heating",
     "get_home_security_status",
     "get_pet_devices_status",
     "get_body_measurements",
@@ -387,3 +392,15 @@ def test_coding_jobs_are_only_named_when_their_tools_exist():
     gone = {"start_job", "list_jobs", "allow_coder_permission", "list_coder_sessions"}
     without = prompt(tools=ALL_TOOLS - gone)
     assert "start_job" not in without and "coder" not in without
+
+
+def test_the_car_is_named_by_what_it_can_do():
+    text = prompt()
+    assert "get_car_state for whether it is locked" in text
+    assert "unlock_car never opens on your word alone" in text
+    assert "only when its result says succeeded" in text
+    reads = prompt(tools=ALL_TOOLS - {"lock_car", "unlock_car", "start_car_heating"})
+    assert "get_car_location" in reads
+    assert "lock_car" not in reads and "unlock_car" not in reads and "heating" not in reads
+    car = {"get_car_state", "get_car_location", "lock_car", "unlock_car", "start_car_heating"}
+    assert "The user's car" not in prompt(tools=ALL_TOOLS - car)
