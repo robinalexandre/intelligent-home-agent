@@ -119,7 +119,8 @@ For a wind sport, an alert can instead watch **the wind measured at the spot**
 
 **Where they go.** Alerts leave through the same channels as the tasks' reports
 ([tasks.md](tasks.md)): a push through ntfy today (`NTFY_URL`), a chat when one is
-configured. Without any, there are no alerts and the agent does not offer them.
+configured. Without any, there are no alerts and the agent does not offer them. Like the
+reports, the last ones can also be fetched by a client: `GET /v1/tasks/reports`.
 
 **Setting them.**
 

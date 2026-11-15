@@ -306,7 +306,10 @@ class ActivityAlerts:
         for key in activities:
             if any(a.from_settings and a.activity == key for a in self.alerts):
                 continue
-            if problem := self.can_watch(CATALOG[key]):
+            problem = self.can_watch(CATALOG[key])
+            if CATALOG[key].kind == "weather" and self.conditions.home() is None:
+                problem = "The home location is not configured (HOME_LATITUDE, HOME_LONGITUDE)."
+            if problem:
                 log.warning("No alert for %s: %s", key, problem)
                 continue
             self.alerts.append(
