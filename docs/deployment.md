@@ -99,6 +99,9 @@ volumes:
 - Web search: only the query, in a separate model request.
 - GitHub: fixed search queries, and the reminders folder of the repo you configured.
 - ntfy: the briefing text, if you enable push.
+- Connectors: what the agent asks each service you listed in `MCP_SERVERS`.
+- Web search with a search engine: the query goes to the engine you chose, and the results
+  to your model.
 
 ## Later: packaging as a Home Assistant add-on
 

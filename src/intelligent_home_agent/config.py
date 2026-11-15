@@ -63,6 +63,41 @@ class MailAccount(BaseModel):
     mailbox: str = "INBOX"
 
 
+class McpServer(BaseModel):
+    """A remote MCP server the agent may use (docs/connectors.md)."""
+
+    # Short name in the agent's tool names: "bank" gives bank_help, bank_read, bank_write.
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,19}$")
+    # What the user calls it, e.g. the bank's name; the name when empty.
+    label: str = ""
+    url: str
+    # How to log in: a fixed token; OAuth client credentials (client_id, client_secret,
+    # token_url); or an OAuth refresh token from scripts/mcp_login.py (client_id,
+    # refresh_token, token_url). Nothing set: no login.
+    token: SecretStr | None = None
+    token_url: str | None = None
+    client_id: str | None = None
+    client_secret: SecretStr | None = None
+    refresh_token: SecretStr | None = None
+    resource: str | None = None
+    scope: str | None = None
+    # off: the agent only reads. confirm: a write waits for the user's yes, shown whole.
+    writes: Literal["off", "confirm"] = "off"
+    # Server tools that only read, though the server doesn't flag them read-only.
+    read_tools: list[str] = []
+
+    @model_validator(mode="after")
+    def _login_is_whole(self) -> "McpServer":
+        if not self.url.startswith(("https://", "http://")):
+            raise ValueError(f"{self.name}: url must start with https:// or http://")
+        if self.token is None and (self.client_id or self.refresh_token or self.client_secret):
+            if not (self.client_id and self.token_url):
+                raise ValueError(f"{self.name}: an OAuth login needs client_id and token_url")
+            if self.refresh_token is None and self.client_secret is None:
+                raise ValueError(f"{self.name}: set client_secret or refresh_token")
+        return self
+
+
 class Settings(BaseSettings):
     # Empty values (HOME_LATITUDE=) mean "not set", as in .env.example.
     model_config = SettingsConfigDict(
@@ -193,6 +228,11 @@ class Settings(BaseSettings):
     assistant_reminders_repo: str | None = None
     assistant_reminders_path: str = "reminders"
 
+    # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
+    mcp_servers: list[McpServer] = []
+    # Where the agent keeps what must survive a restart (a rotated login); a volume in Docker.
+    data_dir: str = "data"
+
     # --- Knowledge base (the kb container of compose/kb.yml, docs/knowledge.md) --------
     kb_url: str | None = None
     kb_token: SecretStr | None = None
@@ -241,6 +281,14 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @field_validator("mcp_servers")
+    @classmethod
+    def _distinct_connectors(cls, value: list[McpServer]) -> list[McpServer]:
+        names = [server.name for server in value]
+        if len(set(names)) != len(names):
+            raise ValueError("two MCP_SERVERS entries share a name")
+        return value
 
     @field_validator("llm_provider")
     @classmethod

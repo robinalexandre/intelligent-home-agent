@@ -33,6 +33,8 @@ class Conversation:
     messages: list[dict[str, Any]] = field(default_factory=list)
     turn: int = 0
     pending: dict[str, PendingAction] = field(default_factory=dict)
+    # Writes to a connector waiting for the user's yes (tools/connectors.py), by id.
+    parked_writes: dict[str, Any] = field(default_factory=dict)
     updated_at: float = field(default_factory=time.monotonic)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 

@@ -24,6 +24,9 @@ class ToolContext:
     # Event places read from the calendar in this request: the only destinations travel
     # time accepts once the request is tainted.
     calendar_places: set[str] = field(default_factory=set)
+    # Actions waiting for the user's yes, each described by the code: the agent adds them
+    # under the reply, so what the user approves is what will run, whatever the model says.
+    to_confirm: list[str] = field(default_factory=list)
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[Any]]
@@ -80,8 +83,8 @@ class ToolRegistry:
             raise ToolError(f"Unknown tool: {name}")
         if tool.needs_clean_turn and ctx.tainted:
             raise ToolError(
-                f"{name} is disabled in a request that read emails, the calendar, GitHub or "
-                "assistant reminders. "
+                f"{name} is disabled in a request that read emails, the calendar, GitHub, "
+                "assistant reminders or a connected account. "
                 "Tell the user to ask for it again in a separate request."
             )
         return await tool.handler(args, ctx)

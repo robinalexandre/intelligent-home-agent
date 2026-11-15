@@ -36,6 +36,7 @@ src/intelligent_home_agent/
   config.py         settings (env / .env)
   conversations.py  short-lived memory and pending confirmations
   notify.py         ntfy push
+  home_devices.py   devices driven without Home Assistant (Hue, Devialet)
   tools/            one module per capability, each with a build_*_tools() factory
 scripts/setup.py         interactive .env writer (stdlib only)
 compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE

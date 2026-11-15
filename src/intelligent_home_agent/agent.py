@@ -82,6 +82,9 @@ class Agent:
                 {"role": "assistant", "content": [{"type": "text", "text": reply}]},
             ]
         conv.trim(self._max_history)
+        if ctx.to_confirm:
+            asked = strings(self._prompt.language).to_confirm
+            reply = "\n".join([reply, "", asked, *(f"- {line}" for line in ctx.to_confirm)])
         return AgentReply(reply, ctx.actions)
 
     async def _run_turn(

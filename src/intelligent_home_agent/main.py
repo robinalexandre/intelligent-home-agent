@@ -7,6 +7,7 @@ import re
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 import httpx
@@ -54,6 +55,14 @@ from intelligent_home_agent.tools import (
     build_weather_tools,
     build_web_tools,
     build_wind_tools,
+)
+from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
+from intelligent_home_agent.tools.mcp_client import (
+    MCPClient,
+    NoAuth,
+    OAuthToken,
+    StaticToken,
+    TokenSource,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -161,6 +170,7 @@ def build_registry(
                 http, token, settings.assistant_reminders_repo, settings.assistant_reminders_path
             )
             registry.extend(build_assistant_reminder_tools(reminders, settings.timezone))
+    registry.extend(build_connector_tools(build_connectors(settings, http)))
     if settings.kb_url and settings.kb_token:
         kb = KnowledgeBase(http, settings.kb_url, settings.kb_token.get_secret_value())
         registry.extend(build_knowledge_tools(kb))
@@ -195,6 +205,38 @@ def build_registry(
         )
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
+
+
+def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
+    connectors = []
+    for server in settings.mcp_servers:
+        label = server.label or server.name
+        auth: TokenSource = NoAuth()
+        if server.token:
+            auth = StaticToken(server.token.get_secret_value())
+        elif server.client_id and server.token_url:
+            secret, refresh = server.client_secret, server.refresh_token
+            auth = OAuthToken(
+                http,
+                label,
+                server.token_url,
+                server.client_id,
+                client_secret=secret.get_secret_value() if secret else None,
+                refresh_token=refresh.get_secret_value() if refresh else None,
+                resource=server.resource,
+                scope=server.scope,
+                store=Path(settings.data_dir) / f"mcp-{server.name}.json",
+            )
+        client = MCPClient(http, auth, server.url, label)
+        connectors.append(
+            Connector(
+                server.name,
+                client,
+                writes=server.writes == "confirm",
+                also_read=frozenset(server.read_tools),
+            )
+        )
+    return connectors
 
 
 def prompt_config(settings: Settings) -> PromptConfig:

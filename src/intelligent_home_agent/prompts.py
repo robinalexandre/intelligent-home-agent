@@ -120,6 +120,16 @@ def _daily_help(cfg: PromptConfig) -> str:
             "- The speaker: control_speaker for volume, play, pause, mute or an input; "
             "get_speaker_state for what it is doing."
         )
+    connectors = sorted(name[:-5] for name in t if name.endswith("_help"))
+    if connectors:
+        lines.append(
+            f"- Connected services ({', '.join(connectors)}): each has <name>_help listing "
+            "what it offers and <name>_read to read from it; call help first when unsure of "
+            "a tool or its arguments. <name>_write, where it exists, never runs at once: say "
+            "in one sentence what will change and ask for a yes; the exact call is shown to "
+            "the user under your reply. Only call confirm_connector_write when their next "
+            "message clearly says yes."
+        )
     if "recall" in t:
         lines.append(
             "- Knowledge base: recall searches the user's own notes (what they decided, how "

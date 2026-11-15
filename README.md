@@ -33,6 +33,9 @@ spoken morning briefing and evening recap.
   - Calendar (CalDAV) and mailboxes (IMAP), both read-only.
   - When to leave for an appointment (driving time from home, OpenStreetMap).
   - GitHub pull requests waiting for you, and reminders left with a coding assistant.
+  - Connectors: any service that has an MCP server, such as your bank or your hosting
+    provider, read freely and changed only on your yes
+    ([docs/connectors.md](docs/connectors.md)).
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - Web search with any model, in a separate model request that only sees the query.
@@ -106,6 +109,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
 | `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
 | `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
+| `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
 | `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered. |
@@ -175,6 +179,10 @@ The guardrails are enforced in code, not only in the prompt.
 - **Lockdown of memory**: after a tainted request, only the question and the reply stay in
   conversation memory; the private content is dropped, so it can't steer later requests.
   A request that fails is rolled back entirely.
+- **Connectors**: reading from a connected service taints the request like an email. A
+  write is parked, shown to you by the code with its exact arguments under the reply, and
+  runs only on your yes in a later, clean message; with `writes: off` the write tools
+  don't exist.
 - **Read-only sources**: IMAP mailboxes are opened read-only and never marked as read;
   CalDAV is only queried.
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
@@ -184,7 +192,7 @@ The guardrails are enforced in code, not only in the prompt.
 
 ```
 src/intelligent_home_agent/   app, agent loop, prompts, settings, tools/
-scripts/                      setup.py (onboarding), build_shortcuts.py (Siri)
+scripts/                      setup.py (onboarding), build_shortcuts.py (Siri), mcp_login.py
 compose/                      one file per way to reach the agent (Caddy, Tailscale...)
 docs/                         setup step by step, deployment, integrations, Siri Shortcut
 tests/                        pytest, no network

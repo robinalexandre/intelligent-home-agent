@@ -15,4 +15,10 @@ services:
     # Assistant in host mode) as host.docker.internal, on Linux too.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      # What must survive a restart, e.g. a connector's login when its server renews it.
+      - agent_data:/app/data
     restart: unless-stopped
+
+volumes:
+  agent_data:

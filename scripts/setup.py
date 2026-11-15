@@ -595,6 +595,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     p.say("  Check: docs/setup.md, step 6. Clients authenticate with AGENT_API_TOKEN from .env.")
     for channel in channels:
         p.say(f"  {NEXT_STEPS[channel]}")
+    p.say("  Later: your bank, hosting provider or any service with an MCP server")
+    p.say("  (docs/connectors.md), devices without Home Assistant (docs/home-devices.md).")
     return True
 
 

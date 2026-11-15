@@ -23,6 +23,8 @@ class Strings:
     detail_offer: str
     number_examples: str
     leave_example: str
+    # Heads the list of actions waiting for a yes, written by the code under a reply.
+    to_confirm: str = "To confirm:"
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -55,6 +57,7 @@ LANGUAGES: dict[str, Strings] = {
         detail_offer='"Tu veux le détail pour {spot} ?"',
         number_examples="8h20, 13 nœuds, 1,5 m",
         leave_example='"pars à huit heures vingt"',
+        to_confirm="À confirmer :",
     ),
 }
 
