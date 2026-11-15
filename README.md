@@ -24,6 +24,10 @@ spoken morning briefing and evening recap.
   files (a PDF, a photo, a text or office document) for the agent to read.
 - `POST /v1/briefing`: the morning briefing or evening recap, written to be read, optionally
   pushed to your phone and desktop through ntfy. Made for schedulers.
+- A chat with it in WhatsApp (through a WAHA gateway you run) or Telegram (through a
+  bot of your own): write, send files and voice messages, approve what it proposes
+  with a tap, and get its briefings and the tasks it runs by itself there
+  ([docs/chat.md](docs/chat.md)).
 - `POST /v1/departure`: called when you leave home (a phone automation), it says what
   is still unlocked, on or playing among the devices set up, and turns it off on your
   yes ([docs/home-devices.md](docs/home-devices.md#leaving-home)).
@@ -166,7 +170,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `NOTES_REPO`, `ASSISTANT_REMINDERS_PATH`, `HANDOFFS_PATH` | unset, `reminders`, `handoffs` | Notes for your coding sessions: `owner/repo` and its folders ([docs/tasks.md](docs/tasks.md)). `ASSISTANT_REMINDERS_REPO` still works. |
 | `NOTES_WRITE` | `false` | Let the agent leave reminders and handoff notes there and close reminders. |
 | `NOTES_CRYPT_KEY` | unset | Optional: the git-crypt key of that repository (`MEMORY_CRYPT_KEY` when it also holds the memory). |
-| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need `NTFY_URL`. |
+| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need a chat channel or `NTFY_URL`. |
 | `TASKS_PATH`, `TASKS_POLL_SECONDS` | `tasks`, `60` | The folder (in a repository: `<assistant>/tasks`) and how often it is checked. |
 | `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT` | unset | Send the briefing and the recap every day at that time (`07:30`). |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
@@ -180,6 +184,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
 | `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing` and for the tasks the agent runs by itself. |
+| `WAHA_URL`, `WAHA_API_KEY`, `WHATSAPP_CHAT_ID` | unset | WhatsApp chat through a WAHA gateway (`compose/waha.yml`): your number as `<digits>@c.us`. Also `AGENT_WAHA_SESSION` (a number of the agent's own), `WHATSAPP_READABLE_CHATS` (groups it may sum up), `WHATSAPP_MARKER`. See [docs/chat.md](docs/chat.md). |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS` | unset, empty | Telegram chat through a bot of your own; only the listed private chats reach the agent. |
+| `CHAT_VOTE_GRACE_SECONDS` | `5` | How long a one-tap answer in a chat can still be changed. |
+| `WHISPER_MODEL`, `WHISPER_LANGUAGES` | empty, `LANGUAGE` | Voice messages sent in a chat, transcribed on this machine (`voice` extra). |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
@@ -236,6 +244,7 @@ and the model you chose writes the answer from the results, in a request of its 
 Siri Shortcuts, Home Assistant Assist, Google Home and Alexa (through Home Assistant),
 ntfy push, and scheduled tasks (cron, Home Assistant, a chat or coding-assistant app):
 see [docs/integrations.md](docs/integrations.md) and [docs/siri-shortcut.md](docs/siri-shortcut.md).
+A chat in WhatsApp or Telegram: [docs/chat.md](docs/chat.md).
 
 ## Security model
 
@@ -335,6 +344,14 @@ The guardrails are enforced in code, not only in the prompt.
   removing a draft and creating a folder always do; filing never runs by itself in a
   scheduled task. Each saved draft is noted under the reply by the code, with a
   warning when it carries files after content written by others was read.
+- **Chat channels**: only you reach the agent through one. WhatsApp reads the one
+  chat you named; a Telegram bot drops everything that is not a private chat you
+  listed, before reading it. A message that quotes or forwards another, a file and
+  a group's messages are content written by others: what would act then waits for
+  your go, shown as a choice you tick, and only what was shown can run. WhatsApp
+  goes through an unofficial client (WAHA) whose volume is the account itself; the
+  Telegram token is kept out of logs. Voice messages are transcribed on your
+  machine. See [docs/chat.md](docs/chat.md).
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
   never prints them. The Siri Shortcut files hold the token: don't share them.
 

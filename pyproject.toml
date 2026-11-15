@@ -69,6 +69,10 @@ devices = [
 # docs/subscription.md): Claude Code through the Agent SDK, whose wheel brings the Claude
 # Code binary (some 400 MB). Without it the feature is absent and the API answers.
 subscription = ["claude-agent-sdk>=0.2"]
+# Voice messages sent in a chat, transcribed on the server (WHISPER_MODEL, docs/chat.md).
+# Without it a voice message gets a line asking to write instead. PyAV 19 dropped an
+# argument faster-whisper 1.2.1 still passes to av.open.
+voice = ["faster-whisper>=1.1", "av>=11,<19"]
 # Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
 video = ["av>=11"]
 dev = [

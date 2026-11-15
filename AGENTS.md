@@ -48,7 +48,15 @@ src/intelligent_home_agent/
   tasks.py          tasks the agent starts by itself: TaskRunner (a job of the app),
                     TaskReports; main.run_task and run_digest answer them (docs/tasks.md)
   deliver.py        where a report written with nobody asking goes: ReportChannel
-                    (ntfy; add a chat here), Delivery, Outbox (GET /v1/tasks/reports)
+                    (a chat first, then ntfy), Delivery, Outbox (GET /v1/tasks/reports)
+  chat.py           a chat with the agent in a messaging app: the ChatChannel interface
+                    (docs/chat.md); whatsapp.py (through a WAHA gateway) and telegram.py
+                    (a bot, the Bot API) are its two channels
+  chat_session.py   the agent in such a chat, the same for every channel: answers,
+                    what waits for the user's go sent as a choice to tick, the votes
+                    that run it; ChatReports plugs a chat into deliver.py
+  transcription.py  voice messages as text, on the server (the "voice" extra)
+  progress.py       news of work running in the background, said in the chat
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
@@ -211,6 +219,19 @@ A task's report leaves through `app.state.delivery` (`deliver.Delivery`). A new 
 `main.build_delivery` and name it in `main.reports_reach`, which is what turns the
 tasks on. With a `conversation_id`, tasks run in that conversation and may park writes
 for the user's go there (`main.answer_task`); with `None` (ntfy) nothing is parked.
+
+## Adding a chat channel
+
+A messaging app is a class with the methods of `chat.ChatChannel`: it brings the
+user's messages (`ChatHandler.answer(text, files, quoted)`), sends text, files and
+choices (`send_choices`, whose ticks come back through `ChatHandler.chose`), and may
+show typing and marks. Build it in `main.build_channels` behind its settings;
+`chat_session.ChatSession` does everything else and `ChatReports` makes it the first
+way out for tasks. Three rules: only the user reaches the handler (drop anyone
+else's messages, votes and taps before anything reads them); a message that quotes
+or forwards another says so (`quoted` "own" or "other"), so its writes wait; sending
+fails with `httpx.HTTPError` and never shows a secret (see `TelegramError`). Its words
+for the user go through `i18n.py`, its tests through `respx`.
 
 ## Adding an LLM provider
 

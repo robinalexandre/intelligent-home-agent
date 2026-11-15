@@ -64,7 +64,9 @@ _CHAT_CHANNEL = """
 - What waits for the user's go is also sent by the code as a choice right under your
   reply: they tick some and send, and those run by themselves; you then get a line saying
   what was done. Never write that list or the choice yourself.
-- A reminder on the phone can't be created from this chat (the code tells the user)."""
+- A reminder on the phone can't be created from this chat: use schedule_task when
+  you have it (you then write to the user here at that time); otherwise the code
+  tells the user."""
 
 _STYLES = {"voice": _SPOKEN, "notification": _NOTIFICATION, "chat": _CHAT}
 DISPLAYS = tuple(_STYLES)
