@@ -1,14 +1,32 @@
 # Integrations
 
-The agent is an HTTP API. Every integration below is a client of one of two endpoints,
-both behind `Authorization: Bearer <AGENT_API_TOKEN>`:
+The agent is an HTTP API. Every integration below is a client of one of these endpoints,
+all behind `Authorization: Bearer <AGENT_API_TOKEN>`:
 
 | Endpoint | Body | Use |
 |---|---|---|
-| `POST /v1/ask` | `{"text": "...", "conversation_id": "...", "context": "...", "display": "voice" \| "notification"}` | A question or command, with a short memory per `conversation_id`. |
+| `POST /v1/ask` | `{"text": "...", "conversation_id": "...", "context": "...", "display": "voice" \| "notification" \| "chat", "files": [...]}` | A question or command, with a short memory per `conversation_id`. |
 | `POST /v1/briefing` | `{"kind": "morning" \| "evening", "context": "...", "push": false}` | The morning briefing or evening recap, written to be read. `push: true` also sends it through ntfy. Each call starts a fresh conversation. |
+| `GET /v1/files/{name}?conversation_id=...` | | A file of the conversation, e.g. one the agent made. |
+| `POST /v1/reset?conversation_id=...` | | Forget a conversation now. |
 
-Both return `reply` and `actions` (things the phone should do, such as creating a reminder).
+Both `ask` and `briefing` return `reply` and `actions` (things the phone should do, such
+as creating a reminder).
+
+`display` says where the reply ends up: `voice` (short spoken sentences, the default),
+`notification` (written, no questions) or `chat` (written, a little longer, may ask a
+question; more rounds of tools are allowed, see `MAX_CHAT_TOKENS`).
+
+`files` sends up to five files with the request, each as
+`{"filename": "bill.pdf", "mimetype": "application/pdf", "data": "<base64>"}`. PDFs and
+images are read by models that can (with an OpenAI-compatible server, images need a model
+that sees, and a PDF is only kept by name); text, Word, Excel, PowerPoint and OpenDocument
+files are read as text by any model. Files stay available by name while the conversation
+lasts. When the agent makes or fetches a file for you, the response has
+`"files": [{"name": ..., "mimetype": ...}]`: download each with `GET /v1/files/{name}`.
+
+When an action waits for your yes (see "Security model" in the README), the reply ends
+with a numbered list written by the code; answer in the same `conversation_id`.
 
 What works today, from most to least direct:
 

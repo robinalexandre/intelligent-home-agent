@@ -60,21 +60,24 @@ rather than reached at an address) is not supported yet.
 The rules are enforced by the code, whatever the model or a message says:
 
 - **Reading taints the request.** An account holds text other people wrote (a payment's
-  label, a customer's message, a log line). Once the agent has read from a connector, home
-  control and web search are off for the rest of that request, and what was read is
-  dropped from memory after the reply.
-- **A write never runs when asked.** With `"writes": "confirm"`, the agent's request is
-  parked; its reply ends with a line written by the code, not by the model, that shows
-  the exact call:
+  label, a customer's message, a log line). Once the agent has read from a connector,
+  nothing acts on the home, writes or searches the web for the rest of that request
+  without your go, and what was read is dropped from memory after the reply.
+- **A write never runs when asked.** With `"writes": "confirm"`, the call is parked, as
+  every action that waits for you is (see "Security model" in the README); the reply ends
+  with a numbered list written by the code, not by the model, that shows the exact call:
 
   ```
-  To confirm:
-  - My Bank: create_client {"name": "Acme"}
+  Waiting for your go ("yes", or "yes except 2"):
+  1. My Bank: create_client {"name": "Acme"}
   ```
 
-  It runs only if you say yes in your next message, and only if that message's request
-  has read nothing else. A tool the service doesn't flag as harmless is shown with
-  "may delete or overwrite".
+  It runs only if your next message agrees ("yes", "yes except 2", "no"), and only if
+  that message's request has read nothing else. A tool the service doesn't flag as
+  harmless is shown with "(may delete or overwrite)". A call that is not one of the
+  service's write tools, or whose arguments are too long or hold hidden characters to be
+  shown whole, is refused before you are asked. What waits is forgotten with the
+  conversation (`CONVERSATION_TTL_SECONDS`): answer within that time, or ask again.
 - **With `"writes": "off"`**, the write tools don't exist: there is nothing to talk the
   agent into.
 - **What the token can do is the outer limit.** Grant the narrowest scopes the service

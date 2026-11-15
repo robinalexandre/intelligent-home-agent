@@ -19,7 +19,9 @@ spoken morning briefing and evening recap.
 ## What it does
 
 - `POST /v1/ask`: one request in, one short reply out, with a few minutes of memory per
-  conversation so follow-ups work ("and the kitchen too").
+  conversation so follow-ups work ("and the kitchen too"). The reply is written to be
+  spoken, shown as a notification or read in a chat (`display`), and the request can carry
+  files (a PDF, a photo, a text or office document) for the agent to read.
 - `POST /v1/briefing`: the morning briefing or evening recap, written to be read, optionally
   pushed to your phone and desktop through ntfy. Made for schedulers.
 - Tools, each one on only when configured:
@@ -86,7 +88,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `LLM_API_KEY` | required, except local servers | Provider API key (`ANTHROPIC_API_KEY` also accepted). |
 | `LLM_MODEL` | `claude-sonnet-5-5` for Anthropic, else required | Model for the conversation; it must support tool calling. |
 | `LLM_BASE_URL` | the provider's | Address of an OpenAI-compatible server. |
+| `MAX_TOKENS`, `MAX_TOOL_ITERATIONS` | `1024`, `8` | Length of a spoken reply, and how many rounds of tools one request may take. |
+| `MAX_CHAT_TOKENS`, `MAX_CHAT_TOOL_ITERATIONS` | `4096`, `30` | The same for a reply read in a chat (`"display": "chat"`). |
 | `ASSISTANT_NAME` | `Assistant` | What the assistant calls itself; also closes a conversation ("thanks, Assistant"). |
+| `USER_NAME` | unset | What the assistant calls you. |
 | `LANGUAGE` | `en` | `en` or `fr`. |
 | `TIMEZONE` | `UTC` | IANA time zone. |
 | `HOME_LATITUDE`, `HOME_LONGITUDE` | unset | Home, for weather, travel time and outdoor forecasts. |
@@ -112,7 +117,9 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
 | `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
-| `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered. |
+| `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
+| `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
+| `JOURNAL_KEEP_DAYS` | `365` | Days the journal of requests is kept in `DATA_DIR/journal`; `0` turns it off. |
 
 ### Outdoor activities
 
@@ -167,22 +174,42 @@ The guardrails are enforced in code, not only in the prompt.
 - **Entity policy**: only entities in `HA_EXPOSED_DOMAINS` are visible, denylisted ones
   never are. A service can only target entities of its own domain (no `light.turn_on` on a
   lock), and targets can't be smuggled in through `data`.
-- **Confirmation in a later turn**: actions on sensitive domains are parked and only run
-  when the user says yes in a *later* message. The model can't confirm for itself within
-  the same request.
+- **Confirmation in a later turn**: Home Assistant actions on sensitive domains are parked
+  and only run when the user says yes in a *later* message. The model can't confirm for
+  itself within the same request.
 - **Taints**: tools whose output is written by other people (emails, calendar events, pull
-  requests, assistant reminders) mark the request as tainted. From the next tool batch on,
-  tools flagged `needs_clean_turn` (home control, web search) are refused for the rest of
-  that request, so injected text can't trigger actions or leave through a search query.
-  Travel time, which sends a destination out, then only accepts a place read from the
-  calendar in that request.
-- **Lockdown of memory**: after a tainted request, only the question and the reply stay in
-  conversation memory; the private content is dropped, so it can't steer later requests.
-  A request that fails is rolled back entirely.
+  requests, assistant reminders, a connected account, a file you send, a web search
+  answer) mark the request as tainted. From the next tool batch on, tools flagged
+  `needs_clean_turn` (home control, any write) don't run for the rest of that request, so
+  injected text can't trigger actions. Travel time, which sends a destination out, then
+  only accepts a place read from the calendar in that request.
+- **Your go, on exactly what you were shown**: an action held back that way is not lost.
+  It is parked with its exact arguments, and the reply ends with a numbered list written
+  by the code, not by the model:
+
+  ```
+  Waiting for your go ("yes", or "yes except 2"):
+  1. Search the web for "bakery opening hours" and carry on
+  2. My Bank: create_client {"name": "Acme"}
+  ```
+
+  It runs only when your next message agrees, in a request that has read nothing else,
+  and never in a scheduled briefing. Nothing read in between can change what it does;
+  what was never listed can't run; it is forgotten with the conversation.
+- **Web search**: a query is text that leaves the house. After private content was read
+  the search waits for your go like a write; in any request, a query that repeats a
+  number, an email address, a long token or a run of words from what the request holds
+  (earlier replies, tool results) is refused; at most three searches run per request.
+- **Lockdown of memory**: after a tainted request, only the question, the reply and the
+  names of the tools used stay in conversation memory; the private content is dropped, so
+  it can't steer later requests. A request that fails is rolled back entirely. The
+  journal keeps neither the reply nor the tool arguments of a tainted request.
 - **Connectors**: reading from a connected service taints the request like an email. A
-  write is parked, shown to you by the code with its exact arguments under the reply, and
-  runs only on your yes in a later, clean message; with `writes: off` the write tools
-  don't exist.
+  write never runs when asked, even in a clean request: it waits for your go as above,
+  shown with its exact arguments; with `writes: off` the write tools don't exist.
+- **Files**: a file you send is read as data written by someone else (it taints the
+  request), its name is reduced to a safe character set, and an office file that would
+  expand like a zip bomb is not opened.
 - **Read-only sources**: IMAP mailboxes are opened read-only and never marked as read;
   CalDAV is only queried.
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script

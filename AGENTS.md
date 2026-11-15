@@ -26,17 +26,26 @@ settings, tests that build `Settings` clear the ones they care about; when in do
 
 ```
 src/intelligent_home_agent/
-  main.py           FastAPI app: /v1/ask, /v1/briefing, auth, tool registry wiring
-  agent.py          tool-use loop, taint tracking, memory scrubbing
+  main.py           FastAPI app: /v1/ask, /v1/briefing, /v1/files, auth, tool registry
+                    wiring, the list of what waits for the user's go under a reply
+  agent.py          tool-use loop: files, long results, taint tracking, memory scrubbing,
+                    displays (voice, notification, chat), journal hook
   llm.py            provider interface (LLMClient, LLMResponse), the Anthropic client and
                     the OpenAI-compatible one (OpenAI, Mistral, Ollama...)
   prompts.py        system prompt, built from what is configured
-  i18n.py           strings per language (fallback reply, closing words, examples)
+  i18n.py           every word the code says to the user, per language
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
   config.py         settings (env / .env)
-  conversations.py  short-lived memory and pending confirmations
+  conversations.py  conversation state: messages, files (Attachment), writes waiting for
+                    the user's go (Proposal), pending Home Assistant confirmations
+  leaks.py          keeps what a request holds out of text the model writes for the outside
+  journal.py        one line per request, per day, in DATA_DIR/journal
+  office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
   notify.py         ntfy push
   home_devices.py   devices driven without Home Assistant (Hue, Devialet)
+  tools/base.py     Tool and its flags, ToolContext, ToolRegistry (the rules live here)
+  tools/proposals.py     run_proposals, propose_action, propose_plan...: the user's go
+  tools/long_results.py  read_result_part, for results too long for one read
   tools/            one module per capability, each with a build_*_tools() factory
 scripts/setup.py         interactive .env writer (stdlib only)
 compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE
@@ -49,11 +58,11 @@ scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
 - A tool is a `Tool(name, description, input_schema, handler)`; its factory returns `[]`
   when it isn't configured, so the registry and the prompt only show what works.
 - Errors meant for the model are `ToolError`; anything else is logged as a crash.
-- Security flags on tools, enforced in `ToolRegistry.run` and `Agent`:
-  - `taints=True` for output written by other people (mail, calendar, GitHub, reminders).
-  - `needs_clean_turn=True` for anything that acts on the home or sends data out.
-  - Never weaken these, the entity policy in `tools/home_assistant.py`, or the
-    later-turn confirmation for sensitive domains, without a test that shows why.
+- Security rules are flags on `Tool`, enforced in `ToolRegistry.run` and `Agent`; see
+  "Tool flags" below. Never weaken them, the entity policy in `tools/home_assistant.py`,
+  or the later-turn confirmation for sensitive domains, without a test that shows why.
+- There is one mechanism for "this waits for the user's go": the registry parks the call
+  and `main.with_waiting` lists it under the reply. Don't build another one in a tool.
 - New settings go in `config.py`, `.env.example` (with a comment), and the configuration
   table in README.md; ask for them in `scripts/setup.py` if a new user needs them.
 - A new way to deploy is a file in `compose/` that adds to `docker-compose.yml`, a choice
@@ -62,6 +71,103 @@ scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
 - Test data stays fictional: `0.0, 0.0` or famous public places, names like "Alex",
   `example.com` addresses.
 - Docs: plain and short; say what works and what doesn't.
+
+## Tool flags
+
+A request is *tainted* once it read content written by others. `ToolContext.tainted` is
+true after a tool with `taints` (private content: `ctx.private_read`), `reads_pages`
+(`ctx.page_hosts`) or `reads_web` (`ctx.web_read`) ran, when the user sent a file, or when
+the caller says so. Calls of one batch were all decided before any ran, so a taint applies
+from the next batch on. After a tainted request only the question, the reply and the names
+of the tools used stay in memory.
+
+| Flag on `Tool` | Meaning |
+|---|---|
+| `taints` | Output is private content written by others (mail, calendar, an account). |
+| `reads_pages` | Output is a web page; the handler records its site with `ctx.read_page(host)`. |
+| `reads_web` | Output is written from public web pages (a search answer): others' words, nothing private. |
+| `needs_clean_turn` | Acts on the home or writes: in a tainted request (or a reply quoting a message) it is parked for the user's go instead of run. |
+| `never_park` | With `needs_clean_turn`: refused instead of parked (`run_proposals` itself). |
+| `needs_user_request` | Destroys something: in a scheduled task it waits for the user (parked) or is refused. |
+| `proposable` | May be parked even without `needs_clean_turn`; also parks in a repeating task. |
+| `always_propose` | Parked even in a clean request: the user always sees it first (connector writes, plans). |
+| `runs_shown_writes` | Only runs what the user was already shown, so it works in a reply quoting the list. |
+| `describe` | `async (args) -> str`: the action in one line for the user, built by the code (use `i18n`). Default: the tool's name and every argument. `describe_whole(label)` shows each argument. |
+| `vet` | `(args, ctx)`, sync or async: raises `ToolError` for what could never run, before it is parked. |
+| `multiline_args` | Argument names that may hold line breaks (shown as ⏎, needs `describe`). |
+| `clean_runs_in_tasks` | In a repeating task's run, refused with a note that later runs start clean. |
+
+Parking: `ToolRegistry.run` stores a `Proposal` (tool, exact arguments, summary) in the
+conversation and adds a `{"type": "proposal", "number", "summary"}` action; the tool
+returns `{"status": "waiting_for_the_user"}` to the model. `main.with_waiting` writes the
+numbered list under the reply and marks the proposals shown; only shown ones can run, and
+only through `run_proposals` in a later turn that read nothing. A handler can ask for the
+same by raising `ParkInstead` (a search after a private read), or park another tool's call
+with `park(tool, args, ctx)`.
+
+`ToolContext` (one per request) carries: `conversation` (with `files`, `proposals`,
+`long_results`), `actions` (what the client or `main` does after the reply: `reminder`,
+`proposal`, `written`, `share_file`, `question`), the taint state above, `leaks` and
+`keep_in(text, "query" | "address")` for text that leaves, `offered_urls`, `named_hosts`
+and `free_site()` for browsing tools, `scheduled`, `repeating`, `quoted`, `approved_plan`,
+`approving`, `answerable`, `calendar_places`, and `cleanups` (awaited when the request
+ends).
+
+A handler returns JSON-able data or a string; an `Attachment` (the model reads the file);
+or `WithImage(data, image)` (data plus a picture). Results over 12 000 characters are kept
+apart automatically. To hand a file to the user: `ctx.conversation.keep_file(Attachment(
+name, mimetype, data, origin="agent"))` then `ctx.actions.append({"type": "share_file",
+"name": kept.filename})`.
+
+## Porting or adding a feature
+
+One capability is one module in `tools/` plus its wiring. Do every step; skip one only
+when it truly doesn't apply, and say so in the pull request.
+
+1. **`src/intelligent_home_agent/tools/<feature>.py`**: a client class if it talks to a
+   service, and `build_<feature>_tools(...) -> list[Tool]` that returns `[]` when the
+   feature isn't configured. Set the flags from the table above: `taints=True` on
+   anything that returns text written by others, `needs_clean_turn=True` on anything that
+   acts or writes (it then waits for the user's go by itself after a read),
+   `needs_user_request=True` on anything that destroys, a `describe` for every write, a
+   `vet` for what can be refused before asking. Errors for the model are `ToolError`.
+   Take `language` as an argument when the code writes words for the user.
+2. **`tools/__init__.py`**: import and export the factory (and its client class).
+3. **`config.py`**: the settings, in their own `# --- Feature ---` block, off by default
+   (`None`, `[]` or `False`); secrets as `SecretStr | None`; CSV lists as `CsvList` and
+   added to `_split_csv`. Files it keeps go under `Path(settings.data_dir)`.
+4. **`main.py`, `build_registry`**: `registry.extend(build_<feature>_tools(...))`, behind
+   the `if settings...` that says it is configured, before the core tools at the end
+   (`build_proposal_tools`, `build_long_result_tools`). Something to open and close goes
+   in `lifespan`.
+5. **`prompts.py`**: one `lines.append(...)` in `_daily_help`, behind
+   `if "<a tool name>" in t`, saying when to use the tools; add the tool to
+   `_PRIVATE_SOURCES` when it has `taints`. A briefing section goes in `BRIEF_SECTIONS`
+   (`config.py`) and `_brief_sources`.
+6. **`i18n.py`**: every word the code itself says to the user (a `describe` line, a
+   message `main` sends), as a field of `Strings`, English first, French kept up to date.
+   Text for the model (tool descriptions, `ToolError`, results) stays in English.
+7. **`.env.example`**: the settings with a comment, empty or commented out.
+8. **`README.md`**: a row in the configuration table, a bullet under "What it does", and
+   a bullet under "Security model" when the feature writes, sends data out or reads
+   content written by others.
+9. **`docs/<feature>.md`** when setting it up takes more than two settings: what it does,
+   how to get the credentials, what the agent may and may not do. Link it from the README.
+10. **`scripts/setup.py`**: a question in `ask_sources` (or a new `ask_<feature>` called
+    from `run`), the keys in `GROUPS` (and in `SECRET_KEYS` when secret).
+    `tests/test_setup.py` feeds the answers in order: add yours there.
+11. **`tests/test_<feature>.py`**: no network (`respx` for HTTP, `FakeLLM` for the model).
+    Cover the handler, each refusal, and through `ToolRegistry.run` that a write parks
+    after a read and runs through `run_proposals`. Add the tool names to
+    `test_registry_only_has_configured_tools` in `tests/test_api.py` (absent when not
+    configured) and to `ALL_TOOLS` in `tests/test_prompts.py`.
+12. **`pyproject.toml`** for a new dependency (with a comment saying what needs it), and
+    the `Dockerfile` or a file in `compose/` for a system package or a sidecar.
+
+When porting from another codebase: rename the package, replace every example with a
+fictional one, translate comments and fixtures to English, move user-facing words to
+`i18n.py`, and call the model only through `LLMClient` (`response.content` is a list of
+dict blocks, never SDK objects).
 
 ## Adding an LLM provider
 
@@ -72,7 +178,10 @@ in step). For another API:
 1. In `llm.py`, write a class with `async def create(self, **kwargs) -> LLMResponse`.
    It receives `model`, `max_tokens`, `system`, `tools` (`name`, `description`,
    `input_schema`) and `messages` in the Messages format used throughout the code
-   (`text`, `tool_use`, `tool_result` blocks). Convert to the vendor's format and back;
+   (`text`, `tool_use`, `tool_result` blocks, plus `image` and `document` for files; text
+   blocks and tools may carry a `cache_control` marker to drop when the vendor has no
+   prompt caching; `tool_choice={"type": "none"}` asks for words only). Convert to the
+   vendor's format and back;
    map the stop reason to `end_turn`, `tool_use` or `max_tokens`.
 2. Make `build_llm_client` return it, and add its name to `PROVIDERS`. Add it to
    `WEB_SEARCH_PROVIDERS` only if it can run the
