@@ -123,6 +123,10 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     max_tokens: int = 1024
     max_tool_iterations: int = 8
+    # A reply read in a chat (display "chat") may be longer and take more rounds of tools
+    # than a spoken one: the user can wait for it.
+    max_chat_tokens: int = 4096
+    max_chat_tool_iterations: int = 30
 
     # --- Home Assistant (optional: without a token, the home tools are off) ------------
     ha_url: str = "http://homeassistant.local:8123"
@@ -165,6 +169,8 @@ class Settings(BaseSettings):
 
     # --- Assistant persona -------------------------------------------------------------
     assistant_name: str = "Assistant"
+    # What the assistant calls the user; empty: no name.
+    user_name: str | None = None
     language: str = "en"
     timezone: str = "UTC"
     conversation_ttl_seconds: int = 300
@@ -230,8 +236,14 @@ class Settings(BaseSettings):
 
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
-    # Where the agent keeps what must survive a restart (a rotated login); a volume in Docker.
+
+    # --- What the agent keeps on disk --------------------------------------------------
+    # Where the agent keeps what must survive a restart (the journal, a connector's rotated
+    # login); a volume in Docker.
     data_dir: str = "data"
+    # The journal: one line per request (what was asked, the tools called, the reply) in
+    # DATA_DIR/journal, one file per day, removed after this many days. 0: no journal.
+    journal_keep_days: int = Field(365, ge=0)
 
     # --- Knowledge base (the kb container of compose/kb.yml, docs/knowledge.md) --------
     kb_url: str | None = None

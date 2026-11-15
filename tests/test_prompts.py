@@ -78,7 +78,7 @@ def test_french_prompt():
     assert '"le briefing"' in text
     assert "Tu veux le détail pour North Beach ?" in text
     assert "8h20" in build_system_prompt(
-        PromptConfig("Nova", "fr", "UTC", tools={"get_weather"}), notification=True
+        PromptConfig("Nova", "fr", "UTC", tools={"get_weather"}), display="notification"
     )
 
 
@@ -94,3 +94,22 @@ def test_recap_looks_at_tomorrow():
     assert "get_outdoor_forecast for tomorrow" in recap
     reply = recap.split("- Reply", 1)[1]
     assert reply.index("what is still open today") < reply.index("tomorrow's first appointment")
+
+
+def test_chat_display_memory_and_user_name():
+    cfg = PromptConfig("Nova", "fr", "UTC", tools={"get_weather"}, user_name="Alex")
+    text = build_system_prompt(cfg, display="chat", memory="- Likes tea.")
+    assert "a message in a chat" in text and "read aloud" not in text
+    assert '"Tu veux le détail ?"' in text and "8h20" in text
+    assert "The user is called Alex" in text
+    assert "What you remember about the user" in text and "- Likes tea." in text
+    assert "What you remember" not in build_system_prompt(cfg)
+
+
+def test_core_tools_get_their_paragraphs_only_when_registered():
+    bare = prompt(tools={"get_weather"})
+    assert "run_proposals" not in bare and "read_result_part" not in bare
+    text = prompt(tools={"get_weather", "run_proposals", "read_result_part"})
+    assert "Actions waiting for the user's go" in text
+    assert '"yes", "oui"' in text and "drop_proposals" in text
+    assert "read_result_part reads the next ones" in text

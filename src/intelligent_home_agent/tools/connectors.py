@@ -3,16 +3,17 @@ accounting or rental tool...), each listed in ``MCP_SERVERS`` (docs/connectors.m
 
 A server may have a hundred tools with long schemas, which would weigh on every request,
 so the model gets a few per connector: ``<name>_help`` (what the server offers),
-``<name>_read``, and, when the connector allows writes, ``<name>_write`` and
-``confirm_connector_write``.
+``<name>_read``, and, when the connector allows writes, ``<name>_write``.
 
 What each server tool is comes from its own annotations: one not flagged read-only is a
 write. The rules are enforced here, not left to the prompt:
 
 - a read taints the request, as an account holds text other people wrote (a payment's
-  label, a customer's message): home control and web search are then off for its rest;
-- a write never runs when asked: it is parked, the reply ends with a line written by the
-  code that shows the exact call, and it only runs when the user says yes in a later
+  label, a customer's message): nothing acts on the home or leaves it for its rest
+  without the user's go;
+- a write never runs when asked: it is parked like every write that waits for the user
+  (``always_propose``, tools/proposals.py), the code lists the exact call under the
+  reply, and it only runs through run_proposals, when the user says yes in a later
   message, in a request that read nothing else;
 - with ``"writes": "off"`` (the default) the write tools don't exist at all.
 """
@@ -21,10 +22,9 @@ from __future__ import annotations
 
 import json
 import re
-import uuid
-from dataclasses import dataclass
 from typing import Any
 
+from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
 from intelligent_home_agent.tools.mcp_client import MCPClient
 
@@ -32,15 +32,6 @@ MAX_RESULT_CHARS = 12_000
 MAX_HELP_CHARS = 8_000
 MAX_SHOWN_CHARS = 600
 _TOOL_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
-
-
-@dataclass
-class ParkedWrite:
-    connector: str
-    tool: str
-    arguments: dict[str, Any]
-    turn: int
-    summary: str
 
 
 def is_read(spec: dict[str, Any], also_read: frozenset[str] = frozenset()) -> bool:
@@ -71,8 +62,10 @@ class Connector:
         *,
         writes: bool = False,
         also_read: frozenset[str] = frozenset(),
+        language: str = "en",
     ) -> None:
         self.name, self.label, self.writes = name, client.label, writes
+        self._language = language
         self._client, self._also_read = client, also_read
         self._specs: dict[str, dict[str, Any]] | None = None
 
@@ -129,32 +122,37 @@ class Connector:
         name, arguments = await self.checked(args, "read")
         return _cut(await self._client.call(name, arguments), MAX_RESULT_CHARS)
 
-    async def park(self, args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
-        name, arguments = await self.checked(args, "write")
-        shown = json.dumps(arguments, ensure_ascii=False, separators=(", ", ": "))
+    async def vet_write(self, args: dict[str, Any], _: ToolContext) -> None:
+        """Refused before it is parked: the user is never asked about a call that is no
+        write of this server, or that can't be shown to them whole."""
+        _, arguments = await self.checked(args, "write")
+        shown = _shown(arguments)
         if len(shown) > MAX_SHOWN_CHARS or not shown.isprintable():
             raise ToolError(
                 "The arguments are too long, or hold hidden characters, to be shown to the "
                 "user for confirmation."
             )
-        warning = ", may delete or overwrite" if is_destructive((await self.specs())[name]) else ""
-        summary = f"{self.label}{warning}: {name} {shown}"
-        write_id = uuid.uuid4().hex[:8]
-        ctx.conversation.parked_writes[write_id] = ParkedWrite(
-            self.name, name, arguments, ctx.conversation.turn, summary
-        )
-        # Written by the code under the reply: what the user approves is what will run.
-        ctx.to_confirm.append(summary)
-        return {
-            "status": "needs_confirmation",
-            "confirmation_id": write_id,
-            "instruction": "Nothing was changed. Ask the user to confirm; the exact call is "
-            "shown to them under your reply. Only call confirm_connector_write after they "
-            "say yes in their next message.",
-        }
 
-    async def run(self, write: ParkedWrite) -> str:
-        return _cut(await self._client.call(write.tool, write.arguments), MAX_RESULT_CHARS)
+    async def describe_write(self, args: dict[str, Any]) -> str:
+        """The exact call, as the user approves it."""
+        s = strings(self._language)
+        name = str(args.get("tool") or "")
+        spec = (await self.specs()).get(name) or {}
+        return s.connector_write_summary.format(
+            label=self.label,
+            warning=s.may_destroy if is_destructive(spec) else "",
+            tool=name,
+            arguments=_shown(args.get("arguments") or {}),
+        )
+
+    async def write(self, args: dict[str, Any], _: ToolContext) -> str:
+        # Only reached on the user's go: the registry parks every call first.
+        name, arguments = await self.checked(args, "write")
+        return _cut(await self._client.call(name, arguments), MAX_RESULT_CHARS)
+
+
+def _shown(arguments: Any) -> str:
+    return json.dumps(arguments, ensure_ascii=False, separators=(", ", ": "))
 
 
 def _call_schema(what: str) -> dict[str, Any]:
@@ -170,7 +168,6 @@ def _call_schema(what: str) -> dict[str, Any]:
 
 def build_connector_tools(connectors: list[Connector]) -> list[Tool]:
     tools: list[Tool] = []
-    by_name = {c.name: c for c in connectors}
     for c in connectors:
         tools.append(
             Tool(
@@ -204,50 +201,16 @@ def build_connector_tools(connectors: list[Connector]) -> list[Tool]:
                     name=f"{c.name}_write",
                     description=(
                         f"Change something in {c.label} with one of its write tools. It "
-                        "never runs at once: it returns needs_confirmation, and the user "
-                        "sees the exact call under your reply."
+                        "never runs at once: it waits for the user's go, and they see the "
+                        "exact call under your reply. run_proposals does it once they agree."
                     ),
                     input_schema=_call_schema("write with"),
-                    handler=c.park,
+                    handler=c.write,
+                    needs_clean_turn=True,
+                    proposable=True,
+                    always_propose=True,
+                    describe=c.describe_write,
+                    vet=c.vet_write,
                 )
             )
-    if not any(c.writes for c in connectors):
-        return tools
-
-    async def confirm(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
-        conv = ctx.conversation
-        write_id = str(args.get("confirmation_id") or "")
-        if not write_id:
-            # After a request that read an account, only the question and the reply stay
-            # in memory: the id is gone, so "yes" means the one write that waits.
-            waiting = [i for i, w in conv.parked_writes.items() if w.turn < conv.turn]
-            if len(waiting) > 1:
-                raise ToolError(
-                    f"{len(waiting)} writes are waiting: ask the user which one, then start "
-                    "that one over."
-                )
-            write_id = waiting[0] if waiting else ""
-        write = conv.parked_writes.get(write_id)
-        if write is None:
-            raise ToolError("No write is waiting (it may have expired). Start over.")
-        if write.turn >= conv.turn:
-            raise ToolError("The user has not confirmed yet. Ask them and wait for their answer.")
-        del conv.parked_writes[write_id]
-        return {"status": "done", "result": await by_name[write.connector].run(write)}
-
-    tools.append(
-        Tool(
-            name="confirm_connector_write",
-            description=(
-                "Run a write previously returned as needs_confirmation, only after the user "
-                "said yes in a later message. Without an id, it runs the one write that waits."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {"confirmation_id": {"type": "string"}},
-            },
-            handler=confirm,
-            needs_clean_turn=True,
-        )
-    )
     return tools

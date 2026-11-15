@@ -5,8 +5,10 @@ import pytest
 import respx
 from conftest import FakeLLM, text_response
 
+from intelligent_home_agent.conversations import Conversation
 from intelligent_home_agent.llm import LLMResponse
-from intelligent_home_agent.tools import ToolError, build_web_tools
+from intelligent_home_agent.tools import ToolContext, ToolError, ToolRegistry, build_web_tools
+from intelligent_home_agent.tools.base import ParkInstead
 from intelligent_home_agent.tools.web import (
     SearchResult,
     build_engine_web_tools,
@@ -53,8 +55,38 @@ async def test_empty_query_is_refused(ctx):
         await search_tool(FakeLLM([])).handler({"query": " "}, ctx)
 
 
-def test_search_is_blocked_once_the_request_read_private_data():
-    assert search_tool(FakeLLM([])).needs_clean_turn
+async def test_a_search_after_private_content_waits_for_the_users_go():
+    tool = search_tool(FakeLLM([text_response("It opens at 9. https://example.com/hours")]))
+    assert tool.reads_web and not tool.needs_clean_turn
+    registry = ToolRegistry([tool])
+    conv = Conversation(id="c", turn=1)
+    ctx = ToolContext(conversation=conv, tainted=True)
+    with pytest.raises(ParkInstead):
+        await tool.handler({"query": "bakery opening hours"}, ctx)
+
+    parked = await registry.run("web_search", {"query": "bakery opening hours"}, ctx)
+
+    assert parked["status"] == "waiting_for_the_user"
+    assert ctx.actions[0]["summary"] == 'Search the web for "bakery opening hours" and carry on'
+    # On their go it runs, and its answer counts as web content read.
+    go = ToolContext(conversation=conv)
+    done = await registry.run("web_search", conv.proposals[0].args, go, approved=True)
+    assert done["answer"].startswith("It opens at 9.")
+    assert go.web_read and go.tainted and go.offered("https://example.com/hours")
+
+
+async def test_a_few_searches_run_in_a_row_then_wait_and_a_leaking_query_is_refused(ctx):
+    fake = FakeLLM([text_response("Answer.") for _ in range(3)])
+    tool = search_tool(fake)
+    for n in range(3):
+        await tool.handler({"query": f"question {n}"}, ctx)
+    with pytest.raises(ParkInstead, match="More than 3 searches"):
+        await tool.handler({"query": "question 4"}, ctx)
+
+    ctx.leaks.add("The door code is 48151623.")
+    with pytest.raises(ToolError, match="repeats the number 48151623"):
+        await tool.handler({"query": "what is 48151623"}, ctx)
+    assert len(fake.requests) == 3
 
 
 class FakeEngine:
@@ -83,7 +115,8 @@ async def test_engine_results_are_answered_by_the_chosen_model_as_data(ctx):
         "answer": "It starts at 9 pm.",
         "sources": ["https://example.com/game"],
     }
-    assert engine.queries == [("when is the game", 4)] and tool.needs_clean_turn
+    assert engine.queries == [("when is the game", 4)] and tool.reads_web
+    assert ctx.offered("https://example.com/game")
     (request,) = fake.requests
     assert request["model"] == "local-model" and "tools" not in request
     content = request["messages"][0]["content"]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import re
 import secrets
@@ -11,15 +13,15 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from intelligent_home_agent import __version__
 from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.agent import Agent
 from intelligent_home_agent.config import Settings, get_settings
-from intelligent_home_agent.conversations import Conversation, ConversationStore
+from intelligent_home_agent.conversations import Attachment, Conversation, ConversationStore
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.home_devices import (
     build_home_device_tools,
@@ -27,6 +29,7 @@ from intelligent_home_agent.home_devices import (
     home_network_client,
 )
 from intelligent_home_agent.i18n import strings
+from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
@@ -57,6 +60,7 @@ from intelligent_home_agent.tools import (
     build_wind_tools,
 )
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
+from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mcp_client import (
     MCPClient,
     NoAuth,
@@ -64,11 +68,39 @@ from intelligent_home_agent.tools.mcp_client import (
     StaticToken,
     TokenSource,
 )
+from intelligent_home_agent.tools.proposals import build_proposal_tools
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger(__name__)
 
 DEFAULT_CONVERSATION = "default"
+MAX_FILES = 5
+# A PDF of 20 MB, the most the agent reads, once in base64.
+MAX_FILE_BASE64_CHARS = 28_000_000
+# How a plan the user approved comes back to the agent, as a request of its own.
+PLAN_TAG = "[Plan you proposed and the user approved as shown; do it now as their request:"
+
+
+class FileIn(BaseModel):
+    """A file sent with a request: read in that request, then kept by name."""
+
+    filename: str = Field(min_length=1, max_length=200)
+    # e.g. application/pdf, image/jpeg, text/plain, or an office document's type.
+    mimetype: str = Field(min_length=1, max_length=200)
+    # The file's bytes, in base64.
+    data: str = Field(min_length=1, max_length=MAX_FILE_BASE64_CHARS)
+
+    @field_validator("data")
+    @classmethod
+    def _is_base64(cls, value: str) -> str:
+        try:
+            base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("data must be the file in base64") from exc
+        return value
+
+    def attachment(self) -> Attachment:
+        return Attachment(self.filename, self.mimetype, base64.b64decode(self.data))
 
 
 class AskRequest(BaseModel):
@@ -76,15 +108,26 @@ class AskRequest(BaseModel):
     conversation_id: str = Field(default=DEFAULT_CONVERSATION, max_length=64)
     # Extra data from the phone, e.g. today's reminders for the morning briefing.
     context: str | None = Field(default=None, max_length=4000)
-    # "notification" when the reply is read on screen (briefing, recap), not spoken.
-    display: Literal["voice", "notification"] = "voice"
+    # "notification" when the reply is read on screen (briefing, recap), not spoken;
+    # "chat" when it is sent in a chat the user can answer.
+    display: Literal["voice", "notification", "chat"] = "voice"
+    # Files the user sends along (a PDF, a photo, a text or office document).
+    files: list[FileIn] = Field(default=[], max_length=MAX_FILES)
+
+
+class FileOut(BaseModel):
+    # GET /v1/files/{name}?conversation_id=... downloads it while the conversation lasts.
+    name: str
+    mimetype: str
 
 
 class AskResponse(BaseModel):
     reply: str
     conversation_id: str
-    # Things the Shortcut must do on the phone, e.g. {"type": "reminder", "title": ...}.
+    # Things the client must do on the phone, e.g. {"type": "reminder", "title": ...}.
     actions: list[dict] = []
+    # Files the agent made or fetched for the user in this request.
+    files: list[FileOut] | None = None
     # The Shortcut listens again unless the user just closed the conversation. Left out
     # rather than false, since a missing key is what Shortcuts tests reliably.
     follow_up: bool | None = None
@@ -183,6 +226,7 @@ def build_registry(
                 city=settings.home_city,
                 country=settings.home_country,
                 timezone=settings.timezone,
+                language=settings.language,
             )
         )
     elif settings.web_search_enabled:
@@ -201,8 +245,13 @@ def build_registry(
                 engine,
                 model=settings.web_search_model,
                 max_results=settings.web_search_results,
+                language=settings.language,
             )
         )
+    # The core's own tools, last: the writes waiting for the user's go (the registry parks
+    # them whatever is configured) and the long results read part by part.
+    registry.extend(build_proposal_tools(registry, language=settings.language))
+    registry.extend(build_long_result_tools())
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
 
@@ -234,6 +283,7 @@ def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connec
                 client,
                 writes=server.writes == "confirm",
                 also_read=frozenset(server.read_tools),
+                language=settings.language,
             )
         )
     return connectors
@@ -249,7 +299,15 @@ def prompt_config(settings: Settings) -> PromptConfig:
         brief_sections=settings.brief_sections,
         weather_detail=settings.weather_detail,
         spot_example=spots[0].name if spots else None,
+        user_name=settings.user_name,
     )
+
+
+def build_journal(settings: Settings) -> Journal | None:
+    if not settings.journal_keep_days:
+        return None
+    directory = Path(settings.data_dir) / "journal"
+    return Journal(directory, settings.timezone, settings.journal_keep_days)
 
 
 def build_agent(
@@ -268,8 +326,61 @@ def build_agent(
         model=settings.llm_model,
         max_tokens=settings.max_tokens,
         max_tool_iterations=settings.max_tool_iterations,
+        max_chat_tool_iterations=settings.max_chat_tool_iterations,
+        max_chat_tokens=settings.max_chat_tokens,
         max_history_messages=settings.max_history_messages,
+        journal=build_journal(settings),
     )
+
+
+def with_waiting(text: str, actions: list[dict], conv: Conversation, language: str = "en") -> str:
+    """Add, written by the code, every write done without a go and every action waiting
+    for the user's go in the turn, so none goes unnoticed; only actions listed here can
+    run on their yes."""
+    s = strings(language)
+    lines = [
+        s.written_line.format(summary=a["summary"]) for a in actions if a.get("type") == "written"
+    ]
+    proposals = [a for a in actions if a.get("type") == "proposal"]
+    if proposals:
+        lines += ["", s.waiting_header] if lines else [s.waiting_header]
+        lines += [f"{p['number']}. {p['summary']}" for p in proposals]
+        conv.mark_shown([p["number"] for p in proposals])
+    return "\n".join([text, "", *lines]) if lines else text
+
+
+async def answer(request: Request, conv: Conversation, body: AskRequest) -> tuple[str, list[dict]]:
+    """One request of the user's, to its end: the reply with what waits listed under it,
+    then each plan they just approved, run as a request of its own."""
+    agent: Agent = request.app.state.agent
+    language = request.app.state.settings.language
+    files = [file.attachment() for file in body.files]
+    try:
+        reply = await agent.ask(
+            conv, body.text.strip(), body.context, display=body.display, files=files or None
+        )
+        texts = [with_waiting(reply.text, reply.actions, conv, language)]
+        actions = list(reply.actions)
+        while conv.plans:
+            # Clean, so it can act in a row, and carrying the plan, so the writes it spells
+            # out run without another go. It is still not the user's own message: what only
+            # they may ask for (needs_user_request) waits for them.
+            plan = " ".join(conv.plans.pop(0).split())
+            done = await agent.ask(
+                conv,
+                f"{PLAN_TAG} {plan}]",
+                display=body.display,
+                scheduled=True,
+                approved_plan=plan,
+            )
+            texts.append(with_waiting(done.text, done.actions, conv, language))
+            actions += done.actions
+    except BaseException:
+        # A turn that failed never showed its writes: they must not run on a later yes.
+        conv.drop_unshown()
+        conv.plans.clear()
+        raise
+    return "\n\n".join(texts), actions
 
 
 @asynccontextmanager
@@ -336,15 +447,37 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
     store: ConversationStore = request.app.state.store
     conv = store.get(body.conversation_id)
     async with conv.lock:
-        reply = await request.app.state.agent.ask(
-            conv, body.text.strip(), body.context, notification=body.display == "notification"
-        )
+        text, actions = await answer(request, conv, body)
         store.touch(conv)
+        shared = [
+            FileOut(name=file.filename, mimetype=file.mimetype)
+            for a in actions
+            if a.get("type") == "share_file" and (file := conv.files.get(a.get("name", "")))
+        ]
     return AskResponse(
-        reply=reply.text,
+        reply=text,
         conversation_id=conv.id,
-        actions=reply.actions,
+        # What the client does on the phone; what waits for a go is in the reply itself.
+        actions=[a for a in actions if a.get("type") == "reminder"],
+        files=shared or None,
         follow_up=None if closes_conversation(body.text, *_closing(request)) else True,
+    )
+
+
+@app.get("/v1/files/{name}", dependencies=[Depends(require_token)])
+async def get_file(
+    name: str, request: Request, conversation_id: str = DEFAULT_CONVERSATION
+) -> Response:
+    """A file of the conversation (one the agent made, fetched, or was sent), by name."""
+    store: ConversationStore = request.app.state.store
+    conv = store.peek(conversation_id)
+    file = conv.files.get(name) if conv else None
+    if file is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such file in this conversation")
+    return Response(
+        content=file.data,
+        media_type=file.mimetype,
+        headers={"Content-Disposition": "attachment"},
     )
 
 
@@ -371,7 +504,11 @@ async def briefing(body: BriefingRequest, request: Request) -> BriefingResponse:
     if body.push and ntfy is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
     conv = Conversation(id=f"briefing-{body.kind}")
-    reply = await request.app.state.agent.ask(conv, text, body.context, notification=True)
+    # Nobody answers a scheduler's briefing, and its conversation ends with it: nothing
+    # waits for a go there.
+    reply = await request.app.state.agent.ask(
+        conv, text, body.context, display="notification", scheduled=True, answerable=False
+    )
     pushed = False
     if body.push and ntfy is not None:
         title = "Briefing" if body.kind == "morning" else "Recap"
@@ -380,7 +517,8 @@ async def briefing(body: BriefingRequest, request: Request) -> BriefingResponse:
             pushed = True
         except NotifyError as exc:
             log.warning("briefing push failed: %s", exc)
-    return BriefingResponse(reply=reply.text, actions=reply.actions, pushed=pushed)
+    reminders = [a for a in reply.actions if a.get("type") == "reminder"]
+    return BriefingResponse(reply=reply.text, actions=reminders, pushed=pushed)
 
 
 @app.post("/v1/reset", status_code=204, dependencies=[Depends(require_token)])

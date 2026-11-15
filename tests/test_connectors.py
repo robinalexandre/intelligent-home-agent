@@ -15,6 +15,7 @@ from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.tools import ToolContext, ToolError, ToolRegistry
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.mcp_client import MCPClient, OAuthToken, StaticToken
+from intelligent_home_agent.tools.proposals import build_proposal_tools
 
 URL = "https://mcp.bank.test/mcp"
 SPECS = [
@@ -61,9 +62,9 @@ class FakeServer:
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": message["id"], "result": result})
 
 
-def connector_tools(http, *, writes=True, also_read=frozenset({"get_balance"})):
+def connector_tools(http, *, writes=True, also_read=frozenset({"get_balance"}), language="en"):
     client = MCPClient(http, StaticToken("bank-token"), URL, "My Bank")
-    connector = Connector("bank", client, writes=writes, also_read=also_read)
+    connector = Connector("bank", client, writes=writes, also_read=also_read, language=language)
     return {t.name: t for t in build_connector_tools([connector])}
 
 
@@ -94,50 +95,77 @@ async def test_help_lists_the_server_tools_and_a_read_goes_through_and_taints():
     assert tools["bank_read"].taints and not tools["bank_help"].taints
 
 
+def registry_of(http, **kwargs) -> ToolRegistry:
+    registry = ToolRegistry(list(connector_tools(http, **kwargs).values()))
+    registry.extend(build_proposal_tools(registry, language=kwargs.get("language", "en")))
+    return registry
+
+
 @respx.mock
 async def test_a_write_waits_for_a_yes_in_a_later_clean_message():
     server = FakeServer(answer="client created")
+    call = {"tool": "create_client", "arguments": {"name": "Acme"}}
     async with httpx.AsyncClient() as http:
-        tools = connector_tools(http)
+        registry = registry_of(http)
         conv = Conversation(id="test")
         ctx = context(1, conv)
-        parked = await tools["bank_write"].handler(
-            {"tool": "create_client", "arguments": {"name": "Acme"}}, ctx
-        )
-        assert parked["status"] == "needs_confirmation" and server.calls == []
-        assert ctx.to_confirm == ['My Bank: create_client {"name": "Acme"}']
-        # The model can't confirm for the user in the same message.
-        with pytest.raises(ToolError, match="not confirmed yet"):
-            await tools["confirm_connector_write"].handler(
-                {"confirmation_id": parked["confirmation_id"]}, ctx
-            )
+        # Even in a clean request, a write never runs when asked: it is parked.
+        parked = await registry.run("bank_write", call, ctx)
+        assert parked["status"] == "waiting_for_the_user" and server.calls == []
+        assert ctx.actions == [
+            {"type": "proposal", "number": 1, "summary": 'My Bank: create_client {"name": "Acme"}'}
+        ]
+        # Not shown to the user yet: nothing can run it.
+        with pytest.raises(ToolError, match="Nothing is waiting"):
+            await registry.run("run_proposals", {}, ctx)
+        main.with_waiting("Shall I?", ctx.actions, conv)
+        # The model can't answer for the user in the same message.
+        with pytest.raises(ToolError, match="has not answered yet"):
+            await registry.run("run_proposals", {}, ctx)
         assert server.calls == []
-        # Next message: the id may be gone from memory, the one waiting write runs.
-        done = await tools["confirm_connector_write"].handler({}, context(2, conv))
-        assert done == {"status": "done", "result": "client created"}
+        # Their next message, having read nothing: the write runs exactly as shown.
+        done = await registry.run("run_proposals", {}, context(2, conv))
+        assert done == {"done": [{"number": 1, "result": "client created"}], "failed": []}
         assert server.calls == [("create_client", {"name": "Acme"})]
-        with pytest.raises(ToolError, match="No write is waiting"):
-            await tools["confirm_connector_write"].handler({}, context(3, conv))
-    assert tools["confirm_connector_write"].needs_clean_turn
-    assert not tools["bank_write"].needs_clean_turn  # parking changes nothing
+        with pytest.raises(ToolError, match="Nothing is waiting"):
+            await registry.run("run_proposals", {}, context(3, conv))
+        # After a read in the same request, the go itself is refused.
+        await registry.run("bank_write", call, context(4, conv))
+        main.with_waiting("Shall I?", [{"type": "proposal", "number": 2, "summary": ""}], conv)
+        tainted = context(5, conv)
+        tainted.tainted = True
+        with pytest.raises(ToolError, match="disabled in a request that read"):
+            await registry.run("run_proposals", {}, tainted)
+    assert len(server.calls) == 1
 
 
 @respx.mock
 async def test_a_destructive_write_says_so_and_unshowable_arguments_are_refused():
-    FakeServer()
+    server = FakeServer()
     async with httpx.AsyncClient() as http:
-        tools = connector_tools(http)
+        registry = registry_of(http)
         ctx = context()
-        await tools["bank_write"].handler({"tool": "delete_client", "arguments": {"id": "7"}}, ctx)
-        assert ctx.to_confirm == ['My Bank, may delete or overwrite: delete_client {"id": "7"}']
+        await registry.run("bank_write", {"tool": "delete_client", "arguments": {"id": "7"}}, ctx)
+        assert ctx.actions[0]["summary"] == (
+            'My Bank (may delete or overwrite): delete_client {"id": "7"}'
+        )
+        # Refused before they are parked: the user is never asked about them.
         for arguments in ({"note": "x" * 700}, {"note": "a‮b"}):
             with pytest.raises(ToolError, match="too long, or hold hidden"):
-                await tools["bank_write"].handler(
-                    {"tool": "create_client", "arguments": arguments}, ctx
+                await registry.run(
+                    "bank_write", {"tool": "create_client", "arguments": arguments}, ctx
                 )
-        with pytest.raises(ToolError, match="2 writes are waiting"):
-            await tools["bank_write"].handler({"tool": "create_client"}, ctx)
-            await tools["confirm_connector_write"].handler({}, context(2, ctx.conversation))
+        with pytest.raises(ToolError, match="is a read: use bank_read"):
+            await registry.run("bank_write", {"tool": "get_balance"}, ctx)
+        assert len(ctx.conversation.proposals) == 1
+
+        french = registry_of(http, language="fr")
+        ctx = context()
+        await french.run("bank_write", {"tool": "delete_client", "arguments": {"id": "7"}}, ctx)
+        assert ctx.actions[0]["summary"] == (
+            'My Bank (peut supprimer ou écraser) : delete_client {"id": "7"}'
+        )
+    assert server.calls == []
 
 
 @respx.mock
@@ -147,8 +175,6 @@ async def test_reads_and_writes_cannot_be_swapped_and_read_only_has_no_write_too
         tools = connector_tools(http)
         with pytest.raises(ToolError, match="is a write: use bank_write"):
             await tools["bank_read"].handler({"tool": "delete_client"}, context())
-        with pytest.raises(ToolError, match="is a read: use bank_read"):
-            await tools["bank_write"].handler({"tool": "get_balance"}, context())
         with pytest.raises(ToolError, match="no tool 'transfer'"):
             await tools["bank_read"].handler({"tool": "transfer"}, context())
         with pytest.raises(ToolError, match="as an object"):
@@ -163,18 +189,18 @@ async def test_reads_and_writes_cannot_be_swapped_and_read_only_has_no_write_too
 
 
 @respx.mock
-async def test_the_reply_ends_with_the_exact_call_written_by_the_code():
-    FakeServer()
+async def test_the_reply_ends_with_the_exact_call_written_by_the_code(monkeypatch):
+    server = FakeServer(answer="client created")
     async with httpx.AsyncClient() as http:
-        registry = ToolRegistry(list(connector_tools(http).values()))
+        registry = registry_of(http, language="fr")
         llm = FakeLLM(
             [
                 tool_response(("c1", "bank_read", {"tool": "get_balance"})),
                 tool_response(
                     ("c2", "bank_write", {"tool": "create_client", "arguments": {"name": "Acme"}})
                 ),
-                text_response("Shall I add a harmless note?"),
-                tool_response(("c3", "confirm_connector_write", {})),
+                text_response("Shall I add Acme?"),
+                tool_response(("c3", "run_proposals", {})),
                 text_response("Done."),
             ]
         )
@@ -189,13 +215,16 @@ async def test_the_reply_ends_with_the_exact_call_written_by_the_code():
         )
         conv = Conversation(id="c")
         reply = await agent.ask(conv, "add Acme as a client")
-        assert reply.text == (
-            "Shall I add a harmless note?\n\nÀ confirmer :\n"
-            '- My Bank: create_client {"name": "Acme"}'
+        text = main.with_waiting(reply.text, reply.actions, conv, "fr")
+        assert text == (
+            "Shall I add Acme?\n\nEn attente de ton accord (« oui », ou « oui sauf 2 ») :\n"
+            '1. My Bank : create_client {"name": "Acme"}'
         )
+        assert server.calls == [("get_balance", {})]
         # The account was read: only the question and the model's words stay in memory.
-        assert len(conv.messages) == 2 and "À confirmer" not in str(conv.messages)
-        assert (await agent.ask(conv, "yes")).text == "Done."
+        assert len(conv.messages) == 2 and "En attente" not in str(conv.messages)
+        assert (await agent.ask(conv, "oui")).text == "Done."
+        assert server.calls[-1] == ("create_client", {"name": "Acme"})
 
 
 @respx.mock
@@ -259,7 +288,7 @@ def test_settings_build_one_connector_per_server(monkeypatch, tmp_path):
     monkeypatch.setenv("MCP_SERVERS", json.dumps(servers))
     settings = main.Settings(_env_file=None)
     names = main.build_registry(settings, None, None, None).names()
-    assert {"bank_help", "bank_read", "bank_write", "confirm_connector_write"} <= names
+    assert {"bank_help", "bank_read", "bank_write", "run_proposals"} <= names
     assert {"hosting_help", "hosting_read"} <= names and "hosting_write" not in names
     assert "t" not in json.dumps(settings.model_dump(mode="json")["mcp_servers"][0]["token"])
 

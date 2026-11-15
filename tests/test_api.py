@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from intelligent_home_agent import main
 from intelligent_home_agent.agent import AgentReply
 from intelligent_home_agent.config import get_settings
+from intelligent_home_agent.conversations import Attachment
 
 NTFY_URL = "https://ntfy.example.com/some-random-topic"
 
@@ -14,12 +15,30 @@ NTFY_URL = "https://ntfy.example.com/some-random-topic"
 class StubAgent:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, str | None]] = []
-        self.notifications: list[bool] = []
+        self.displays: list[str] = []
+        self.options: list[dict] = []
+        self.files: list[list[Attachment]] = []
 
-    async def ask(self, conv, text: str, context: str | None = None, *, notification=False):
+    async def ask(
+        self, conv, text: str, context: str | None = None, *, display="voice", files=None, **options
+    ):
         self.calls.append((conv.id, text, context))
-        self.notifications.append(notification)
+        self.displays.append(display)
+        self.options.append(options)
+        self.files.append(files or [])
         actions = [{"type": "reminder", "title": text}] if text.startswith("remind") else []
+        if text.startswith("park"):
+            proposal, _ = conv.propose("note", {"text": "milk"}, "Note — text: milk")
+            actions.append({"type": "proposal", "number": proposal.number, "summary": "S"})
+            actions.append({"type": "written", "summary": "W"})
+        if text.startswith("fail"):
+            conv.propose("note", {"text": "never shown"}, "Note")
+            raise RuntimeError("boom")
+        if text.startswith("make"):
+            conv.add_file(Attachment("chart.png", "image/png", b"png-bytes", origin="agent"))
+            actions.append({"type": "share_file", "name": "chart.png"})
+        if text.startswith("approve"):
+            conv.plans.append("fetch the bill, then file it")
         return AgentReply(f"echo: {text}", actions)
 
 
@@ -110,10 +129,11 @@ def test_french_closing_words(make_client):
     assert follow_up("C’est tout, merci !") is None
 
 
-def test_notification_display_is_passed_to_the_agent(client):
+def test_the_display_is_passed_to_the_agent(client):
     client.post("/v1/ask", json={"text": "Briefing", "display": "notification"}, headers=AUTH)
     client.post("/v1/ask", json={"text": "Weather"}, headers=AUTH)
-    assert client.stub.notifications == [True, False]
+    client.post("/v1/ask", json={"text": "Hello", "display": "chat"}, headers=AUTH)
+    assert client.stub.displays == ["notification", "voice", "chat"]
     assert (
         client.post("/v1/ask", json={"text": "x", "display": "tv"}, headers=AUTH).status_code == 422
     )
@@ -141,7 +161,9 @@ def test_briefing_uses_the_language_and_a_fresh_conversation(make_client):
     assert client.stub.calls == [
         ("briefing-evening", "Fais-moi le récap du soir", "Rappels: sport")
     ]
-    assert client.stub.notifications == [True]
+    assert client.stub.displays == ["notification"]
+    # Nobody answers a scheduler's briefing: nothing may wait for a go there.
+    assert client.stub.options == [{"scheduled": True, "answerable": False}]
 
 
 def test_briefing_requires_token(client):
@@ -198,6 +220,9 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_assistant_reminders",
         "web_search",
     }
+    # The core's own tools are always there: what waits for a go, and long results.
+    assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
+    assert "ask_in_poll" not in names
 
 
 def test_settings_reject_unknown_sections_and_activities(monkeypatch):
@@ -239,9 +264,82 @@ def test_home_devices_are_on_when_configured(monkeypatch):
     assert not main.has_home_devices(settings)
     monkeypatch.setenv("HUE_BRIDGE_URL", "http://192.168.1.20")
     monkeypatch.setenv("HUE_APP_KEY", "key")
-    monkeypatch.setenv("DEVIALET_URL", "http://192.168.1.30")
+    monkeypatch.setenv("DEVIALET_URL", "http://192.168.1.51")
     monkeypatch.setenv("HA_PROXY_URL", "http://proxy.test:1055")
     settings = main.Settings(_env_file=None)
     assert main.has_home_devices(settings)
     names = main.build_registry(settings, ha=None, http=None, llm=None).names()
     assert {"set_hue_lights", "activate_hue_scene", "control_speaker"} <= names
+
+
+def test_files_are_sent_in_base64_and_reach_the_agent(client):
+    import base64
+
+    body = {
+        "text": "what does it say?",
+        "files": [
+            {
+                "filename": "../note?.txt",
+                "mimetype": "text/plain",
+                "data": base64.b64encode(b"buy milk").decode(),
+            }
+        ],
+    }
+    assert client.post("/v1/ask", json=body, headers=AUTH).status_code == 200
+    (file,) = client.stub.files[0]
+    assert (file.filename, file.mimetype, file.data) == ("_note_.txt", "text/plain", b"buy milk")
+
+    body["files"][0]["data"] = "not base64!"
+    assert client.post("/v1/ask", json=body, headers=AUTH).status_code == 422
+    body["files"] = [body["files"][0]] * 6
+    assert client.post("/v1/ask", json=body, headers=AUTH).status_code == 422
+
+
+def test_what_waits_for_a_go_is_listed_under_the_reply_by_the_code(client):
+    resp = client.post("/v1/ask", json={"text": "park it"}, headers=AUTH).json()
+    assert resp["reply"] == (
+        'echo: park it\n\nWritten: W\n\nWaiting for your go ("yes", or "yes except 2"):\n1. S'
+    )
+    # Only what the phone must do is an action; the rest is in the reply.
+    assert resp["actions"] == []
+    conv = client.app.state.store.get("default")
+    assert [p.shown for p in conv.proposals] == [True]
+
+
+def test_a_failed_request_leaves_nothing_waiting(client):
+    with pytest.raises(RuntimeError):
+        client.post("/v1/ask", json={"text": "fail"}, headers=AUTH)
+    assert client.app.state.store.get("default").proposals == []
+
+
+def test_a_file_the_agent_made_is_named_in_the_reply_and_can_be_downloaded(client):
+    resp = client.post("/v1/ask", json={"text": "make a chart"}, headers=AUTH).json()
+    assert resp["files"] == [{"name": "chart.png", "mimetype": "image/png"}]
+    assert "files" not in client.post("/v1/ask", json={"text": "hi"}, headers=AUTH).json()
+
+    got = client.get("/v1/files/chart.png", headers=AUTH)
+    assert got.content == b"png-bytes" and got.headers["content-type"] == "image/png"
+    assert client.get("/v1/files/chart.png").status_code == 401
+    assert client.get("/v1/files/other.png", headers=AUTH).status_code == 404
+    elsewhere = client.get("/v1/files/chart.png?conversation_id=nobody", headers=AUTH)
+    assert elsewhere.status_code == 404
+
+
+def test_an_approved_plan_runs_as_a_request_of_its_own_after_the_reply(client):
+    resp = client.post("/v1/ask", json={"text": "approve", "display": "chat"}, headers=AUTH)
+    plan = "fetch the bill, then file it"
+    tagged = f"{main.PLAN_TAG} {plan}]"
+    assert resp.json()["reply"] == f"echo: approve\n\necho: {tagged}"
+    assert client.stub.calls[1] == ("default", tagged, None)
+    assert client.stub.options[1] == {"scheduled": True, "approved_plan": plan}
+    assert client.stub.displays == ["chat", "chat"]
+
+
+def test_the_journal_lives_in_the_data_directory_and_can_be_turned_off(monkeypatch, tmp_path):
+    base_env(monkeypatch)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    journal = main.build_journal(main.Settings(_env_file=None))
+    journal.add({"at": "2026-01-02T03:04:05+00:00", "request": "hi"})
+    assert (tmp_path / "journal" / "2026-01-02.jsonl").exists()
+    monkeypatch.setenv("JOURNAL_KEEP_DAYS", "0")
+    assert main.build_journal(main.Settings(_env_file=None)) is None
