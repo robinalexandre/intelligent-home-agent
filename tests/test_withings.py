@@ -43,17 +43,17 @@ def tool(http, tmp_path, refresh="r1"):
 @respx.mock
 async def test_weigh_ins_come_with_the_latest_and_their_trends(tmp_path, ctx):
     respx.post(TOKEN_URL).mock(return_value=token_response())
-    groups = [group(31, 80.0), group(20, 79.0, 21.0), group(6, 78.4, 20.5), group(0, 78.0, 20.1)]
+    groups = [group(31, 71.0), group(20, 70.0, 25.0), group(6, 69.4, 24.5), group(0, 69.0, 24.1)]
     measures = respx.post(MEASURE_URL).mock(return_value=measures_response(groups))
     async with httpx.AsyncClient() as http:
         result = await tool(http, tmp_path).handler({"days": 7}, ctx)
 
-    assert result["latest"]["weight_kg"] == 78.0
-    assert result["latest"]["fat_percent"] == 20.1
+    assert result["latest"]["weight_kg"] == 69.0
+    assert result["latest"]["fat_percent"] == 24.1
     assert result["last_7_days"]["change"] == {"weight_kg": -0.4, "fat_percent": -0.4}
     assert result["last_7_days"]["weigh_ins"] == 2
     assert result["last_30_days"]["change"] == {"weight_kg": -1.0, "fat_percent": -0.9}
-    assert [w["weight_kg"] for w in result["weigh_ins"]] == [78.4, 78.0]
+    assert [w["weight_kg"] for w in result["weigh_ins"]] == [69.4, 69.0]
     # The user's own data: no new site opens after it.
     assert ctx.account_read
     sent = form(measures.calls[0].request)
@@ -67,7 +67,7 @@ async def test_weigh_ins_come_with_the_latest_and_their_trends(tmp_path, ctx):
 async def test_the_measures_of_one_weigh_in_are_merged_and_ambiguous_ones_left_out(tmp_path, ctx):
     respx.post(TOKEN_URL).mock(return_value=token_response())
     now = datetime.now().astimezone()
-    weight = group(0, 78.0, now=now)
+    weight = group(0, 69.0, now=now)
     pulse = {**weight, "measures": [{"value": 62, "unit": 0, "type": 11}]}
     someone_else = group(1, 55.0, attrib=1, now=now)
     respx.post(MEASURE_URL).mock(return_value=measures_response([someone_else, weight, pulse]))
@@ -75,7 +75,7 @@ async def test_the_measures_of_one_weigh_in_are_merged_and_ambiguous_ones_left_o
         result = await tool(http, tmp_path).handler({}, ctx)
 
     assert len(result["weigh_ins"]) == 1
-    assert result["latest"]["weight_kg"] == 78.0
+    assert result["latest"]["weight_kg"] == 69.0
     assert result["latest"]["heart_rate_bpm"] == 62
     assert result["last_7_days"] is None
 
@@ -85,14 +85,14 @@ async def test_every_page_is_read(tmp_path, ctx):
     respx.post(TOKEN_URL).mock(return_value=token_response())
     route = respx.post(MEASURE_URL).mock(
         side_effect=[
-            measures_response([group(3, 79.0)], more=True, offset=1),
-            measures_response([group(1, 78.5)]),
+            measures_response([group(3, 70.0)], more=True, offset=1),
+            measures_response([group(1, 69.5)]),
         ]
     )
     async with httpx.AsyncClient() as http:
         result = await tool(http, tmp_path).handler({}, ctx)
 
-    assert [w["weight_kg"] for w in result["weigh_ins"]] == [79.0, 78.5]
+    assert [w["weight_kg"] for w in result["weigh_ins"]] == [70.0, 69.5]
     assert "offset" not in form(route.calls[0].request)
     assert form(route.calls[1].request)["offset"] == "1"
 
@@ -141,13 +141,13 @@ async def test_an_expired_token_is_renewed_once(tmp_path, ctx):
     respx.post(MEASURE_URL).mock(
         side_effect=[
             httpx.Response(200, json={"status": 401, "body": {}}),
-            measures_response([group(0, 78.0)]),
+            measures_response([group(0, 69.0)]),
         ]
     )
     async with httpx.AsyncClient() as http:
         result = await tool(http, tmp_path).handler({}, ctx)
 
-    assert result["latest"]["weight_kg"] == 78.0
+    assert result["latest"]["weight_kg"] == 69.0
 
 
 @respx.mock

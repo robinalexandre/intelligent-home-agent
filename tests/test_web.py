@@ -252,9 +252,9 @@ async def test_the_api_searches_when_the_subscription_cannot(ctx):
 async def test_the_rules_of_a_search_hold_on_the_subscription_too(ctx):
     plan = Plan("never")
     tool = plan_search_tool(FakeLLM([]), plan)
-    ctx.leaks.add("The gate code is 482913.")
-    with pytest.raises(ToolError, match="482913"):
-        await tool.handler({"query": "gate 482913"}, ctx)
+    ctx.leaks.add("The gate code is 135790.")
+    with pytest.raises(ToolError, match="135790"):
+        await tool.handler({"query": "gate 135790"}, ctx)
     ctx.private_read = True
     with pytest.raises(ParkInstead):
         await tool.handler({"query": "opening hours"}, ctx)

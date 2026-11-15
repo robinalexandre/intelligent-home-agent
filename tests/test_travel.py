@@ -42,12 +42,12 @@ async def test_geocoder_retries_without_the_venue_name(tool, ctx):
     )
     respx.get(ROUTE_URL).respond(json=ROUTE)
 
-    result = await tool.handler({"destination": "Alex's place\n1 Example Street\nSpringfield"}, ctx)
+    result = await tool.handler({"destination": "Lena's place\n1 Example Street\nSpringfield"}, ctx)
 
     assert result["destination"] == "Eiffel Tower, Champ de Mars, X"
     queries = [call.request.url.params["q"] for call in geocoder.calls]
     assert queries == [
-        "Alex's place, 1 Example Street, Springfield",
+        "Lena's place, 1 Example Street, Springfield",
         "1 Example Street, Springfield",
     ]
     assert "intelligent-home-agent" in geocoder.calls[0].request.headers["user-agent"]

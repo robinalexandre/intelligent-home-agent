@@ -30,7 +30,7 @@ def ok():
 @respx.mock
 async def test_state_gathers_volume_playback_and_track(ctx):
     respx.get(f"{BASE}/devices/current").mock(
-        return_value=httpx.Response(200, json={"deviceName": "Phantom Ultimate 98 dB"})
+        return_value=httpx.Response(200, json={"deviceName": "Living room speaker"})
     )
     respx.get(f"{BASE}/groups/current/sources/current").mock(
         return_value=httpx.Response(
@@ -39,7 +39,7 @@ async def test_state_gathers_volume_playback_and_track(ctx):
                 "playingState": "playing",
                 "muteState": "unmuted",
                 "source": {"type": "airplay2"},
-                "metadata": {"title": "Teardrop", "artist": "Massive Attack", "coverArtUrl": "x"},
+                "metadata": {"title": "Night Train", "artist": "The Examples", "coverArtUrl": "x"},
             },
         )
     )
@@ -56,8 +56,8 @@ async def test_state_gathers_volume_playback_and_track(ctx):
     assert result["source"] == "airplay2"
     assert result["sources"] == ["airplay2", "bluetooth", "optical"]
     # Whoever streams writes the track's words: only the tainting tool shows them.
-    assert "Teardrop" not in str(result)
-    assert track == {"now_playing": {"title": "Teardrop", "artist": "Massive Attack"}}
+    assert "Night Train" not in str(result)
+    assert track == {"now_playing": {"title": "Night Train", "artist": "The Examples"}}
     assert tools(http)["get_speaker_track"].taints
     assert not tools(http)["get_speaker_state"].taints
 

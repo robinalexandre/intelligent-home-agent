@@ -107,8 +107,8 @@ async def test_writes_wait_after_a_read_and_show_what_they_do():
         assert tool(tools, name).needs_clean_turn and tool(tools, name).proposable
 
     create = tool(tools, "create_reminder")
-    line = await create.summary({"title": "Oil change", "due": "2026-11-03 09:00", "list": "TO DO"})
-    assert line == 'Create the reminder "Oil change" in TO DO, due 2026-11-03T09:00+01:00'
+    line = await create.summary({"title": "Oil change", "due": "2026-11-03 09:00", "list": "Tasks"})
+    assert line == 'Create the reminder "Oil change" in Tasks, due 2026-11-03T09:00+01:00'
     done = await tool(tools, "complete_reminder").summary({"id": "r3"})
     assert done == 'Tick the reminder "Taxes" (General)'
     french = build_reminder_tools(FakeReminders(REMINDERS), "Europe/Rome", "fr")
@@ -175,7 +175,7 @@ class FakeService:
 
     def lists(self):
         return [
-            SimpleNamespace(id="List/todo", title="TO DO", deleted=False),
+            SimpleNamespace(id="List/todo", title="Tasks", deleted=False),
             SimpleNamespace(id="List/shop", title="Shopping", deleted=False),
         ]
 
@@ -239,7 +239,7 @@ async def test_new_reminder_goes_to_the_busiest_list_in_the_home_zone(ctx):
 
 async def test_all_day_reminder_floats_at_midnight_utc():
     service = FakeService([])
-    source = ICloudReminders(icloud_with(service), [], "TO DO")
+    source = ICloudReminders(icloud_with(service), [], "Tasks")
 
     await source.create("Holidays", None, date(2026, 12, 20), "")
 
@@ -250,7 +250,7 @@ async def test_all_day_reminder_floats_at_midnight_utc():
 
 async def test_unknown_list_names_the_lists():
     source = ICloudReminders(icloud_with(FakeService([])), [], None)
-    with pytest.raises(ToolError, match="Shopping, TO DO"):
+    with pytest.raises(ToolError, match="Shopping, Tasks"):
         await source.create("x", "Work", None, "")
 
 
@@ -315,11 +315,11 @@ async def test_an_expired_login_asks_to_log_in_again():
 class Recording(FakeReminders):
     async def create(self, title, list_name, due, notes):
         self.created = due
-        return Reminder("new", title, due, list_name or "TO DO")
+        return Reminder("new", title, due, list_name or "Tasks")
 
     async def update(self, reminder_id, title, due, notes):
         self.updated = due
-        return Reminder(reminder_id, title or "Test", due, "TO DO")
+        return Reminder(reminder_id, title or "Test", due, "Tasks")
 
 
 async def test_in_minutes_counts_from_when_the_reminder_is_written(ctx, monkeypatch):

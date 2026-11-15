@@ -153,7 +153,7 @@ async def test_remember_appends_a_dated_line_and_forget_removes_it(ctx):
 async def test_a_fact_told_in_a_quoted_reply_waits_for_the_users_go():
     respx.get(URL).mock(return_value=file_response(EXISTING))
     put = respx.put(URL).mock(return_value=httpx.Response(200, json={}))
-    fact = {"fact": "Not free to sail before Wednesday"}
+    fact = {"fact": "No meetings before Wednesday"}
     async with httpx.AsyncClient() as http:
         registry = ToolRegistry(build_memory_tools(memory(http), "fr"))
         quoted = ToolContext(conversation=Conversation(id="c", turn=1), quoted="own")
@@ -161,11 +161,11 @@ async def test_a_fact_told_in_a_quoted_reply_waits_for_the_users_go():
         parked = await registry.run("remember", fact, quoted)
 
         assert parked["status"] == "waiting_for_the_user" and not put.called
-        assert quoted.actions[0]["summary"] == "Retenir « Not free to sail before Wednesday »"
+        assert quoted.actions[0]["summary"] == "Retenir « No meetings before Wednesday »"
         assert await registry.run("remember", fact, quoted, approved=True) == {
             "result": "remembered"
         }
-        assert "Not free to sail before Wednesday" in written(put)[0]
+        assert "No meetings before Wednesday" in written(put)[0]
 
 
 async def test_after_a_read_nothing_is_remembered_or_forgotten_without_a_go(tmp_path, ctx):

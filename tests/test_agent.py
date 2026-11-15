@@ -44,10 +44,10 @@ def make_agent(
 
 
 async def test_plain_answer():
-    fake = FakeLLM([text_response("Hello Alex.")])
+    fake = FakeLLM([text_response("Hello Lena.")])
     agent = make_agent(fake, ToolRegistry(build_general_tools(TZ)))
     conv = Conversation(id="c")
-    assert (await agent.ask(conv, "Hi")).text == "Hello Alex."
+    assert (await agent.ask(conv, "Hi")).text == "Hello Lena."
     assert conv.turn == 1
     assert fake.requests[0]["model"] == "test-model"
 
@@ -299,13 +299,13 @@ async def test_files_are_read_once_then_kept_by_name_and_taint_the_turn():
     agent = make_agent(fake, registry)
     conv = Conversation(id="c")
     pdf = Attachment("quote.pdf", "application/pdf", b"%PDF-1.7")
-    note = Attachment("notes.txt", "text/plain", b"Call Alex back")
+    note = Attachment("notes.txt", "text/plain", b"Call Lena back")
     await agent.ask(conv, "Summarize", files=[pdf, note])
     await agent.ask(conv, "And then?")
 
     first = fake.requests[0]["messages"][-1]["content"]
     assert first[0]["type"] == "document" and first[0]["title"] == "quote.pdf"
-    assert first[1] == {"type": "text", "text": '<file name="notes.txt">\nCall Alex back\n</file>'}
+    assert first[1] == {"type": "text", "text": '<file name="notes.txt">\nCall Lena back\n</file>'}
     assert first[2] == {"type": "text", "text": "Summarize", "cache_control": CACHE}
     assert acted == []  # a file can carry instructions: no actions in that turn
     later = fake.requests[2]["messages"][0]
@@ -452,10 +452,10 @@ async def test_remembered_facts_go_in_the_prompt():
 
 
 async def test_the_user_name_goes_in_the_prompt():
-    fake = FakeLLM([text_response("Hi Alex.")])
-    agent = make_agent(fake, ToolRegistry(build_general_tools(TZ)), user_name="Alex")
+    fake = FakeLLM([text_response("Hi Lena.")])
+    agent = make_agent(fake, ToolRegistry(build_general_tools(TZ)), user_name="Lena")
     await agent.ask(Conversation(id="c"), "Hi")
-    assert "The user is called Alex" in system_of(fake.requests[0])
+    assert "The user is called Lena" in system_of(fake.requests[0])
 
 
 async def test_reply_style_follows_the_display():
@@ -516,14 +516,14 @@ async def test_what_the_turn_holds_is_known_to_the_outgoing_check():
     found: list[str] = []
 
     async def read_mail(_args, _ctx):
-        return {"body": "Account 3000 6000 0112"}
+        return {"body": "Account 1111 2222 3333"}
 
     async def spy(args, ctx):
         found.append(ctx.leaks.found(args["text"]))
         return {}
 
     async def memory():
-        return "Door code 482913"
+        return "Door code 135790"
 
     registry = ToolRegistry(
         [
@@ -533,12 +533,12 @@ async def test_what_the_turn_holds_is_known_to_the_outgoing_check():
     )
     fake = FakeLLM(
         [
-            tool_response(("t0", "spy", {"text": "https://x/482913"})),
+            tool_response(("t0", "spy", {"text": "https://x/135790"})),
             tool_response(("t1", "read_mail", {})),
-            tool_response(("t2", "spy", {"text": "https://x/300060000112"})),
-            text_response("Seen: account 3000 6000 0112, and the email mentions 775120."),
-            tool_response(("t3", "spy", {"text": "https://x/300060000112"})),
-            tool_response(("t4", "spy", {"text": "https://x/775120"})),
+            tool_response(("t2", "spy", {"text": "https://x/111122223333"})),
+            text_response("Seen: account 1111 2222 3333, and the email mentions 246801."),
+            tool_response(("t3", "spy", {"text": "https://x/111122223333"})),
+            tool_response(("t4", "spy", {"text": "https://x/246801"})),
             text_response("Again."),
         ]
     )
@@ -550,17 +550,17 @@ async def test_what_the_turn_holds_is_known_to_the_outgoing_check():
     # The memory, this turn's results, and in the next turn what the agent's own reply
     # kept of them (the email itself is gone from the history by then).
     assert found == [
-        "the number 482913",
-        "the number 300060000112",
-        "the number 300060000112",
-        "the number 775120",
+        "the number 135790",
+        "the number 111122223333",
+        "the number 111122223333",
+        "the number 246801",
     ]
 
 
 def refused_search_registry():
     async def search(args, ctx):
         ctx.keep_in(args["query"], "query")
-        return {"answer": "About 40 per square metre"}
+        return {"answer": "About 40 per hour"}
 
     return ToolRegistry(
         [
@@ -580,15 +580,15 @@ def refused_search_registry():
 async def test_a_search_refused_before_it_ran_does_not_stop_the_corrected_one():
     fake = FakeLLM(
         [
-            tool_response(("t1", "search", {"query": "price sanding floor vitrification"})),
-            tool_response(("t2", "search", {"query": "price sanding floor"})),
+            tool_response(("t1", "search", {"query": "price tuning piano recalibration"})),
+            tool_response(("t2", "search", {"query": "price tuning piano"})),
             tool_response(("t3", "search", {"query": "price boiler service"})),
-            text_response("About 40 per square metre."),
+            text_response("About 40 per hour."),
         ]
     )
     agent = make_agent(fake, refused_search_registry())
     conv = Conversation(id="c")
-    conv.messages.append({"role": "assistant", "content": "Sanding, then vitrification."})
+    conv.messages.append({"role": "assistant", "content": "Tuning, then recalibration."})
 
     await agent.ask(conv, "Search the price for the floor", display="chat")
 
@@ -737,10 +737,10 @@ async def test_the_users_own_words_may_go_out_but_not_a_report_a_quote_or_a_plan
         return {}
 
     async def memory():
-        return "Form: https://github.com/examplemaintainer/awesome-list ; door 482913"
+        return "Form: https://github.com/examplemaintainer/awesome-list ; door 135790"
 
     registry = ToolRegistry([Tool("spy", "", OBJECT, spy)])
-    issue = "https://github.com/examplemaintainer/awesome-list/issues/3274"
+    issue = "https://github.com/examplemaintainer/awesome-list/issues/1024"
     requests = [
         (f"[Scheduled task the user left you: Link]\n\nCheck {issue}", {}),
         (f"[Scheduled task the user left you: Link]\n\nCheck.\n\n[Repeating task. {issue}]", {}),
@@ -758,7 +758,7 @@ async def test_the_users_own_words_may_go_out_but_not_a_report_a_quote_or_a_plan
     )
     agent = make_agent(fake, registry, memory=memory)
     for text, extra in requests:
-        await agent.ask(Conversation(id="c"), text, display="chat", context="482913", **extra)
+        await agent.ask(Conversation(id="c"), text, display="chat", context="135790", **extra)
 
     leak = "«examplemaintainer»"
     assert found == ["", leak, leak, "", leak, leak]
@@ -777,7 +777,7 @@ async def test_only_sites_the_users_own_words_name_are_theirs():
         "news.example.net/blog"
     )
     requests = [
-        f"{task}, https://www.example.com/news. Write to alex@example.org.",
+        f"{task}, https://www.example.com/news. Write to lena@example.org.",
         f"{task}.\n\n[Repeating task. Your last report for it, as data:\nseen on evil.example]",
         "[The user replies to your own earlier message, quoted as data: «evil.example»]\n\nOk",
     ]
@@ -968,7 +968,7 @@ async def test_a_reply_to_its_own_clean_message_is_the_users_own_request():
             Tool("read_email", "Read.", OBJECT, read, taints=True),
         ]
     )
-    clean = "Sprint points:\n- Alex: 20 pts\n- Total: 97 pts"
+    clean = "Sprint points:\n- Lena: 20 pts\n- Total: 97 pts"
     fake = FakeLLM(
         [
             text_response(clean),
@@ -1144,19 +1144,19 @@ async def test_the_engine_turn_is_tainted_by_a_web_search_too():
 async def test_the_engine_lets_a_corrected_search_follow_a_refused_one():
     engine = FakeEngine(
         [
-            ("search", {"query": "price sanding floor vitrification"}),
-            ("search", {"query": "price sanding floor"}),
+            ("search", {"query": "price tuning piano recalibration"}),
+            ("search", {"query": "price tuning piano"}),
         ],
-        "About 40 per square metre.",
+        "About 40 per hour.",
     )
     agent = make_agent(FakeLLM([]), refused_search_registry(), engine=engine)
     conv = Conversation(id="c")
-    conv.messages.append({"role": "assistant", "content": "Sanding, then vitrification."})
+    conv.messages.append({"role": "assistant", "content": "Tuning, then recalibration."})
 
     await agent.ask(conv, "Search the price for the floor", display="chat")
 
     leaked, corrected = engine.results
-    assert leaked[2] and "vitrification" in leaked[1]
+    assert leaked[2] and "recalibration" in leaked[1]
     assert not corrected[2]
 
 

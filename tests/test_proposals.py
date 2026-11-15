@@ -260,7 +260,7 @@ def test_a_failed_turn_leaves_nothing_to_approve(ctx):
 
 def test_waiting_actions_outlive_a_restart(tmp_path, ctx):
     ctx.conversation.propose("save", {"to_folder": "A"}, "save(to_folder=A)")
-    ctx.conversation.note_clean_reply("Sprint points:\n- Alex: 20")
+    ctx.conversation.note_clean_reply("Sprint points:\n- Lena: 20")
     store = ConversationStore(3600)
     store.save(ctx.conversation, tmp_path / "chat.json")
 
@@ -268,7 +268,7 @@ def test_waiting_actions_outlive_a_restart(tmp_path, ctx):
 
     assert restored is not None
     # A reply to the agent's clean message still counts as the user's own after a restart.
-    assert restored.said_cleanly("Sprint points: - Alex")
+    assert restored.said_cleanly("Sprint points: - Lena")
     assert [(p.number, p.args) for p in restored.proposals] == [(1, {"to_folder": "A"})]
 
 

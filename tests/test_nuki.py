@@ -105,7 +105,7 @@ async def test_a_lock_is_found_by_id(api, ctx):
     assert action.called
 
 
-async def test_unlock_is_always_parked_with_one_french_line(api, ctx):
+async def test_unlock_is_always_parked_with_one_line(api, ctx):
     action = api.post("/smartlock/101/action").respond(204)
     async with httpx.AsyncClient() as http:
         registry = ToolRegistry(build_nuki_tools(Nuki(http, TOKEN), wait=no_wait))

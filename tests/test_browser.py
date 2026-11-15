@@ -372,7 +372,7 @@ async def test_a_click_download_is_kept_with_the_site_it_really_came_from(
 
 async def test_a_listed_link_still_opens_after_another_listed_links_site(browser, ctx):
     # Two links the page listed, on the same bucket: the second one opens too.
-    bucket = "https://filehub-files.s3.eu-west-1.amazonaws.com/store/347/terms.pdf?X=1"
+    bucket = "https://filehub-files.s3.eu-west-1.amazonaws.com/store/1/terms.pdf?X=1"
     ctx.read_page("app.filehub.example")
     ctx.read_page("filehub-files.s3.eu-west-1.amazonaws.com")
     ctx.offer_urls([bucket])
@@ -410,7 +410,7 @@ async def test_after_private_content_only_trusted_and_logged_in_sites_open(brows
     open_page = tools(browser)["browser_open"]
     await open_page.handler({"url": "https://my.taxoffice.example/certificates"}, ctx)
     await open_page.handler({"url": "https://www.revenue.gov.example/"}, ctx)
-    for url in ["https://example.com/?data=secret", "https://www.taxoffice.example.evil.com/"]:
+    for url in ["https://example.com/?data=secret", "https://www.taxoffice.example.evil.example/"]:
         with pytest.raises(ToolError, match="only trusted sites"):
             await open_page.handler({"url": url}, ctx)
     # Even a link a page listed: the email's content could pick which one.
@@ -547,7 +547,7 @@ async def test_after_a_read_frames_and_listed_links_load_but_not_the_agents_own_
         await browser._guard(route, Request(url, True, frame))
         return route.result
 
-    bucket = "https://filehub-files.s3.eu-west-1.amazonaws.com/store/346/plan.xlsx?X-Amz=1"
+    bucket = "https://filehub-files.s3.eu-west-1.amazonaws.com/store/2/plan.xlsx?X-Amz=1"
     ctx.read_page("app.filehub.example")
     ctx.offer_urls([bucket])
     browser.bind(ctx)
@@ -563,7 +563,7 @@ async def test_after_a_read_frames_and_listed_links_load_but_not_the_agents_own_
 
 
 async def test_a_listed_links_file_downloads_from_its_own_host(browser, ctx, tmp_path):
-    bucket = "https://filehub-files.s3.eu-west-1.amazonaws.com/store/346/plan.xlsx?X-Amz=1"
+    bucket = "https://filehub-files.s3.eu-west-1.amazonaws.com/store/2/plan.xlsx?X-Amz=1"
     ctx.offer_urls([bucket])
     browser.bind(ctx)
     downloads(browser, tmp_path, bucket, b"%PDF-1.7 plan")
@@ -577,7 +577,7 @@ async def test_a_listed_links_file_downloads_from_its_own_host(browser, ctx, tmp
 async def test_a_login_from_an_approved_plan_naming_the_site_is_remembered(browser, ctx):
     plan = ToolContext(
         conversation=ctx.conversation,
-        approved_plan="Review Acme: open https://app.filehub.example/projects/109",
+        approved_plan="Review Acme: open https://app.filehub.example/projects/1",
     )
     plan.read_page("app.filehub.example")
 
@@ -591,13 +591,13 @@ async def test_a_login_from_an_approved_plan_naming_the_site_is_remembered(brows
 async def test_a_plan_only_names_the_exact_hosts_of_its_addresses(browser, ctx):
     plan = ToolContext(
         conversation=ctx.conversation,
-        approved_plan="Review Acme: open https://app.filehub.example/projects/109",
+        approved_plan="Review Acme: open https://app.filehub.example/projects/1",
     )
-    plan.read_page("alroom.example")
+    plan.read_page("ehub.example")
 
-    await tools(browser)["request_login"].handler({"url": "https://alroom.example/login"}, plan)
+    await tools(browser)["request_login"].handler({"url": "https://ehub.example/login"}, plan)
 
-    assert "alroom.example" not in browser.sites
+    assert "ehub.example" not in browser.sites
 
 
 async def test_a_capture_counts_as_a_file_of_the_site_it_shows(browser, ctx):
@@ -737,7 +737,7 @@ async def test_a_download_on_a_sibling_host_of_the_login_site_goes_through(brows
     assert (
         await outcome("https://api.payroll.example/api/documents/1/content?token=x") == "continue"
     )
-    assert await outcome("https://api.other.fr/?token=x") == "blockedbyclient"
+    assert await outcome("https://api.other.example/?token=x") == "blockedbyclient"
 
 
 async def test_pages_of_two_sites_keep_neither_reachable(browser, ctx):
@@ -760,21 +760,21 @@ async def test_internal_addresses_are_refused(browser, ctx, monkeypatch):
 
 
 async def test_a_page_this_request_opened_is_kept_as_an_image(browser, ctx):
-    url = "https://shop.example/p/mattress-cover-80x200"
+    url = "https://shop.example/p/desk-lamp-40cm"
     await tools(browser)["browser_open"].handler({"url": url}, ctx)
 
     capture = await tools(browser)["browser_screenshot"].handler(
-        {"file_name": "mattress-cover", "full_page": True}, ctx
+        {"file_name": "desk-lamp", "full_page": True}, ctx
     )
 
     assert (capture.filename, capture.mimetype, capture.origin) == (
-        "mattress-cover.png",
+        "desk-lamp.png",
         "image/png",
         "web",
     )
     assert capture.data == b"\x89PNG" + url.encode()
     assert browser.fake.captured["full_page"] is True
-    assert ctx.conversation.files["mattress-cover.png"] is capture
+    assert ctx.conversation.files["desk-lamp.png"] is capture
 
 
 async def test_a_page_left_open_by_another_request_is_not_captured(browser, ctx):
@@ -844,7 +844,7 @@ async def test_a_click_chooses_a_list_entry_and_reaches_a_hidden_menu_link(
     click = tools(browser)["browser_click"]
     browser.add_site("https://www.carhire.example/")
     browser.fake.url = "https://www.carhire.example/reservation"
-    browser.fake.tags = {"text=Central Station": ("option", "am217")}
+    browser.fake.tags = {"text=Central Station": ("option", "st01")}
 
     await click.handler({"text": "Central Station"}, ctx)
 
@@ -855,7 +855,7 @@ async def test_a_click_chooses_a_list_entry_and_reaches_a_hidden_menu_link(
     await click.handler({"element": "27"}, ctx)
 
     assert browser.fake.clicked == [
-        "text=Central Station xpath=ancestor::select[1] = am217",
+        "text=Central Station xpath=ancestor::select[1] = st01",
         "27 click event",
     ]
 

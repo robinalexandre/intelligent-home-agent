@@ -329,7 +329,7 @@ async def test_a_repeating_task_refused_a_search_runs_clean_from_then_on(tmp_pat
     every = "---\ntitle: {}\non: 2026-10-22 09:00\nevery: day\n{}\n---\n\nV."
     files = {
         "a-watch.md": every.format("Security watch", ""),
-        "b-colis.md": every.format("Parcels", "fresh: no"),
+        "b-parcels.md": every.format("Parcels", "fresh: no"),
     }
     runs: list[tuple[str, bool, bool]] = []
 

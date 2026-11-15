@@ -217,11 +217,11 @@ def test_recap_looks_at_tomorrow():
 
 
 def test_chat_display_memory_and_user_name():
-    cfg = PromptConfig("Nova", "fr", "UTC", tools={"get_weather"}, user_name="Alex")
+    cfg = PromptConfig("Nova", "fr", "UTC", tools={"get_weather"}, user_name="Lena")
     text = build_system_prompt(cfg, display="chat", memory="- Likes tea.")
     assert "a message in a chat" in text and "read aloud" not in text
     assert '"Tu veux le détail ?"' in text and "8h20" in text
-    assert "The user is called Alex" in text
+    assert "The user is called Lena" in text
     assert "What you remember about the user" in text and "- Likes tea." in text
     assert "What you remember" not in build_system_prompt(cfg)
 

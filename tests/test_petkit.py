@@ -38,7 +38,7 @@ def feeder(food=1, items=None, device_type="d4") -> Feeder:
     return Feeder.model_validate(
         {
             "id": 11,
-            "name": "Petkit_D4",
+            "name": "Feeder",
             "sn": "SN1",
             "firmware": "1.0",
             "hardware": 1,
@@ -49,7 +49,7 @@ def feeder(food=1, items=None, device_type="d4") -> Feeder:
                 "feedState": {"realAmountTotal": 40, "addAmountTotal": 10},
             },
             "device_records": {"feed": [{"day": 20261113, "items": items or []}]},
-            "device_nfo": nfo(11, device_type, "Petkit_D4"),
+            "device_nfo": nfo(11, device_type, "Feeder"),
         }
     )
 
@@ -61,14 +61,14 @@ def litter(records=None, work_state=None, stats=None) -> Litter:
     return Litter.model_validate(
         {
             "id": 22,
-            "name": "Petkit_T4",
+            "name": "Litter box",
             "sn": "SN2",
             "hardware": 1,
             "firmwareDetails": [],
             "state": state,
             "device_records": records or [],
             "device_stats": stats,
-            "device_nfo": nfo(22, "t4", "Petkit_T4"),
+            "device_nfo": nfo(22, "t4", "Litter box"),
         }
     )
 
@@ -117,7 +117,7 @@ def tools(client) -> dict[str, Any]:
 def test_feeder_status_lists_todays_meals_and_the_next_one():
     status = feeder_status(feeder(items=MEALS), datetime(2026, 11, 13, 15, 0, tzinfo=PARIS))
 
-    assert status["name"] == "Petkit_D4"
+    assert status["name"] == "Feeder"
     assert status["unit"] == "g"
     assert status["food_low"] is False
     assert status["desiccant_days_left"] == 12
@@ -167,8 +167,8 @@ async def test_status_tool_marks_the_request_as_account_read(ctx):
     client = FakeClient([feeder(items=MEALS), litter()])
     result = await tools(client)["get_pet_devices_status"].handler({}, ctx)
 
-    assert [f["name"] for f in result["feeders"]] == ["Petkit_D4"]
-    assert [lb["name"] for lb in result["litter_boxes"]] == ["Petkit_T4"]
+    assert [f["name"] for f in result["feeders"]] == ["Feeder"]
+    assert [lb["name"] for lb in result["litter_boxes"]] == ["Litter box"]
     assert ctx.account_read
 
 
@@ -214,7 +214,7 @@ async def test_feeding_sends_grams_for_a_d4(ctx):
 
     assert result == {
         "done": True,
-        "feeder": "Petkit_D4",
+        "feeder": "Feeder",
         "portions": 2,
         "amount": 20,
         "unit": "g",
@@ -229,7 +229,7 @@ async def test_cleaning_starts_the_litter_box_cycle(ctx):
     client, request = real_client([feeder(), litter()])
     result = await tools(client)["clean_litter_box_now"].handler({}, ctx)
 
-    assert result["litter_box"] == "Petkit_T4"
+    assert result["litter_box"] == "Litter box"
     call = request.await_args.kwargs
     assert call["url"] == "t4/controlDevice"
     assert json.loads(call["data"]["kv"]) == {"start_action": 0}
@@ -255,7 +255,7 @@ async def test_portions_are_capped_before_anything_is_sent(ctx):
 
 async def test_a_named_device_must_exist(ctx):
     client = FakeClient([feeder()])
-    with pytest.raises(ToolError, match="Petkit_D4"):
+    with pytest.raises(ToolError, match="Feeder"):
         await tools(client)["feed_pet_now"].handler({"portions": 1, "device": "Kitchen"}, ctx)
 
 

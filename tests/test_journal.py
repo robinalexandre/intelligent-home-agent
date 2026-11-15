@@ -58,13 +58,13 @@ async def test_a_turn_that_read_others_content_keeps_no_reply_nor_arguments(tmp_
         raise ToolError("Waits for the user's go.")
 
     fake = FakeLLM(
-        [tool_response(("t1", "act", {"to": "alex@example.com"})), text_response("Quote ready.")]
+        [tool_response(("t1", "act", {"to": "lena@example.com"})), text_response("Quote ready.")]
     )
     registry = ToolRegistry([Tool("act", "", {"type": "object"}, refuse)])
     agent = make_agent(fake, registry, Journal(tmp_path, "UTC"))
     pdf = Attachment("quote.pdf", "application/pdf", b"%PDF-1.7")
 
-    await agent.ask(Conversation(id="c"), "Answer Alex", display="chat", files=[pdf])
+    await agent.ask(Conversation(id="c"), "Answer Lena", display="chat", files=[pdf])
 
     [entry] = only_day(tmp_path)
     assert entry["tainted"] is True and entry["files"] == ["quote.pdf"]

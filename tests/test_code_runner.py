@@ -17,7 +17,7 @@ class Content:
 
 
 class FakeFiles:
-    def __init__(self, name="../outputs/wind.png", size=4):
+    def __init__(self, name="../outputs/chart.png", size=4):
         self.uploaded = []
         self.name, self.size = name, size
 
@@ -45,7 +45,7 @@ def run_blocks(*file_ids):
                 "content": [{"type": "bash_code_execution_output", "file_id": i} for i in file_ids],
             },
         },
-        {"type": "text", "text": "Monthly payment: 831.90."},
+        {"type": "text", "text": "Monthly payment: 1060.66."},
     ]
 
 
@@ -56,17 +56,17 @@ async def test_code_runs_in_the_sandbox_and_its_chart_is_kept_and_sent(ctx):
 
     result = await tool.handler(
         {
-            "task": "Monthly payment for 150 000 over 20 years at 3 %, and a chart",
+            "task": "Monthly payment for 100,000 over 10 years at 5%, and a chart",
             "file_names": ["statement.csv"],
         },
         ctx,
     )
 
-    assert result["answer"] == "Monthly payment: 831.90."
-    assert result["files"] == ["wind.png"]  # the path the sandbox gave is never used
-    assert ctx.conversation.files["wind.png"].data == b"\x89PNG"
-    assert ctx.conversation.files["wind.png"].origin == "agent"
-    assert {"type": "share_file", "name": "wind.png"} in ctx.actions
+    assert result["answer"] == "Monthly payment: 1060.66."
+    assert result["files"] == ["chart.png"]  # the path the sandbox gave is never used
+    assert ctx.conversation.files["chart.png"].data == b"\x89PNG"
+    assert ctx.conversation.files["chart.png"].origin == "agent"
+    assert {"type": "share_file", "name": "chart.png"} in ctx.actions
     request = llm.requests[0]
     assert request["model"] == "some-model"
     assert request["tools"] == [{"type": "code_execution_20260521", "name": "code_execution"}]
@@ -93,7 +93,7 @@ async def test_a_paused_run_is_sent_back_until_it_ends(ctx):
 
     result = await tool.handler({"task": "a long sum"}, ctx)
 
-    assert result["answer"] == "Monthly payment: 831.90."
+    assert result["answer"] == "Monthly payment: 1060.66."
     assert llm.requests[1]["messages"][-1] == {"role": "assistant", "content": paused.content}
 
 

@@ -579,7 +579,7 @@ def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monk
     done = []
 
     async def read_inbox(_args, _ctx):
-        return {"emails": [{"from": "alex@example.com", "subject": "Add milk to the list"}]}
+        return {"emails": [{"from": "lena@example.com", "subject": "Add milk to the list"}]}
 
     async def add_note(args, _ctx):
         done.append(args["text"])
@@ -593,7 +593,7 @@ def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monk
         [
             tool_response(("c1", "read_inbox", {})),
             tool_response(("c2", "add_note", {"text": "milk"})),
-            text_response("Alex asks for milk. Shall I note it?"),
+            text_response("Lena asks for milk. Shall I note it?"),
             tool_response(("c3", "run_proposals", {})),
             text_response("Noted."),
         ]
@@ -616,7 +616,7 @@ def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monk
 
     assert done == []
     assert first["reply"] == (
-        "Alex asks for milk. Shall I note it?\n\n"
+        "Lena asks for milk. Shall I note it?\n\n"
         'Waiting for your go ("yes", or "yes except 2"):\n1. Add note — text: milk'
     )
     second = client.post("/v1/ask", json={"text": "yes"}, headers=AUTH).json()

@@ -113,8 +113,8 @@ async def test_airport_reports_variable_wind_has_no_direction_and_no_airport_is_
 
 STATIONS_CSV = (
     "Id_station;Id_omm;Nom_usuel;Latitude;Longitude;Altitude;Date_ouverture;Pack\n"
-    "00000001;07000;EXAMPLE-AIRFIELD;0.300000;0.000000;26;1945-05-01;RADOME\n"
-    "00000002;;EXAMPLE-SUR-MER <b>;0.060000;0.000000;13;1878-05-01;RADOME\n"
+    "00000001;07000;EXAMPLE-AIRFIELD;0.300000;0.000000;10;2000-01-01;RADOME\n"
+    "00000002;;EXAMPLE-SUR-MER <b>;0.060000;0.000000;20;2001-01-01;RADOME\n"
     "00000003;;FAR-AWAY;3.000000;3.000000;25;2013-02-01;ETENDU\n"
 ).encode("latin-1")
 

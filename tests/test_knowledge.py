@@ -6,7 +6,7 @@ from intelligent_home_agent.tools import KnowledgeBase, ToolError, build_knowled
 
 URL = "http://kb:8800"
 HIT = {
-    "path": "/data/.claude-sync/knowledge/server-layout.md",
+    "path": "/data/notes/knowledge/server-layout.md",
     "name": "server-layout",
     "title": "Where the agent runs",
     "type": "fact",

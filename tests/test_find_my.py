@@ -10,7 +10,7 @@ HOME = (0.0, 0.0)
 IPHONE = {
     "id": "phone-1",
     "name": "Sam's iPhone",
-    "deviceDisplayName": "iPhone 16 Pro",
+    "deviceDisplayName": "iPhone 15",
     "deviceStatus": "200",
     "batteryLevel": 0.84,
     "batteryStatus": "NotCharging",
@@ -25,7 +25,7 @@ IPHONE = {
 WATCH = {
     "id": "watch-1",
     "name": "Sam’s Apple Watch",
-    "deviceDisplayName": "Apple Watch Series 9",
+    "deviceDisplayName": "Apple Watch SE",
     "deviceStatus": "203",
     "batteryLevel": 0.0,
     "batteryStatus": "Unknown",
@@ -99,8 +99,8 @@ async def test_family_devices_on_request_with_their_owner(ctx, manager):
 
     assert {d["id"] for d in mine["devices"]} == {"phone-1", "watch-1"}
     (phone,) = family["devices"]
-    assert phone["owner"] == "Jo" and phone["model"] == "iPhone 16 Pro"
-    assert await ring.summary({"id": "jo-1"}) == ('Play a sound on "Jo (2)" (iPhone 16 Pro, Jo\'s)')
+    assert phone["owner"] == "Jo" and phone["model"] == "iPhone 15"
+    assert await ring.summary({"id": "jo-1"}) == ('Play a sound on "Jo (2)" (iPhone 15, Jo\'s)')
 
 
 async def test_a_location_read_opens_no_new_site_but_ringing_still_runs(ctx, manager):
@@ -121,9 +121,7 @@ async def test_ringing_waits_after_a_read_and_names_the_device(ctx, manager):
         await ring.summary({"id": "phone-1"})
 
     await devices.handler({}, ctx)
-    assert await ring.summary({"id": "phone-1"}) == (
-        'Play a sound on "Sam\'s iPhone" (iPhone 16 Pro)'
-    )
+    assert await ring.summary({"id": "phone-1"}) == ('Play a sound on "Sam\'s iPhone" (iPhone 15)')
     result = await ring.handler({"id": "phone-1"}, ctx)
 
     assert result["status"] == "ringing" and manager[0].rang and not manager[1].rang

@@ -54,8 +54,8 @@ def test_the_test_pdfs_read_as_meant():
 
 async def test_only_new_and_changed_files_are_read_and_accents_dont_matter(tmp_path):
     files = {
-        "Documents/Power contract.pdf": pdf("Power contract number 4471 - meter by the fenetre"),
-        "Documents/notes.txt": "Reminder: the gate code is by the blue fenêtre.".encode(),
+        "Documents/Power contract.pdf": pdf("Power contract number 4471 - meter by the cafe"),
+        "Documents/notes.txt": "Reminder: the gate code is by the blue café.".encode(),
         "Documents/photo.jpg": b"\xff\xd8",
     }
     reads: list[str] = []
@@ -71,7 +71,7 @@ async def test_only_new_and_changed_files_are_read_and_accents_dont_matter(tmp_p
 
     assert first["read"] == 2 and again["read"] == 0  # the photo is never read
     assert reads == ["Documents/Power contract.pdf", "Documents/notes.txt"]
-    found = content.search("fenêtre")
+    found = content.search("café")
     assert {f["path"] for f in found} == {"Documents/Power contract.pdf", "Documents/notes.txt"}
     assert "«" in found[0]["extract"]
     assert [f["path"] for f in content.search("4471")] == ["Documents/Power contract.pdf"]

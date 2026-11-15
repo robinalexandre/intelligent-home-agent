@@ -146,9 +146,9 @@ def test_a_proposal_is_numbered_once_and_remembers_the_files_it_names():
 
 def test_a_quote_of_a_clean_reply_is_recognized_even_cut_short():
     conv = Conversation(id="c")
-    conv.note_clean_reply("Sprint points:\n- Alex: 20\n- Sam: 13")
-    assert conv.said_cleanly("Sprint points: - Alex")
-    assert not conv.said_cleanly("Alex: 20")
+    conv.note_clean_reply("Sprint points:\n- Lena: 20\n- Sam: 13")
+    assert conv.said_cleanly("Sprint points: - Lena")
+    assert not conv.said_cleanly("Lena: 20")
     assert not conv.said_cleanly("")
 
 

@@ -313,15 +313,15 @@ async def test_sites_the_user_named_are_not_of_the_agents_own_choosing(ctx):
 
 @respx.mock
 async def test_an_address_repeating_what_the_request_holds_does_not_go_out(ctx):
-    respx.get("https://bank.example/30006000").mock(return_value=httpx.Response(200, html=PAGE))
-    ctx.leaks.add("Account number 3000 6000 0112 3456")
+    respx.get("https://bank.example/11112222").mock(return_value=httpx.Response(200, html=PAGE))
+    ctx.leaks.add("Account number 1111 2222 3333 3456")
     open_page = tool()
 
-    with pytest.raises(ToolError, match="repeats the number 30006000"):
-        await open_page.handler({"url": "https://bank.example/30006000"}, ctx)
+    with pytest.raises(ToolError, match="repeats the number 11112222"):
+        await open_page.handler({"url": "https://bank.example/11112222"}, ctx)
     # An address a page offered is the page's own words.
-    ctx.offer_urls(["https://bank.example/30006000"])
-    page = await open_page.handler({"url": "https://bank.example/30006000"}, ctx)
+    ctx.offer_urls(["https://bank.example/11112222"])
+    page = await open_page.handler({"url": "https://bank.example/11112222"}, ctx)
     assert page["title"] == "ACME - Directory"
 
 
@@ -329,7 +329,7 @@ def test_a_plain_address_is_a_site_and_a_short_readable_path():
     for url in [
         "https://www.club.example/calendar/",
         "https://waterlevel.example/data.json",
-        "https://directory.service.example/company/acme-85",
+        "https://directory.service.example/company/acme-1",
         "http://weather.example/forecast/springfield/12345",
     ]:
         assert suspicious(url) == "", url
