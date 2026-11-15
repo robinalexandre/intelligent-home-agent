@@ -564,7 +564,10 @@ def add_drives(
 def build_browser(settings: Settings, http: httpx.AsyncClient) -> RemoteBrowser | None:
     """The remote Chrome the user logs into (docs/browser.md), with its VPN exit when
     compose/vpn.yml is there."""
-    if not (settings.browser_cdp_host and settings.browser_public_url):
+    if not settings.browser_cdp_host:
+        return None
+    if not settings.browser_public_url:
+        log.error("The remote browser needs BROWSER_PUBLIC_URL, the address of its page")
         return None
     if not browser_available():
         log.error('BROWSER_CDP_HOST needs the playwright package: pip install ".[browser]"')

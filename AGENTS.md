@@ -71,7 +71,9 @@ src/intelligent_home_agent/
                          and past_conversations.py sit beside it (docs/memory.md)
   tools/            one module per capability, each with a build_*_tools() factory
 scripts/setup.py         interactive .env writer (stdlib only)
-compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE
+compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE;
+                         browser*.yml, vpn.yml and browser/ are the remote browser
+                         (tools/browser.py, tools/vpn.py, docs/browser.md)
 scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
 ```
 

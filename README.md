@@ -71,6 +71,10 @@ spoken morning briefing and evening recap.
     ([docs/memory.md](docs/memory.md)).
   - Public web pages and documents, read from site to site; never an address inside your
     network, and after private content only your country's public-service sites.
+  - Sites behind your login, in a real Chrome next to the agent: you log in yourself
+    from a link, it then opens pages, clicks and downloads (a certificate, a
+    statement, an invoice); optionally pages as seen from another country, through
+    a VPN subscription ([docs/browser.md](docs/browser.md)).
   - Investigations of a photo, a document, a link or a site: metadata (EXIF, author,
     dates), a domain's age and registrar, archives, certificates, places on
     OpenStreetMap, reverse image search links. Never to identify a private person. See
@@ -162,6 +166,8 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `INVESTIGATIONS_ENABLED`, `PUBLIC_URL` | `false`, unset | Investigation tools; the agent's public address, for reverse image search. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
 | `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
+| `BROWSER_PUBLIC_URL` (+ `compose/browser.yml`) | unset | Remote browser for sites behind your login; `BROWSER_GATE`, `BROWSER_DOMAIN` and the `AUTH_` settings say how its page is reached: [docs/browser.md](docs/browser.md). |
+| `VPN_SERVICE_PROVIDER`, `VPN_CONTROL_KEY` (+ `compose/vpn.yml`) | unset | Pages seen from another country, with any VPN provider gluetun supports. |
 | `ICLOUD_APPLE_ID` | unset | Apple Reminders, Notes and Find My through iCloud's web services, after a login by hand: [docs/apple.md](docs/apple.md). |
 | `ICLOUD_REMINDER_LISTS`, `ICLOUD_REMINDERS_DEFAULT_LIST` | all, the busiest | Reminders lists the agent sees, and where a new reminder goes. |
 | `ICLOUD_NOTES`, `ICLOUD_FIND_MY` | `true` | Set to `false` to leave Notes or Find My out. |
@@ -303,6 +309,12 @@ The guardrails are enforced in code, not only in the prompt.
   with a plain address (a site and a short readable path, no parameters); after private content, only your country's
   public-service sites and `WEB_TRUSTED_DOMAINS`, anything else waits for your go. A page
   that hides words for an assistant is flagged and ends free navigation.
+- **Remote browser**: you type your passwords yourself, in a page only you reach (a
+  login page with a passkey or a one-time code, or your Tailscale network); the
+  agent never types one. Chrome reaches websites through a proxy that refuses
+  private addresses. Clicks and typing only run in a request that read nothing but
+  that same site; after private content it opens only public-service sites and the
+  sites you logged into.
 - **Investigations**: lookups go to public registries and archives, never to the site
   investigated; after private content no GPS position and no DNS query goes out. A photo
   is put online for a reverse image search only if you sent it, stripped of its metadata,
