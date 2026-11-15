@@ -55,9 +55,10 @@ def has_extra(module: str, extra: str, what: str) -> bool:
     if importlib.util.find_spec(module) is not None:
         return True
     log.warning(
-        '%s is set up but its library is missing: pip install "intelligent-home-agent[%s]". '
-        "It stays off.",
+        '%s is set up but its library is missing: pip install ".[%s]" in the repository, '
+        "or with Docker add %s to EXTRAS in .env and rebuild. It stays off.",
         what,
+        extra,
         extra,
     )
     return False

@@ -134,4 +134,4 @@ def test_a_device_whose_library_is_missing_stays_off_and_says_so(monkeypatch, tm
     assert not found & {"get_pet_devices_status", "get_tv_state", "get_apple_media_state"}
     assert "get_lock_state" in found
     for extra in ("petkit", "android-tv", "apple"):
-        assert f"intelligent-home-agent[{extra}]" in caplog.text
+        assert f'pip install ".[{extra}]"' in caplog.text

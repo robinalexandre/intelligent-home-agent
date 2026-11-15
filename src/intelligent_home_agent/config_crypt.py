@@ -126,8 +126,7 @@ class ConfigCrypt:
             from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         except ImportError as exc:  # the optional "crypt" extra
             raise CryptError(
-                "git-crypt support needs the cryptography package: "
-                'pip install "intelligent-home-agent[crypt]"'
+                'git-crypt support needs the cryptography package: pip install ".[crypt]"'
             ) from exc
         return Cipher(algorithms.AES(self._aes), modes.CTR(nonce + b"\0\0\0\0")).encryptor()
 

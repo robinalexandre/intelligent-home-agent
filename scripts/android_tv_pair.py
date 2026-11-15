@@ -1,6 +1,6 @@
 """Pair the agent with a Google TV / Android TV device once, from the home network.
 
-    pip install "intelligent-home-agent[android-tv]"      (or: pip install -e ".[android-tv]")
+    pip install -e ".[android-tv]"
     python scripts/android_tv_pair.py 192.168.1.60
 
 The device shows a code on screen: type it here. The script makes a client certificate,

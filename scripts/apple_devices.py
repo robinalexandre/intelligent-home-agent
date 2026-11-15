@@ -1,6 +1,6 @@
 """The Apple TV and HomePods for the agent (tools/apple_media.py), run on the home network.
 
-    pip install "intelligent-home-agent[apple]"      (or: pip install -e ".[apple]")
+    pip install -e ".[apple]"
     python scripts/apple_devices.py profile 192.168.1.61 192.168.1.62
         prints the value of APPLE_DEVICES: the mDNS properties pyatv needs, as an agent
         outside the home can't scan. Give each device's address.
