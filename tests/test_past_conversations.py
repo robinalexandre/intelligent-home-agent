@@ -68,3 +68,14 @@ async def test_the_days_journal_carries_what_its_turns_read(tmp_path, ctx):
 
 def test_no_journal_means_no_tools():
     assert build_past_conversation_tools(None) == []
+
+
+async def test_a_day_read_back_leaves_out_turns_run_for_a_review(tmp_path, ctx):
+    journal = Journal(tmp_path, "Europe/Paris")
+    now = datetime.now(TZ).isoformat(timespec="seconds")
+    journal.add({"at": now, "display": "chat", "request": "Lights off", "reply": "Done."})
+    journal.add({"at": now, "display": "review", "request": "Review the day", "reply": "Read."})
+    tools = {t.name: t for t in build_past_conversation_tools(journal)}
+
+    today = await tools["read_day_journal"].handler({}, ctx)
+    assert today["turns"] == 1 and today["journal"][0]["asked"] == "Lights off"
