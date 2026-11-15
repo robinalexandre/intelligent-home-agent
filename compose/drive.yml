@@ -8,7 +8,11 @@ services:
   agent:
     environment:
       DRIVE_URL: http://drive:5572
-    networks: [default, drive]
+    # As a mapping, like the overlays that give the agent a fixed address: older
+    # Compose versions refuse to merge a list with a mapping.
+    networks:
+      default:
+      drive:
 
   drive:
     image: rclone/rclone:1.75.1

@@ -9,7 +9,11 @@ services:
   agent:
     environment:
       CODER_URL: http://coder:8100
-    networks: [default, coder]
+    # As a mapping, like the overlays that give the agent a fixed address: older
+    # Compose versions refuse to merge a list with a mapping.
+    networks:
+      default:
+      coder:
 
   coder:
     build:

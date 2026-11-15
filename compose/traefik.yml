@@ -4,7 +4,11 @@
 # certificate resolver (letsencrypt).
 services:
   agent:
-    networks: [default, traefik]
+    # As a mapping, like the overlays that give the agent a fixed address: older
+    # Compose versions refuse to merge a list with a mapping.
+    networks:
+      default:
+      traefik:
     labels:
       - traefik.enable=true
       - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}

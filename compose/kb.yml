@@ -7,7 +7,11 @@ services:
   agent:
     environment:
       KB_URL: http://kb:8800
-    networks: [default, kb]
+    # As a mapping, like the overlays that give the agent a fixed address: older
+    # Compose versions refuse to merge a list with a mapping.
+    networks:
+      default:
+      kb:
 
   kb:
     build: https://github.com/robinalexandre/claude-code-kit.git#930a4934327deb3a7740259676d411233bf159ff:skills/kb/package
