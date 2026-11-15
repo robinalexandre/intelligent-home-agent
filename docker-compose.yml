@@ -7,7 +7,12 @@ name: intelligent-home-agent
 
 services:
   agent:
-    build: .
+    build:
+      context: .
+      args:
+        # Optional libraries for some home devices, e.g. EXTRAS=devices in .env
+        # (docs/home-devices.md).
+        EXTRAS: "${EXTRAS:-}"
     env_file: .env
     ports:
       - "${AGENT_BIND:-127.0.0.1}:8000:8000"

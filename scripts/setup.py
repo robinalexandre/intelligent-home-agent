@@ -98,6 +98,8 @@ SECRET_KEYS = {
     "KB_TOKEN",
     "KB_GITHUB_TOKEN",
     "HUE_APP_KEY",
+    "NUKI_API_TOKEN",
+    "PETKIT_PASSWORD",
     "LLM_API_KEY",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
@@ -448,6 +450,48 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
                     env["ASSISTANT_REMINDERS_REPO"] = repo
 
 
+# Devices and services set up beyond the wizard: what each needs once .env is written.
+DEVICES = {
+    "nuki": "a Nuki smart lock (a Nuki Web API token)",
+    "petkit": "a PetKit feeder or litter box (a second PetKit account)",
+    "netatmo": "Netatmo cameras, weather station or thermostat",
+    "android-tv": "a Google TV / Android TV device: a TV, a projector, a box",
+    "apple": "an Apple TV, HomePods",
+    "withings": "a Withings scale (weigh-ins, read-only)",
+}
+DEVICE_STEPS = {
+    "petkit": 'install the library: pip install ".[petkit]" (Docker: build with EXTRAS=petkit)',
+    "netatmo": "run python scripts/netatmo_login.py and add the lines it writes to .env",
+    "android-tv": "on the home network, run python scripts/android_tv_pair.py <address>",
+    "apple": "on the home network, run python scripts/apple_devices.py profile <addresses>",
+    "withings": "run python scripts/withings_login.py and add the lines it writes to .env",
+}
+
+
+def ask_devices(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# More of the home, without Home Assistant (docs/home-devices.md, docs/health.md)")
+    if not p.yes("Set up a lock, cameras, a pet feeder, a TV, Apple devices or a scale?", False):
+        return
+    picked = p.choose("Which ones", DEVICES, [])
+    if "nuki" in picked:
+        if token := p.secret("Nuki Web API token (web.nuki.io > API)"):
+            env["NUKI_API_TOKEN"] = token
+        p.say("  Opening the door then waits for your yes each time; for a code or a secret")
+        p.say("  phrase instead, run python scripts/unlock_codes_setup.py --totp --phrase.")
+    if "petkit" in picked:
+        env["PETKIT_USERNAME"] = p.ask("  PetKit account shared with the devices (email)")
+        if password := p.secret("  Its password"):
+            env["PETKIT_PASSWORD"] = password
+        region = p.ask("  Country code of the PetKit account", env.get("HOME_COUNTRY", ""))
+        if region:
+            env["PETKIT_REGION"] = region
+    steps = [(name, DEVICE_STEPS[name]) for name in picked if name in DEVICE_STEPS]
+    if steps:
+        p.say("  Once .env is written:")
+        for name, step in steps:
+            p.say(f"  - {name}: {step}.")
+
+
 def ask_knowledge(p: Prompter, env: dict[str, str]) -> None:
     p.say("\n# Knowledge base: your own notes, searched by the assistant (docs/knowledge.md)")
     p.say("  Markdown notes in a GitHub repository, e.g. the one claude-code-kit keeps.")
@@ -506,7 +550,17 @@ GROUPS = [
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
     ("Outdoor activities", ["OUTDOOR_ACTIVITIES", "WIND_SPOTS", "SURF_SPOTS"]),
     ("Home Assistant", ["HA_URL", "HA_TOKEN"]),
-    ("Home devices", ["HUE_BRIDGE_URL", "HUE_APP_KEY"]),
+    (
+        "Home devices",
+        [
+            "HUE_BRIDGE_URL",
+            "HUE_APP_KEY",
+            "NUKI_API_TOKEN",
+            "PETKIT_USERNAME",
+            "PETKIT_PASSWORD",
+            "PETKIT_REGION",
+        ],
+    ),
     ("Calendar", ["CALDAV_URL", "CALDAV_USERNAME", "CALDAV_PASSWORD"]),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
@@ -557,6 +611,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     sections = ask_brief(p, env)
     ask_activities(p, env)
     ask_sources(p, env, sections)
+    ask_devices(p, env)
     if docker:
         ask_knowledge(p, env)
     address = ask_access(p, env) if docker else None

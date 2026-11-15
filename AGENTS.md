@@ -42,7 +42,11 @@ src/intelligent_home_agent/
   journal.py        one line per request, per day, in DATA_DIR/journal
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
   notify.py         ntfy push
-  home_devices.py   devices driven without Home Assistant (Hue, Devialet)
+  home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,
+                    Apple TV and HomePods, Nuki, Netatmo, PetKit), each on with its
+                    settings; unofficial libraries are optional extras
+  departure.py      POST /v1/departure: what is still unlocked or on, fixes parked
+  pet_alerts.py     the pet supplies watched and pushed through ntfy
   tools/base.py     Tool and its flags, ToolContext, ToolRegistry (the rules live here)
   tools/proposals.py     run_proposals, propose_action, propose_plan...: the user's go
   tools/long_results.py  read_result_part, for results too long for one read

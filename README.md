@@ -24,10 +24,18 @@ spoken morning briefing and evening recap.
   files (a PDF, a photo, a text or office document) for the agent to read.
 - `POST /v1/briefing`: the morning briefing or evening recap, written to be read, optionally
   pushed to your phone and desktop through ntfy. Made for schedulers.
+- `POST /v1/departure`: called when you leave home (a phone automation), it says what
+  is still unlocked, on or playing among the devices set up, and turns it off on your
+  yes ([docs/home-devices.md](docs/home-devices.md#leaving-home)).
 - Tools, each one on only when configured:
   - Home Assistant: find devices, read states, call services, HA weather.
-  - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet speaker
+  - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet
+    speaker, a Google TV / Android TV device, an Apple TV and HomePods, a Nuki smart
+    lock, Netatmo cameras and sensors, a PetKit feeder and litter box
     ([docs/home-devices.md](docs/home-devices.md)).
+  - Weigh-ins from a Withings scale, said only when you ask
+    ([docs/health.md](docs/health.md)).
+  - Parcels on their way, noted when a shipping email is read.
   - Weather at home or anywhere (Open-Meteo, no key).
   - Outdoor activities: wind sports per spot (strength, gusts, direction), surf per beach
     (waves, period, wind effect, tides), and weather windows for everything else
@@ -107,6 +115,14 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `HA_PROXY_URL` | unset | HTTP proxy to reach HA (VPN sidecar). |
 | `HUE_BRIDGE_URL`, `HUE_APP_KEY` | unset | Philips Hue lights, straight from the bridge. |
 | `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | unset, `70` | A Devialet Phantom speaker. |
+| `ANDROID_TV_HOST`, `ANDROID_TV_CLIENT_CERT`, `ANDROID_TV_CLIENT_KEY`, `ANDROID_TV_NAME`, `ANDROID_TV_MAX_VOLUME` | unset | A Google TV / Android TV device (`android-tv` extra); `ANDROID_TV_APPS`, `ANDROID_TV_CHANNEL_APP`, `ANDROID_TV_CHANNELS` add apps and live channels. |
+| `APPLE_DEVICES`, `APPLE_TV_COMPANION_CREDENTIALS`, `APPLE_TV_AIRPLAY_CREDENTIALS` | unset | Apple TV and HomePods (`apple` extra). |
+| `NUKI_API_TOKEN`, `UNLOCK_TOTP_SECRET`, `UNLOCK_PHRASE` | unset | A Nuki smart lock; a code or secret phrase asked before it opens. |
+| `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | unset | Netatmo cameras, weather station, thermostat. |
+| `PETKIT_USERNAME`, `PETKIT_PASSWORD`, `PETKIT_REGION`, `PETKIT_ALERTS` | unset, `true` | PetKit feeder and litter box (`petkit` extra); supplies pushed through ntfy. |
+| `DEPARTURE_CHECK` | `true` | `POST /v1/departure`: what is still unlocked or on when you leave. |
+| `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REFRESH_TOKEN` | unset | Weigh-ins from a Withings scale, read-only ([docs/health.md](docs/health.md)). |
+| `DELIVERIES_ENABLED` | `true` | With a mailbox: parcels noted from shipping emails. |
 | `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
 | `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
@@ -197,6 +213,15 @@ The guardrails are enforced in code, not only in the prompt.
   It runs only when your next message agrees, in a request that has read nothing else,
   and never in a scheduled briefing. Nothing read in between can change what it does;
   what was never listed can't run; it is forgotten with the conversation.
+- **Opening a door**: the model can never open one by itself. `unlock_door` asks for
+  proof only you have (the code of an authenticator app, or letters of a secret phrase
+  at positions drawn by the code, once, with a lockout after five wrong answers); when
+  no proof is set up it always waits for your go, even in a clean request. Turning a
+  camera's monitoring off always waits for your go too.
+- **Your own accounts**: what a lock's log, the cameras, the pet devices or the scale
+  report is yours, not public: after reading it, a web search in that request waits
+  for your go, so no query can carry it out. Weigh-ins are never brought up unasked
+  nor put in a briefing.
 - **Web search**: a query is text that leaves the house. After private content was read
   the search waits for your go like a write; in any request, a query that repeats a
   number, an email address, a long token or a run of words from what the request holds
@@ -220,7 +245,8 @@ The guardrails are enforced in code, not only in the prompt.
 
 ```
 src/intelligent_home_agent/   app, agent loop, prompts, settings, tools/
-scripts/                      setup.py (onboarding), build_shortcuts.py (Siri), mcp_login.py
+scripts/                      setup.py (onboarding), build_shortcuts.py (Siri), mcp_login.py,
+                              one login or pairing script per device that needs it
 compose/                      one file per way to reach the agent (Caddy, Tailscale...)
 docs/                         setup step by step, deployment, integrations, Siri Shortcut
 tests/                        pytest, no network

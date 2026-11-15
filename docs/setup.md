@@ -123,7 +123,9 @@ turns search off.
 Home control goes through [Home Assistant](https://www.home-assistant.io/), which knows
 nearly every device. Without it, skip this step: the agent still answers questions, gives
 the weather, the briefing, the calendar and the rest, and drives a few devices by itself
-(Philips Hue, a Devialet speaker: [home-devices.md](home-devices.md)).
+(Philips Hue, a Devialet speaker, a Google TV / Android TV device, an Apple TV and
+HomePods, a Nuki lock, Netatmo, PetKit: [home-devices.md](home-devices.md)) and reads a
+Withings scale ([health.md](health.md)).
 
 Create a token in Home Assistant: your profile (bottom left) > **Security** >
 **Long-lived access tokens** > Create. Better, create a dedicated non-admin user for the

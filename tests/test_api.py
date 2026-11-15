@@ -407,3 +407,140 @@ def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monk
     assert second["reply"] == "Noted." and done == ["milk"]
     # The mail itself never stayed in memory.
     assert "example.com" not in str(client.app.state.store.get("default").messages)
+
+
+def test_home_and_health_tools_come_with_their_settings(monkeypatch, tmp_path):
+    base_env(monkeypatch)
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    names = main.build_registry(main.Settings(_env_file=None), None, None, None).names()
+    off = {
+        "get_lock_state",
+        "unlock_door",
+        "get_home_security_status",
+        "get_pet_devices_status",
+        "get_tv_state",
+        "get_apple_media_state",
+        "get_body_measurements",
+        "note_delivery",
+        "list_deliveries",
+    }
+    assert not names & off
+    monkeypatch.setenv("NUKI_API_TOKEN", "n")
+    monkeypatch.setenv("NETATMO_CLIENT_ID", "c")
+    monkeypatch.setenv("NETATMO_CLIENT_SECRET", "s")
+    monkeypatch.setenv("WITHINGS_CLIENT_ID", "c")
+    monkeypatch.setenv("WITHINGS_CLIENT_SECRET", "s")
+    monkeypatch.setenv(
+        "MAIL_ACCOUNTS",
+        '[{"name": "home", "host": "imap.example.com", "username": "u", "password": "p"}]',
+    )
+    registry = main.build_registry(main.Settings(_env_file=None), None, None, None)
+    assert {
+        "get_lock_state",
+        "unlock_door",
+        "get_home_security_status",
+        "get_body_measurements",
+        "note_delivery",
+        "list_deliveries",
+    } <= registry.names()
+    assert registry.devices == {}
+    monkeypatch.setenv("DELIVERIES_ENABLED", "false")
+    names = main.build_registry(main.Settings(_env_file=None), None, None, None).names()
+    assert "note_delivery" not in names
+
+
+def test_the_home_network_client_reaches_the_devices_whatever_the_home_coordinates(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("HOME_LATITUDE", "0.0")
+    monkeypatch.setenv("HOME_LONGITUDE", "0.0")
+    monkeypatch.setenv("DEVIALET_URL", "http://192.168.1.51")
+    seen = {}
+    monkeypatch.setattr(
+        main,
+        "build_home_device_tools",
+        lambda settings, home, http, found: seen.update(home=home, http=http) or [],
+    )
+    main.build_registry(main.Settings(_env_file=None), None, "cloud", None, "home-network")
+    assert seen == {"home": "home-network", "http": "cloud"}
+
+
+def test_the_pet_supplies_watch_needs_petkit_and_a_push_channel(monkeypatch, tmp_path):
+    base_env(monkeypatch)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+
+    class FakePetKit:
+        async def status(self):
+            return {}
+
+    devices = {"petkit": FakePetKit()}
+    assert main.build_pet_alerts(main.Settings(_env_file=None), devices) is None
+    monkeypatch.setenv("NTFY_URL", "https://ntfy.test/topic")
+    settings = main.Settings(_env_file=None)
+    assert main.build_pet_alerts(settings, {}) is None
+    assert main.build_pet_alerts(settings, devices).check_seconds == 180 * 60
+    monkeypatch.setenv("PETKIT_ALERTS", "false")
+    assert main.build_pet_alerts(main.Settings(_env_file=None), devices) is None
+
+
+def departure_of(lights_on: bool):
+    from intelligent_home_agent.departure import Departure
+    from intelligent_home_agent.tools.base import Tool, ToolRegistry
+
+    async def lights(args, ctx):
+        room = {"room": "Hall", "lights": [{"name": "Hall", "on": lights_on, "reachable": True}]}
+        return {"rooms": [room]}
+
+    async def switch(args, ctx):
+        return {"status": "done"}
+
+    schema = {"type": "object"}
+    return Departure(
+        ToolRegistry(
+            [
+                Tool("list_hue_lights", "", schema, lights),
+                Tool("set_hue_lights", "", schema, switch, needs_clean_turn=True),
+            ]
+        )
+    )
+
+
+def test_departure_is_off_without_devices(client):
+    assert client.post("/v1/departure", json={}, headers=AUTH).status_code == 503
+    assert client.post("/v1/departure", json={}).status_code == 401
+
+
+def test_departure_says_nothing_when_all_is_shut(client):
+    client.app.state.departure = departure_of(False)
+    body = client.post("/v1/departure", json={}, headers=AUTH).json()
+    assert body == {"reply": "", "conversation_id": "default", "pushed": False}
+
+
+def test_departure_lists_each_fix_waiting_for_a_yes_in_the_conversation(client):
+    client.app.state.departure = departure_of(True)
+    body = client.post("/v1/departure", json={"conversation_id": "siri"}, headers=AUTH).json()
+    assert body["reply"].split("\n") == [
+        "🏠 You left, but:",
+        "💡 1 light(s) on: Hall.",
+        "",
+        'Waiting for your go ("yes", or "yes except 2"):',
+        "1. Turn off the lights",
+    ]
+    assert body["follow_up"] is True and body["conversation_id"] == "siri"
+    conv = client.app.state.store.peek("siri")
+    assert [(p.tool, p.shown) for p in conv.proposals] == [("set_hue_lights", True)]
+    assert conv.messages[-1] == {"role": "assistant", "content": body["reply"]}
+    # Kept as long as a chat: the yes may come a while after leaving.
+    assert conv.ttl_seconds == 12 * 3600
+
+
+def test_departure_is_pushed_to_ntfy(make_client, respx_mock):
+    client = make_client(NTFY_URL="https://ntfy.test/topic", ASSISTANT_NAME="Nova")
+    push = respx_mock.post("https://ntfy.test/topic").respond(200)
+    client.app.state.departure = departure_of(True)
+    body = client.post("/v1/departure", json={"push": True}, headers=AUTH).json()
+    assert body["pushed"] is True
+    assert push.calls[0].request.url.params["title"] == "Nova · Leaving home"
+    assert "1. Turn off the lights" in push.calls[0].request.content.decode()
+    assert client.post("/v1/departure", json={"push": True}, headers=AUTH).json()["reply"]

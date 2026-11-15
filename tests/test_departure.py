@@ -1,3 +1,5 @@
+import pytest
+
 from intelligent_home_agent.conversations import Conversation
 from intelligent_home_agent.departure import NOTE, Departure, record
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError, ToolRegistry
@@ -129,10 +131,8 @@ async def test_a_yes_in_a_later_turn_runs_exactly_the_fixes_shown():
 
     # Not shown yet (main.with_waiting marks them): nothing can run.
     conv.turn += 1
-    try:
+    with pytest.raises(ToolError, match="Nothing is waiting"):
         await registry.run("run_proposals", {}, ctx)
-    except ToolError as exc:
-        assert "Nothing is waiting" in str(exc)
     conv.mark_shown([a["number"] for a in report.actions])
     done = await registry.run("run_proposals", {"numbers": [2]}, ctx)
 

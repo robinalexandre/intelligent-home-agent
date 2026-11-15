@@ -7,7 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install . && useradd --create-home --uid 10001 agent \
+# Optional extras of pyproject.toml, e.g. EXTRAS=devices or EXTRAS=petkit,apple
+# (docs/home-devices.md); none by default.
+ARG EXTRAS=""
+RUN pip install ".${EXTRAS:+[$EXTRAS]}" && useradd --create-home --uid 10001 agent \
     && mkdir /app/data && chown agent /app/data
 
 USER agent

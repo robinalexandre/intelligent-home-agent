@@ -35,6 +35,7 @@ ANSWERS = [
     "y",  # CalDAV
     "https://caldav.example.com",
     "someone",  # username
+    "",  # no other devices
     "",  # no knowledge base
     "",  # access: this machine only
     "siri,push",  # channels
@@ -116,7 +117,8 @@ NOTHING_ELSE = ["", "weather", "short", ""]
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
     # No Home Assistant, a knowledge base, access, node name, channel.
-    answers += ["n", "y", "http://192.168.1.20", "y", "someone/notes", "funnel", "agent"]
+    answers += ["n", "y", "http://192.168.1.20", "", "y", "someone/notes", "funnel"]
+    answers += ["agent"]
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
     assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
@@ -140,7 +142,7 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "", "", "caddy", "", "agent.example.com", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
@@ -157,6 +159,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         "n",
         "",
         "",
+        "",
         "cloudflare",
         "siri",
     ]
@@ -167,10 +170,25 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
 
 def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
-    answers += [*NOTHING_ELSE, "n", "", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
     assert "uvicorn intelligent_home_agent.main:app" in output
+
+
+def test_other_devices_ask_what_the_wizard_can_take_and_say_the_rest(tmp_path):
+    answers = ["n", *START, "lmstudio", "m", "off", *NOTHING_ELSE, "n", ""]
+    # Other devices: yes; which; the PetKit account and its country.
+    answers += ["y", "nuki, petkit, netatmo, android-tv, withings", "pets@example.com", "GB"]
+    answers += ["siri"]
+    env, output = run_with(tmp_path, answers, ["", "nuki-secret", "petkit-secret"])
+    assert env["NUKI_API_TOKEN"] == "nuki-secret" and env["PETKIT_PASSWORD"] == "petkit-secret"
+    assert (env["PETKIT_USERNAME"], env["PETKIT_REGION"]) == ("pets@example.com", "GB")
+    assert "nuki-secret" not in output and "petkit-secret" not in output
+    for script in ("unlock_codes_setup", "netatmo_login", "android_tv_pair", "withings_login"):
+        assert f"scripts/{script}.py" in output
+        assert (SCRIPT.parent / f"{script}.py").is_file()
+    assert "apple_devices" not in output
 
 
 def test_wizard_offers_every_provider_and_every_compose_file():
