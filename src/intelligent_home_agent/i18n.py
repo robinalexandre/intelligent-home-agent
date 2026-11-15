@@ -131,6 +131,27 @@ class Strings:
     pet_food_low_no_level: str
     pet_bin_full: str
     pet_bin_again: str
+    # Activity alerts, sent by the code when a good window is coming (activity_alerts.py).
+    activity_alert_title: str
+    activity_alert_label: str
+    activity_alert_resume_label: str
+    # {icon} {activity} {where} {day} {start} {end} {facts} {id}
+    activity_alert_forecast: str
+    # {icon} {activity} {where} {facts} {time} {station} {id}
+    activity_alert_now: str
+    activity_alert_wind: str  # {knots} {direction}
+    activity_alert_gusts: str  # {gusts}
+    activity_alert_waves: str  # {waves} {period}
+    activity_alert_temperature: str  # {low} {high}
+    activity_alert_rain: str  # {rain}
+    activity_alert_wind_kmh: str  # {wind}
+    activity_alert_distance: str  # {km}
+    activity_alert_home: str
+    activity_alert_today: str
+    activity_alert_tomorrow: str
+    activity_alert_weekdays: tuple[str, ...]  # Monday first
+    # Catalog keys (activities.py) in this language; a key not listed is shown as it is.
+    activity_names: dict[str, str]
     # Leaving home (departure.py): what was left, and each fix waiting for a go.
     departure_title: str
     departure_header: str
@@ -314,6 +335,36 @@ LANGUAGES: dict[str, Strings] = {
         pet_food_low_no_level="🍽️ {name}: the food is low, time to refill it.",
         pet_bin_full="🗑️ {name}: the waste bin is full, it needs emptying{again}.",
         pet_bin_again=" (reminder)",
+        activity_alert_title="Outdoor",
+        activity_alert_label="Activity alert",
+        activity_alert_resume_label="Activity alert back on",
+        activity_alert_forecast=(
+            "{icon} {activity} · {where}, {day} {start}–{end}: {facts}. (alert n°{id})"
+        ),
+        activity_alert_now=(
+            "{icon} {activity} · {where}, now: {facts}, measured at {time} by {station}. "
+            "(alert n°{id})"
+        ),
+        activity_alert_wind="{knots} kn {direction}",
+        activity_alert_gusts="gusts {gusts} kn",
+        activity_alert_waves="waves {waves} m, period {period} s",
+        activity_alert_temperature="{low} to {high} °C",
+        activity_alert_rain="rain {rain}%",
+        activity_alert_wind_kmh="wind {wind} km/h",
+        activity_alert_distance="{km} km away",
+        activity_alert_home="home",
+        activity_alert_today="today",
+        activity_alert_tomorrow="tomorrow",
+        activity_alert_weekdays=(
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ),
+        activity_names={},
         departure_title="Leaving home",
         departure_header="🏠 You left, but:",
         departure_no_fix="I can't do anything about it from here.",
@@ -483,6 +534,44 @@ LANGUAGES: dict[str, Strings] = {
         pet_food_low_no_level="🍽️ {name} : la réserve de croquettes est basse, pense à la remplir.",
         pet_bin_full="🗑️ {name} : le bac à déchets est plein, il faut le vider{again}.",
         pet_bin_again=" (rappel)",
+        activity_alert_title="Plein air",
+        activity_alert_label="Alerte activité",
+        activity_alert_resume_label="Alerte activité réactivée",
+        activity_alert_forecast=(
+            "{icon} {activity} · {where}, {day} {start}–{end} : {facts}. (alerte n°{id})"
+        ),
+        activity_alert_now=(
+            "{icon} {activity} · {where}, maintenant : {facts}, mesuré à {time} par {station}. "
+            "(alerte n°{id})"
+        ),
+        activity_alert_wind="{knots} nds {direction}",
+        activity_alert_gusts="rafales {gusts} nds",
+        activity_alert_waves="vagues {waves} m, période {period} s",
+        activity_alert_temperature="{low} à {high} °C",
+        activity_alert_rain="pluie {rain} %",
+        activity_alert_wind_kmh="vent {wind} km/h",
+        activity_alert_distance="à {km} km",
+        activity_alert_home="maison",
+        activity_alert_today="aujourd'hui",
+        activity_alert_tomorrow="demain",
+        activity_alert_weekdays=(
+            "lundi",
+            "mardi",
+            "mercredi",
+            "jeudi",
+            "vendredi",
+            "samedi",
+            "dimanche",
+        ),
+        activity_names={
+            "sailing": "voile",
+            "cycling": "vélo",
+            "running": "course à pied",
+            "hiking": "randonnée",
+            "skiing": "ski",
+            "climbing": "escalade",
+            "outdoors": "dehors",
+        },
         departure_title="Départ",
         departure_header="🏠 Tu es parti, mais :",
         departure_no_fix="Je ne peux rien y faire d'ici.",
