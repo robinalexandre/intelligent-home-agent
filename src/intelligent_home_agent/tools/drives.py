@@ -170,7 +170,7 @@ BACKENDS: dict[str, Backend] = {
     "ftp": Backend("FTP", KEY),
     "s3": Backend("S3", KEY),
     "b2": Backend("Backblaze B2", KEY),
-    "google cloud storage": Backend("Google Cloud Storage", OAUTH),
+    "google cloud storage": Backend("Google Cloud Storage", KEY),
     "azureblob": Backend("Azure Blob Storage", KEY),
 }
 _LOGIN_HINTS = {

@@ -219,7 +219,15 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_github_pull_requests",
         "get_assistant_reminders",
         "web_search",
+        "list_drive_folder",
+        "search_drive_files",
+        "read_drive_file",
+        "save_file_to_drive",
+        "delete_drive_file",
+        "list_drive_trash",
+        "search_drive_content",
     }
+    assert registry.jobs == []
     # The core's own tools are always there: what waits for a go, and long results.
     assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
     assert "ask_in_poll" not in names
@@ -407,3 +415,27 @@ def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monk
     assert second["reply"] == "Noted." and done == ["milk"]
     # The mail itself never stayed in memory.
     assert "example.com" not in str(client.app.state.store.get("default").messages)
+
+
+def test_what_the_tools_do_in_the_background_runs_while_the_app_does(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    base_env(monkeypatch)
+    get_settings.cache_clear()
+    started, stopped = [], []
+
+    async def job():
+        started.append(1)
+        try:
+            await asyncio.sleep(3600)
+        finally:
+            stopped.append(1)
+
+    stub = StubAgent()
+    stub.tools = SimpleNamespace(jobs=[job])
+    monkeypatch.setattr(main, "build_agent", lambda settings, ha, http, home=None: stub)
+    with TestClient(main.app) as client:
+        assert client.get("/health").status_code == 200
+        assert started == [1] and stopped == []
+    assert stopped == [1]

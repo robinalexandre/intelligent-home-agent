@@ -40,6 +40,8 @@ src/intelligent_home_agent/
                     the user's go (Proposal), pending Home Assistant confirmations
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
+  drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
+                    for search; scanned PDFs read by the model where the provider can
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
   notify.py         ntfy push
   home_devices.py   devices driven without Home Assistant (Hue, Devialet)
@@ -139,7 +141,8 @@ when it truly doesn't apply, and say so in the pull request.
 4. **`main.py`, `build_registry`**: `registry.extend(build_<feature>_tools(...))`, behind
    the `if settings...` that says it is configured, before the core tools at the end
    (`build_proposal_tools`, `build_long_result_tools`). Something to open and close goes
-   in `lifespan`.
+   in `lifespan`; something to keep doing in the background (an index kept fresh) is a
+   coroutine function appended to `registry.jobs`, which `lifespan` runs and cancels.
 5. **`prompts.py`**: one `lines.append(...)` in `_daily_help`, behind
    `if "<a tool name>" in t`, saying when to use the tools; add the tool to
    `_PRIVATE_SOURCES` when it has `taints`. A briefing section goes in `BRIEF_SECTIONS`

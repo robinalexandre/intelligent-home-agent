@@ -14,6 +14,13 @@ ALL_TOOLS = {
     "get_outdoor_forecast",
     "create_reminder",
     "web_search",
+    "list_drive_folder",
+    "search_drive_files",
+    "search_drive_content",
+    "read_drive_file",
+    "create_drive_folder",
+    "save_file_to_drive",
+    "delete_drive_file",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 
@@ -113,3 +120,14 @@ def test_core_tools_get_their_paragraphs_only_when_registered():
     assert "Actions waiting for the user's go" in text
     assert '"yes", "oui"' in text and "drop_proposals" in text
     assert "read_result_part reads the next ones" in text
+
+
+def test_drives_are_described_by_what_is_on():
+    full = prompt()
+    assert "search_drive_content finds them by what they say" in full
+    assert "Gathering files is always a copy" in full and "delete_drive_without_copy" in full
+    assert "files of a drive were read" in full.replace("emails, the calendar, GitHub, ", "")
+    read_only = prompt(tools={"list_drive_folder", "search_drive_files", "read_drive_file"})
+    assert "The drives are read-only" in read_only
+    assert "search_drive_content" not in read_only and "create_drive_folder" not in read_only
+    assert "drive" not in prompt(tools={"get_weather"}).split("Untrusted")[0]
