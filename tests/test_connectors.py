@@ -92,7 +92,8 @@ async def test_help_lists_the_server_tools_and_a_read_goes_through_and_taints():
     assert result == "12 transactions"
     assert server.calls == [("list_transactions", {"account": "main"})]
     assert set(server.tokens) == {"Bearer bank-token"}
-    assert tools["bank_read"].taints and not tools["bank_help"].taints
+    # What the server says of its own tools is others' text too, as what it returns.
+    assert tools["bank_read"].taints and tools["bank_help"].taints
 
 
 def registry_of(http, **kwargs) -> ToolRegistry:

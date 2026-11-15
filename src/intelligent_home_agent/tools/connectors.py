@@ -184,6 +184,8 @@ def build_connector_tools(connectors: list[Connector]) -> list[Tool]:
                     "properties": {"tools": {"type": "array", "items": {"type": "string"}}},
                 },
                 handler=c.help,
+                # The descriptions are the server's own words, like what a read returns.
+                taints=True,
             )
         )
         tools.append(
