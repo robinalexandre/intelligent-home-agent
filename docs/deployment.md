@@ -93,6 +93,9 @@ volumes:
 ## Data that leaves the server
 
 - The conversation goes to the language model provider.
+- With `ENGINE=subscription` it goes to Anthropic through Claude Code, on your Claude plan;
+  Claude Code's telemetry is switched off, and its transcripts of the turns stay on the
+  server, in `DATA_DIR/claude` ([subscription.md](subscription.md)).
 - Weather and outdoor forecasts: coordinates of home and of your spots go to Open-Meteo.
 - Travel time: the destination goes to OpenStreetMap's Nominatim and OSRM. Once a request
   has read private data, only a place taken from the calendar in that request is accepted.
