@@ -1,0 +1,28 @@
+# The login page in front of the remote browser (Authelia, compose/browser/authelia.yml):
+# a passkey alone, or the password plus a one-time code. With compose/browser.yml and
+# compose/browser-caddy.yml or compose/browser-traefik.yml. See docs/browser.md.
+# Needs in .env: BROWSER_DOMAIN and AUTH_DOMAIN (two names under AUTH_COOKIE_DOMAIN, e.g.
+# browser.example.com and auth.example.com under example.com) and three secrets of 64
+# random characters each (openssl rand -hex 32): AUTH_SESSION_SECRET, AUTH_STORAGE_KEY,
+# AUTH_JWT_SECRET. Then scripts/browser-auth.sh user sets the password.
+services:
+  browser-auth:
+    image: authelia/authelia:4.39.28
+    environment:
+      X_AUTHELIA_CONFIG: /config/configuration.yml
+      X_AUTHELIA_CONFIG_FILTERS: template
+      BROWSER_DOMAIN: ${BROWSER_DOMAIN:?Set BROWSER_DOMAIN in .env}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:?Set AUTH_DOMAIN in .env}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:?Set AUTH_COOKIE_DOMAIN in .env}
+      AUTH_DISPLAY_NAME: ${ASSISTANT_NAME:-Home agent}
+      # Empty, Authelia refuses to start, and so the browser's page serves nothing.
+      AUTHELIA_SESSION_SECRET: ${AUTH_SESSION_SECRET:-}
+      AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTH_STORAGE_KEY:-}
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+    volumes:
+      - ./compose/browser/authelia.yml:/config/configuration.yml:ro
+      - browser_auth:/data
+    restart: unless-stopped
+
+volumes:
+  browser_auth:

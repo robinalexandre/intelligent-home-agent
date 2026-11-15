@@ -139,6 +139,10 @@ CHANNELS = {
 }
 SECRET_KEYS = {
     "AGENT_API_TOKEN",
+    "AUTH_SESSION_SECRET",
+    "AUTH_STORAGE_KEY",
+    "AUTH_JWT_SECRET",
+    "VPN_CONTROL_KEY",
     "TS_AUTHKEY",
     "TUNNEL_TOKEN",
     "WEB_SEARCH_API_KEY",
@@ -378,6 +382,49 @@ def ask_web(p: Prompter, env: dict[str, str]) -> None:
         env["INVESTIGATIONS_ENABLED"] = "true"
 
 
+# How the remote browser's page is reached, per way of reaching the agent: behind a login
+# page on a public address, or on the tailnet alone.
+BROWSER_ACCESS = {"caddy": "login", "traefik": "login", "tailscale": "tailnet"}
+
+
+def ask_browser(p: Prompter, env: dict[str, str], access: str) -> list[str]:
+    """The remote browser (docs/browser.md); returns the Compose files it adds."""
+    if not p.yes(
+        "Add a remote browser, for sites behind your login (docs/browser.md; some 700 MB "
+        "of memory)?",
+        False,
+    ):
+        return []
+    files = ["compose/browser.yml"]
+    add_extra(env, "browser")
+    if BROWSER_ACCESS[access] == "tailnet":
+        p.say("  Its page will be served to your Tailscale devices only, on port 8443.")
+        tailnet = p.ask("  Your tailnet's DNS name (admin console > DNS), e.g. tail1234.ts.net")
+        env["BROWSER_GATE"] = "tailnet"
+        env["TS_SERVE"] = "serve-browser"
+        env["BROWSER_PUBLIC_URL"] = f"https://{env['TS_HOSTNAME']}.{tailnet or '<tailnet>'}:8443"
+    else:
+        labels = env["AGENT_DOMAIN"].split(".")
+        parent = ".".join(labels[1:]) if len(labels) > 2 else env["AGENT_DOMAIN"]
+        p.say("  Its page sits behind a login page (a passkey, or a password and a code);")
+        p.say("  both need a name of their own, with a DNS record to this machine.")
+        env["BROWSER_DOMAIN"] = p.ask("  Name for the browser's page", f"browser.{parent}")
+        env["AUTH_DOMAIN"] = p.ask("  Name for its login page", f"auth.{parent}")
+        env["AUTH_COOKIE_DOMAIN"] = p.ask("  The domain both are under", parent)
+        for key in ("AUTH_SESSION_SECRET", "AUTH_STORAGE_KEY", "AUTH_JWT_SECRET"):
+            env[key] = secrets.token_hex(32)
+        env["BROWSER_PUBLIC_URL"] = f"https://{env['BROWSER_DOMAIN']}"
+        files += ["compose/browser-login.yml", f"compose/browser-{access}.yml"]
+    if p.yes("  Also open pages as seen from another country, through a VPN subscription?", False):
+        p.say("  Any provider gluetun supports: mullvad, protonvpn, nordvpn, surfshark...")
+        if provider := p.ask("  Provider, by gluetun's name for it"):
+            env["VPN_SERVICE_PROVIDER"] = provider
+            env["VPN_CONTROL_KEY"] = secrets.token_hex(32)
+            files.append("compose/vpn.yml")
+            p.say("  Add its credentials to .env yourself (docs/browser.md says which).")
+    return files
+
+
 def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
     """How clients reach the agent; returns the address they will use, when known."""
     p.say("\n# Where will clients (phone, speaker, Home Assistant) reach the agent from?")
@@ -413,6 +460,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
             env["TRAEFIK_CERTRESOLVER"] = p.ask("Traefik certificate resolver", "letsencrypt")
     if access in COMPOSE_FILES:
         files.append(f"compose/{COMPOSE_FILES[access]}.yml")
+    if access in BROWSER_ACCESS:
+        files += ask_browser(p, env, access)
     elif env.get("HA_URL") and p.yes(
         "Is Home Assistant on your Tailscale network, out of this machine's direct reach?",
         False,
@@ -864,6 +913,21 @@ GROUPS = [
         ["ICLOUD_APPLE_ID", "ICLOUD_NOTES", "ICLOUD_FIND_MY"],
     ),
     ("Mail", ["MAIL_ACCOUNTS"]),
+    (
+        "Remote browser (docs/browser.md)",
+        [
+            "BROWSER_PUBLIC_URL",
+            "BROWSER_GATE",
+            "BROWSER_DOMAIN",
+            "AUTH_DOMAIN",
+            "AUTH_COOKIE_DOMAIN",
+            "AUTH_SESSION_SECRET",
+            "AUTH_STORAGE_KEY",
+            "AUTH_JWT_SECRET",
+            "VPN_SERVICE_PROVIDER",
+            "VPN_CONTROL_KEY",
+        ],
+    ),
     ("GitHub", ["GITHUB_TOKEN", "GITHUB_REPOSITORIES", "NOTES_REPO", "NOTES_WRITE"]),
     (
         "Documents and pictures",
@@ -966,6 +1030,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         if "compose/ollama.yml" in env.get("COMPOSE_FILE", ""):
             p.say(f"  Then: docker compose exec ollama ollama pull {env['LLM_MODEL']}")
         p.say(f"  The agent will answer at {address}")
+        if "BROWSER_DOMAIN" in env:
+            p.say("  Remote browser: scripts/browser-auth.sh user, before the first login.")
         if "DRIVES" in env:
             p.say("  Drives: log each one in before asking about your files (docs/drives.md).")
     else:

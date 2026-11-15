@@ -1,0 +1,18 @@
+# The remote browser behind Caddy (with compose/caddy.yml, compose/browser.yml and
+# compose/browser-login.yml, in that order): Caddy now serves three names, the agent's, the
+# browser's page and its login page (compose/browser/Caddyfile). Needs DNS records for
+# BROWSER_DOMAIN and AUTH_DOMAIN to this machine.
+services:
+  caddy:
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    environment:
+      AGENT_DOMAIN: ${AGENT_DOMAIN:?Set AGENT_DOMAIN in .env}
+      BROWSER_DOMAIN: ${BROWSER_DOMAIN:?Set BROWSER_DOMAIN in .env}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:?Set AUTH_DOMAIN in .env}
+    volumes:
+      - ./compose/browser/Caddyfile:/etc/caddy/Caddyfile:ro
+
+  # A public address always goes through the login, whatever BROWSER_GATE says.
+  browser-gate:
+    volumes:
+      - ./compose/browser/gate-login.Caddyfile:/etc/caddy/Caddyfile:ro

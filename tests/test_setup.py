@@ -173,7 +173,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     # Then no Home Assistant, no Hue, no other devices, no memory.
     answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "", "off"]
     # No knowledge base, no file drives.
-    answers += ["", "", "caddy", "", "agent.example.com", "siri"]
+    answers += ["", "", "caddy", "", "agent.example.com", "", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
     assert env["PUBLIC_URL"] == "https://agent.example.com"
@@ -278,13 +278,67 @@ def test_apple_reminders_notes_and_find_my_are_one_of_the_other_devices():
     assert env == {} and "icloud_web" not in "\n".join(printed)
 
 
+def test_the_remote_browser_gets_a_login_page_on_a_domain_and_the_tailnet_alone_otherwise():
+    printed = []
+
+    def ask(access, answers, env):
+        read, queue = scripted(answers)
+        files = setup.ask_browser(setup.Prompter(read, read, printed.append), env, access)
+        assert queue == []
+        return files
+
+    env = {"AGENT_DOMAIN": "agent.example.com", "EXTRAS": "documents,icloud"}
+    assert ask("traefik", [""], env) == [] and "BROWSER_DOMAIN" not in env
+
+    files = ask("traefik", ["y", "", "", "", "y", "mullvad"], env)
+    assert files == [
+        "compose/browser.yml",
+        "compose/browser-login.yml",
+        "compose/browser-traefik.yml",
+        "compose/vpn.yml",
+    ]
+    assert all((SCRIPT.parent.parent / f).is_file() for f in files)
+    assert env["EXTRAS"] == "documents,icloud,browser"
+    assert (env["BROWSER_DOMAIN"], env["AUTH_DOMAIN"]) == (
+        "browser.example.com",
+        "auth.example.com",
+    )
+    assert env["AUTH_COOKIE_DOMAIN"] == "example.com"
+    assert env["BROWSER_PUBLIC_URL"] == "https://browser.example.com"
+    secrets_made = [env[k] for k in ("AUTH_SESSION_SECRET", "AUTH_STORAGE_KEY", "AUTH_JWT_SECRET")]
+    assert len(set(secrets_made)) == 3 and all(len(s) == 64 for s in secrets_made)
+    assert env["VPN_SERVICE_PROVIDER"] == "mullvad" and len(env["VPN_CONTROL_KEY"]) == 64
+    assert {"AUTH_SESSION_SECRET", "AUTH_STORAGE_KEY", "AUTH_JWT_SECRET", "VPN_CONTROL_KEY"} <= (
+        setup.SECRET_KEYS
+    )
+    for secret in (*secrets_made, env["VPN_CONTROL_KEY"]):
+        assert secret not in "\n".join(printed)
+    written = {k for _, keys in setup.GROUPS for k in keys}
+    assert set(env) <= written
+
+    env = {"TS_HOSTNAME": "home-agent"}
+    assert ask("tailscale", ["y", "tail1234.ts.net", ""], env) == ["compose/browser.yml"]
+    assert env == {
+        "TS_HOSTNAME": "home-agent",
+        "EXTRAS": "documents,browser",
+        "BROWSER_GATE": "tailnet",
+        "TS_SERVE": "serve-browser",
+        "BROWSER_PUBLIC_URL": "https://home-agent.tail1234.ts.net:8443",
+    }
+    assert (SCRIPT.parent.parent / "compose/tailscale-serve-browser.json").is_file()
+
+
 def test_wizard_offers_every_provider_and_every_compose_file():
     from intelligent_home_agent import llm
 
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive"}
+    browser = {"browser", "browser-login", "browser-caddy", "browser-traefik", "vpn"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive", *browser}
+    for access, gate in setup.BROWSER_ACCESS.items():
+        assert access in setup.ACCESS
+        assert (SCRIPT.parent.parent / f"compose/browser/gate-{gate}.Caddyfile").is_file()
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
