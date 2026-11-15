@@ -13,9 +13,10 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from intelligent_home_agent.conversations import Attachment, Conversation
+from intelligent_home_agent.engine import EngineTurn, FileInMessage, SubscriptionUnavailable
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal, Turn
 from intelligent_home_agent.llm import LLMClient
@@ -58,6 +59,25 @@ QUOTE_START = "quoted as data: «"
 CACHE = {"cache_control": {"type": "ephemeral"}}
 
 
+class Engine(Protocol):
+    """A way to run a whole turn elsewhere than the API (intelligent_home_agent.engine):
+    it calls the agent's tools back through ``call`` and returns the turn as API messages."""
+
+    @property
+    def available(self) -> bool: ...
+
+    async def run_turn(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: ToolRegistry,
+        call: Callable[[str, dict[str, Any]], Awaitable[tuple[Any, bool]]],
+        *,
+        max_turns: int,
+        progress: Callable[[str], Awaitable[None]] | None = None,
+    ) -> EngineTurn: ...
+
+
 @dataclass
 class AgentReply:
     text: str
@@ -81,8 +101,18 @@ class Agent:
         max_chat_tokens: int | None = None,
         memory: Callable[[], Awaitable[str]] | None = None,
         journal: Journal | None = None,
+        engine: Engine | None = None,
+        engine_displays: frozenset[str] = frozenset({"chat"}),
+        api_fallback: bool = True,
     ) -> None:
         self._client = llm
+        # Runs the turns when it can (the user's Claude subscription); the API takes the
+        # others. Only for these displays: the engine starts a process per turn, a few
+        # seconds a chat can wait for and a voice hardly can. Without an API to fall back
+        # on (no key), the engine answers every display and says so when it can't.
+        self._engine = engine
+        self._engine_displays = engine_displays
+        self._api_fallback = api_fallback
         self._journal = journal
         self._tools = tools
         self._prompt = prompt
@@ -96,6 +126,10 @@ class Agent:
         # What the agent remembers about the user, added to the prompt at each turn.
         self._memory = memory
         self._max_history = max_history_messages
+
+    @property
+    def engine(self) -> Engine | None:
+        return self._engine
 
     @property
     def tools(self) -> ToolRegistry:
@@ -233,9 +267,12 @@ class Agent:
         chat = display == "chat"
         rounds = self._max_chat_iterations if chat else self._max_iterations
         tokens = self._max_chat_tokens if chat else self._max_tokens
-        # Seam: another engine (one that runs the whole turn elsewhere and calls the tools
-        # back through _run_tool, one at a time) would take the turn here and return its
-        # reply, falling through to the loop below when it can't and nothing ran yet.
+        if self._engine is not None and (
+            display in self._engine_displays or not self._api_fallback
+        ):
+            reply = await self._run_on_engine(conv, ctx, system, rounds, progress)
+            if reply is not None:
+                return reply
         for _ in range(rounds):
             response = await self._client.create(
                 model=self._model,
@@ -296,6 +333,60 @@ class Agent:
         text = _text_of(content)
         conv.messages.append({"role": "assistant", "content": content or [_text("(stopped)")]})
         return text or None
+
+    async def _run_on_engine(
+        self,
+        conv: Conversation,
+        ctx: ToolContext,
+        system: str,
+        rounds: int,
+        progress: Callable[[str], Awaitable[None]] | None,
+    ) -> str | None:
+        """The turn on the engine; None when it could not take it and nothing ran yet, so
+        the API does it instead. Once a tool ran, the turn is not done twice: it fails."""
+        called = False
+
+        async def call(name: str, args: dict[str, Any]) -> tuple[Any, bool]:
+            nonlocal called
+            called = True
+            # Here the tools run one at a time: the taint applies from the next call on.
+            ctx.begin_batch()
+            result = await self._run_tool({"id": "", "name": name, "input": args}, ctx)
+            if self._tools.taints(name):
+                ctx.tainted = True
+            if self._tools.reads_web(name) and not result.get("is_error"):
+                ctx.web_read = True
+            return result["content"], bool(result.get("is_error"))
+
+        words = strings(self._prompt.language)
+        try:
+            if not self._engine.available:
+                raise SubscriptionUnavailable("the engine is paused")
+            turn = await self._engine.run_turn(
+                system, conv.messages, self._tools, call, max_turns=rounds, progress=progress
+            )
+        except SubscriptionUnavailable as exc:
+            if called:
+                raise
+            if self._api_fallback:
+                log.warning("Engine unavailable, the API takes this turn: %s", exc)
+                return None
+            # No API key: nothing else can answer, so the user hears why.
+            log.warning("Engine unavailable and no API key to take this turn: %s", exc)
+            file = isinstance(exc, FileInMessage)
+            text = words.subscription_no_file if file else words.subscription_unavailable
+            conv.messages.append(_assistant(text))
+            return text
+        conv.messages.extend(turn.messages)
+        if turn.out_of_rounds:
+            # Like the API's own loop: the tools that ran stay done, the reply says so.
+            log.warning("Engine tool loop limit reached in conversation %s", conv.id)
+            text = f"{turn.text}\n\n{words.stopped_reply}" if turn.text else words.stopped_reply
+            conv.messages.append(_assistant(text))
+            return text
+        if not turn.text:
+            log.warning("Empty reply from the engine in conversation %s", conv.id)
+        return turn.text
 
     def _fallback(self) -> str:
         return strings(self._prompt.language).fallback_reply

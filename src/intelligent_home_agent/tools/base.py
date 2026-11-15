@@ -425,6 +425,9 @@ async def vet(tool: Tool, args: dict[str, Any], ctx: ToolContext) -> None:
 class ToolRegistry:
     def __init__(self, tools: list[Tool] | None = None) -> None:
         self._tools: dict[str, Tool] = {}
+        # What a capability keeps doing while the app runs (refreshing an index): each is
+        # called once by main's lifespan, run as a task, and cancelled when the app stops.
+        self.jobs: list[Callable[[], Awaitable[None]]] = []
         for tool in tools or []:
             self.register(tool)
 

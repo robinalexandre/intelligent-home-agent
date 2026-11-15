@@ -204,3 +204,80 @@ async def test_engine_failures_are_told_to_the_model():
     for backend in ("searxng", "brave", "nope"):
         with pytest.raises(ValueError):
             build_search_engine(backend, None)
+
+
+class Plan:
+    """The subscription: answers, or can't take the run."""
+
+    def __init__(self, answer=None):
+        self.answer = answer
+        self.available = True
+        self.calls = []
+
+    async def complete(self, system, text, **kwargs):
+        from intelligent_home_agent.engine import SubscriptionUnavailable
+
+        self.calls.append((text, kwargs))
+        if self.answer is None:
+            raise SubscriptionUnavailable("usage limit")
+        return self.answer
+
+
+def plan_search_tool(fake, plan):
+    (tool,) = build_web_tools(
+        fake, model="m", max_uses=2, city=None, country=None, timezone="UTC", engine=plan
+    )
+    return tool
+
+
+async def test_the_subscription_searches_first_and_only_sees_the_query(ctx):
+    plan = Plan("The game starts at 9 pm.\nhttps://example.com/game")
+    fake = FakeLLM([])
+    result = await plan_search_tool(fake, plan).handler({"query": "when is the game"}, ctx)
+    assert result["answer"].startswith("The game starts at 9 pm.")
+    (text, kwargs) = plan.calls[0]
+    assert text == "when is the game"
+    # Claude Code's own search and nothing else of its tools.
+    assert kwargs["builtin"] == ["WebSearch"]
+    assert fake.requests == [] and ctx.offered("https://example.com/game")
+
+
+async def test_the_api_searches_when_the_subscription_cannot(ctx):
+    fake = FakeLLM([text_response("At 9 pm.")])
+    tool = plan_search_tool(fake, Plan(None))
+    assert (await tool.handler({"query": "when is the game"}, ctx))["answer"] == "At 9 pm."
+    assert len(fake.requests) == 1
+
+
+async def test_the_rules_of_a_search_hold_on_the_subscription_too(ctx):
+    plan = Plan("never")
+    tool = plan_search_tool(FakeLLM([]), plan)
+    ctx.leaks.add("The gate code is 482913.")
+    with pytest.raises(ToolError, match="482913"):
+        await tool.handler({"query": "gate 482913"}, ctx)
+    ctx.private_read = True
+    with pytest.raises(ParkInstead):
+        await tool.handler({"query": "opening hours"}, ctx)
+    assert plan.calls == []
+
+
+async def test_without_an_api_key_a_search_the_subscription_cannot_take_says_why(ctx):
+    from intelligent_home_agent.engine import NoApi, SubscriptionFirst
+
+    with pytest.raises(ToolError, match="no API key is set"):
+        await plan_search_tool(NoApi(), Plan(None)).handler({"query": "x"}, ctx)
+
+    results = [SearchResult("Game tonight", "https://example.com/game", "Kick-off at 9 pm.")]
+    plan = Plan("It starts at 9 pm.")
+    (tool,) = build_engine_web_tools(
+        SubscriptionFirst(plan, NoApi()), FakeEngine(results), model="m"
+    )
+    # The answer from an engine's results is written on the subscription...
+    assert (await tool.handler({"query": "when is the game"}, ctx))["answer"] == (
+        "It starts at 9 pm."
+    )
+    assert "<search_results>" in plan.calls[0][0] and plan.calls[0][1] == {}
+    # ...and when it can't, the tool says what is missing instead of crashing.
+    plan.answer = None
+    with pytest.raises(ToolError, match="no API key is set"):
+        await tool.handler({"query": "and tomorrow"}, ctx)

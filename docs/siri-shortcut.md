@@ -82,6 +82,28 @@ Duplicate **Briefing** as **Recap** and change `text` to `Give me the evening re
 covers what is still open today and what is coming tomorrow. Automation > **Time of Day**
 (e.g. 21:00) > Run *Recap*.
 
+## Leaving home
+
+`python scripts/build_shortcuts.py ... --departure` also builds a **Leaving home**
+Shortcut. Then on the iPhone: Shortcuts > Automation > **Leave** > your home address,
+**Any Time**, **Run Immediately** (not *Run After Confirmation*) > Run Shortcut *Leaving
+home*. By hand, the Shortcut is:
+
+1. **Get Contents of URL**
+   - URL: `https://agent.example.com/v1/departure`
+   - Method: `POST`
+   - Header: `Authorization` = `Bearer <AGENT_API_TOKEN>`
+   - Request Body: *JSON*, `conversation_id` = `siri`
+2. **Get Dictionary Value**: key `reply` from *Contents of URL*.
+3. **If** *Dictionary Value* has any value: **Show Notification** with it.
+
+The agent checks the devices that are set up
+([home-devices.md](home-devices.md#leaving-home)). Nothing comes when everything is
+locked and off; otherwise the notification lists what was left and what the agent can do
+about it. To have it done: "Hey Siri, <assistant name>" → "Yes" (or "Yes except 2"). Both
+Shortcuts use the conversation `siri`, which is what links the two; this one is kept for
+`CHAT_CONVERSATION_TTL_SECONDS` (12 hours), so the yes can wait until you have parked.
+
 ## HomePod
 
 - Home app > Home Settings > your profile > enable **Personal Requests** for the HomePod.

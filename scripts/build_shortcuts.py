@@ -33,12 +33,14 @@ STRINGS = {
         "briefing": ("Briefing", "Give me the morning briefing"),
         "recap": ("Recap", "Give me the evening recap"),
         "reminders": "Open reminders (title · due):",
+        "departure": "Leaving home",
     },
     "fr": {
         "prompt": "Oui ?",
         "briefing": ("Briefing", "Fais-moi le briefing du matin"),
         "recap": ("Récap", "Fais-moi le récap du soir"),
         "reminders": "Rappels non terminés (titre · échéance) :",
+        "departure": "Départ",
     },
 }
 
@@ -287,6 +289,36 @@ def with_reminders(
     ]
 
 
+def leave_home(url: str, token: str, title: str) -> list[dict[str, Any]]:
+    """Tell the agent the user left (the phone's "When I leave" automation runs this), and
+    show what it found, if anything, as a notification. A yes to the main Shortcut then
+    runs the fixes it lists: both use the same conversation."""
+    response_id, group = new_id(), new_id()
+    reply_id, get_reply = get_value("reply", output(response_id, "Contents of URL"))
+    reply = output(reply_id, "Dictionary Value")
+    return [
+        action(
+            "downloadurl",
+            UUID=response_id,
+            WFURL=f"{url.rstrip('/')}/v1/departure",
+            WFHTTPMethod="POST",
+            ShowHeaders=True,
+            WFHTTPHeaders=fields([("Authorization", text(f"Bearer {token}"))]),
+            WFHTTPBodyType="JSON",
+            WFJSONValues=fields([("conversation_id", text("siri"))]),
+        ),
+        get_reply,
+        if_has_value(group, reply),
+        action(
+            "notification",
+            WFNotificationActionTitle=text(title),
+            WFNotificationActionBody=text(reply),
+            WFNotificationActionSound=True,
+        ),
+        action("conditional", GroupingIdentifier=group, WFControlFlowMode=2),
+    ]
+
+
 def workflow(
     actions: list[dict[str, Any]], glyph: int, color: int, takes_text: bool = False
 ) -> dict[str, Any]:
@@ -324,6 +356,11 @@ def main() -> None:
         metavar="NAME=QUESTION",
         help='Extra one-phrase Shortcut, e.g. "Surf check=Is there surf today?" (repeatable)',
     )
+    parser.add_argument(
+        "--departure",
+        action="store_true",
+        help="Also build the Shortcut for the leaving-home automation (docs/home-devices.md)",
+    )
     parser.add_argument("--out", type=Path, default=Path("shortcuts"))
     args = parser.parse_args()
 
@@ -344,6 +381,9 @@ def main() -> None:
         shortcuts[title] = workflow(
             with_reminders(url, token, request, s["reminders"], title), glyph, color
         )
+    if args.departure:
+        title = s["departure"]
+        shortcuts[title] = workflow(leave_home(url, token, title), 59809, 4282601983)
     args.out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         for name, content in shortcuts.items():

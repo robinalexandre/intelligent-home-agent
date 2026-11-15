@@ -7,7 +7,14 @@ name: intelligent-home-agent
 
 services:
   agent:
-    build: .
+    build:
+      context: .
+      args:
+        # Optional parts of the agent (the Dockerfile's EXTRAS). In .env, e.g.
+        # EXTRAS=documents,devices adds the libraries of some home devices
+        # (docs/home-devices.md), EXTRAS=documents,subscription Claude Code for a
+        # Claude subscription (docs/subscription.md).
+        EXTRAS: "${EXTRAS:-documents}"
     env_file: .env
     ports:
       - "${AGENT_BIND:-127.0.0.1}:8000:8000"

@@ -16,6 +16,11 @@ from dataclasses import dataclass
 class Strings:
     name: str
     fallback_reply: str
+    # A turn on the Claude subscription (engine.py): it ran out of rounds; and, without
+    # an API key to take what the subscription can't, why there is no answer.
+    stopped_reply: str
+    subscription_no_file: str
+    subscription_unavailable: str
     closing_words: frozenset[str]
     briefing_request: str
     recap_request: str
@@ -37,6 +42,16 @@ class Strings:
     written_line: str
     # Example of offering details in a chat, for the prompt.
     chat_detail_offer: str
+    # Names of the files the agent makes when the model gives none (tools/documents.py,
+    # pdf_forms.py, illustrations.py, generation.py): the user sees them in the chat.
+    document_title: str
+    filled_suffix: str
+    drawing_name: str
+    animation_name: str
+    image_name: str
+    video_name: str
+    # The two photos of an exercise: its start and end positions.
+    exercise_steps: tuple[str, str]
     # Memory (tools/memory.py, tools/procedures.py): how its writes read in that list,
     # and the words that ask to remember, for the prompt.
     remember_summary: str
@@ -79,12 +94,83 @@ class Strings:
     reminder_change_notes: str
     device_ring_summary: str
     device_owner: str
+    # File drives (tools/drives.py): how a write reads in the list of what waits. A place
+    # is a drive's label and a path; an item of the local trash is where it was.
+    drive_place: str
+    drive_renamed: str
+    drive_create_folder: str
+    drive_copy: str
+    drive_move: str
+    drive_copy_folder: str
+    drive_move_folder: str
+    drive_save: str
+    drive_delete_file: str
+    drive_delete_empty_folder: str
+    drive_delete_folder: str
+    drive_delete_file_without_copy: str
+    drive_delete_folder_without_copy: str
+    drive_trash_item: str
+    drive_trash_unknown: str
+    drive_restore: str
+    drive_purge: str
+    # Home devices (docs/home-devices.md): how a parked action reads.
+    lock_door_summary: str
+    unlock_door_summary: str
+    unlatch_door_summary: str
+    camera_on_summary: str
+    camera_off_summary: str
+    pet_feed_summary: str
+    pet_clean_summary: str
+    # Pet supplies, pushed as notifications (pet_alerts.py).
+    pet_alert_title: str
+    pet_litter_name: str
+    pet_feeder_name: str
+    pet_litter_low: str
+    pet_litter_low_no_level: str
+    pet_food_low: str
+    pet_food_low_no_level: str
+    pet_bin_full: str
+    pet_bin_again: str
+    # Leaving home (departure.py): what was left, and each fix waiting for a go.
+    departure_title: str
+    departure_header: str
+    departure_no_fix: str
+    departure_unreadable: str
+    departure_lock: str
+    departure_lights: str
+    departure_speaker: str
+    departure_tv: str
+    departure_apple: str
+    departure_ha: str
+    departure_door_open: str
+    departure_not_locked: str
+    departure_not_locked_ask: str
+    departure_lock_fix: str
+    departure_lights_on: str
+    departure_and_more: str
+    departure_lights_fix: str
+    departure_speaker_playing: str
+    departure_speaker_fix: str
+    departure_tv_on: str
+    departure_tv_fix: str
+    departure_apple_tv_on: str
+    departure_apple_tv_fix: str
+    departure_homepod_playing: str
+    departure_homepod_fix: str
+    departure_player_playing: str
+    departure_player_fix: str
 
 
 LANGUAGES: dict[str, Strings] = {
     "en": Strings(
         name="English",
         fallback_reply="Sorry, I couldn't finish that request.",
+        stopped_reply='I stopped there: too many steps for one request. Say "continue" and '
+        "I'll pick up where I left off.",
+        subscription_no_file="I can't read a file sent to me on the Claude subscription "
+        "alone: that takes an Anthropic API key (LLM_API_KEY).",
+        subscription_unavailable="The Claude subscription can't answer right now (a usage "
+        "limit or an error), and there is no API key to take over. Try again later.",
         closing_words=frozenset(
             "no thanks thank you that's all bye goodbye ok okay fine great perfect "
             "cool nothing else stop cheers done good".split()
@@ -104,6 +190,13 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (may delete or overwrite)",
         written_line="Written: {summary}",
         chat_detail_offer='"Want the details?"',
+        document_title="Document",
+        filled_suffix="filled",
+        drawing_name="drawing",
+        animation_name="animation",
+        image_name="image",
+        video_name="video",
+        exercise_steps=("start", "end"),
         remember_summary="Remember “{fact}”",
         forget_summary="Forget what I remember about “{words}”",
         procedure_summary="Keep the steps",
@@ -146,10 +239,91 @@ LANGUAGES: dict[str, Strings] = {
         reminder_change_notes="notes: {notes}",
         device_ring_summary='Play a sound on "{name}" ({model}{whose})',
         device_owner=", {owner}'s",
+        drive_place="{drive}: {path}",
+        drive_renamed=' as "{name}"',
+        drive_create_folder="Create the folder {place}",
+        drive_copy="Copy {source} into {target}{renamed}",
+        drive_move="Move {source} into {target}{renamed}",
+        drive_copy_folder="Copy the folder {source} into {target}{renamed}",
+        drive_move_folder="Move the folder {source} into {target}{renamed}",
+        drive_save='Save "{name}" into {place}',
+        drive_delete_file="Delete the file {place}",
+        drive_delete_empty_folder="Delete the empty folder {place}",
+        drive_delete_folder="Delete the folder {place} and everything in it",
+        drive_delete_file_without_copy="Delete the file {place} without keeping a copy",
+        drive_delete_folder_without_copy=(
+            "Delete the folder {place} and everything in it, without keeping a copy"
+        ),
+        drive_trash_item="{place} ({files} file(s))",
+        drive_trash_unknown="local copy {id}",
+        drive_restore="Put {item} back in its drive, replacing nothing",
+        drive_purge="Erase for good the local copy of {item}",
+        lock_door_summary='Lock the door "{name}" (Nuki)',
+        unlock_door_summary='Unlock the door "{name}" (Nuki)',
+        unlatch_door_summary='Open the door "{name}": unlock it and pull the latch (Nuki)',
+        camera_on_summary=(
+            "Netatmo: turn on monitoring of the camera {camera}; it detects and records "
+            "events again"
+        ),
+        camera_off_summary=(
+            "Netatmo: turn off monitoring of the camera {camera}; no detection, alert or "
+            "recording until it is turned back on"
+        ),
+        pet_feed_summary=(
+            "PetKit feeder{device}: dispense {portions} portion(s) of food now, on top of the"
+            " planned meals"
+        ),
+        pet_clean_summary=(
+            "PetKit litter box{device}: start a cleaning cycle now (it turns and empties the "
+            "waste into the bin)"
+        ),
+        pet_alert_title="Pet supplies",
+        pet_litter_name="Litter box",
+        pet_feeder_name="Feeder",
+        pet_litter_low="🐱 {name}: {level}% of litter left, time to add some.",
+        pet_litter_low_no_level="🐱 {name}: the litter is low, time to add some.",
+        pet_food_low="🍽️ {name}: {level}% of food left, time to refill it.",
+        pet_food_low_no_level="🍽️ {name}: the food is low, time to refill it.",
+        pet_bin_full="🗑️ {name}: the waste bin is full, it needs emptying{again}.",
+        pet_bin_again=" (reminder)",
+        departure_title="Leaving home",
+        departure_header="🏠 You left, but:",
+        departure_no_fix="I can't do anything about it from here.",
+        departure_unreadable="⚠️ I couldn't read {what}.",
+        departure_lock="the lock",
+        departure_lights="the lights",
+        departure_speaker="the speaker",
+        departure_tv="the TV",
+        departure_apple="the Apple TV and the HomePods",
+        departure_ha="Home Assistant",
+        departure_door_open='🚪 The door of "{name}" was left open.',
+        departure_not_locked='🔓 "{name}" is not locked.',
+        departure_not_locked_ask='🔓 "{name}" is not locked: ask me to lock it.',
+        departure_lock_fix='Lock "{name}"',
+        departure_lights_on="💡 {count} light(s) on: {names}.",
+        departure_and_more=" and {count} more",
+        departure_lights_fix="Turn off the lights",
+        departure_speaker_playing="🔊 The speaker is still playing.",
+        departure_speaker_fix="Put the speaker in standby",
+        departure_tv_on="📽️ The {name} is still on{app}.",
+        departure_tv_fix="Turn off the {name}",
+        departure_apple_tv_on='📺 The Apple TV "{name}" is on{app}.',
+        departure_apple_tv_fix='Turn off the Apple TV "{name}"',
+        departure_homepod_playing='🔈 The HomePod "{name}" is still playing.',
+        departure_homepod_fix='Pause the HomePod "{name}"',
+        departure_player_playing='🔊 "{name}" is still playing.',
+        departure_player_fix='Pause "{name}"',
     ),
     "fr": Strings(
         name="French",
         fallback_reply="Désolé, je n'ai pas réussi à terminer cette demande.",
+        stopped_reply="Je m'arrête là : trop d'étapes pour une seule demande. Dis "
+        "« continue » et je reprends où j'en étais.",
+        subscription_no_file="Je ne peux pas lire un fichier envoyé avec l'abonnement "
+        "Claude seul : il faut une clé d'API Anthropic (LLM_API_KEY).",
+        subscription_unavailable="L'abonnement Claude ne peut pas répondre pour l'instant "
+        "(limite d'usage ou erreur), et aucune clé d'API ne prend le relais. Réessaie "
+        "plus tard.",
         closing_words=frozenset(
             "non merci beaucoup c'est tout bon rien d'autre stop ok d'accord ça ira parfait "
             "super nickel top cool au revoir pour moi".split()
@@ -169,6 +343,13 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (peut supprimer ou écraser)",
         written_line="Écrit : {summary}",
         chat_detail_offer='"Tu veux le détail ?"',
+        document_title="Document",
+        filled_suffix="rempli",
+        drawing_name="schéma",
+        animation_name="animation",
+        image_name="image",
+        video_name="vidéo",
+        exercise_steps=("départ", "arrivée"),
         remember_summary="Retenir « {fact} »",
         forget_summary="Oublier ce que je retiens sur « {words} »",
         procedure_summary="Retenir la démarche",
@@ -215,6 +396,80 @@ LANGUAGES: dict[str, Strings] = {
         reminder_change_notes="notes : {notes}",
         device_ring_summary="Faire sonner « {name} » ({model}{whose})",
         device_owner=", de {owner}",
+        drive_place="{drive} : {path}",
+        drive_renamed=" sous le nom « {name} »",
+        drive_create_folder="Créer le dossier {place}",
+        drive_copy="Copier {source} dans {target}{renamed}",
+        drive_move="Déplacer {source} dans {target}{renamed}",
+        drive_copy_folder="Copier le dossier {source} dans {target}{renamed}",
+        drive_move_folder="Déplacer le dossier {source} dans {target}{renamed}",
+        drive_save="Enregistrer « {name} » dans {place}",
+        drive_delete_file="Supprimer le fichier {place}",
+        drive_delete_empty_folder="Supprimer le dossier vide {place}",
+        drive_delete_folder="Supprimer le dossier {place} et tout son contenu",
+        drive_delete_file_without_copy="Supprimer le fichier {place} sans en garder de copie",
+        drive_delete_folder_without_copy=(
+            "Supprimer le dossier {place} et tout son contenu, sans en garder de copie"
+        ),
+        drive_trash_item="{place} ({files} fichier(s))",
+        drive_trash_unknown="copie locale {id}",
+        drive_restore="Remettre {item} dans son drive, sans rien remplacer",
+        drive_purge="Effacer pour de bon la copie locale de {item}",
+        lock_door_summary="Verrouiller la porte « {name} » (Nuki)",
+        unlock_door_summary="Déverrouiller la porte « {name} » (Nuki)",
+        unlatch_door_summary="Ouvrir la porte « {name} » : déverrouiller et tirer le pêne (Nuki)",
+        camera_on_summary=(
+            "Netatmo : activer la surveillance de la caméra {camera} ; elle détecte et "
+            "enregistre de nouveau les événements"
+        ),
+        camera_off_summary=(
+            "Netatmo : couper la surveillance de la caméra {camera} ; plus aucune détection, "
+            "alerte ni enregistrement jusqu'à ce qu'elle soit réactivée"
+        ),
+        pet_feed_summary=(
+            "Distributeur PetKit{device} : donner maintenant {portions} portion(s) de "
+            "croquettes, en plus des repas prévus"
+        ),
+        pet_clean_summary=(
+            "Litière PetKit{device} : lancer maintenant un cycle de nettoyage (elle tourne et"
+            " vide les déjections dans le bac)"
+        ),
+        pet_alert_title="Animaux",
+        pet_litter_name="Litière",
+        pet_feeder_name="Distributeur",
+        pet_litter_low="🐱 {name} : plus que {level} % de litière, pense à en remettre.",
+        pet_litter_low_no_level="🐱 {name} : la litière est basse, pense à en remettre.",
+        pet_food_low="🍽️ {name} : plus que {level} % de croquettes, pense à le remplir.",
+        pet_food_low_no_level="🍽️ {name} : la réserve de croquettes est basse, pense à la remplir.",
+        pet_bin_full="🗑️ {name} : le bac à déchets est plein, il faut le vider{again}.",
+        pet_bin_again=" (rappel)",
+        departure_title="Départ",
+        departure_header="🏠 Tu es parti, mais :",
+        departure_no_fix="Je ne peux rien y faire d'ici.",
+        departure_unreadable="⚠️ Je n'ai pas pu lire {what}.",
+        departure_lock="la serrure",
+        departure_lights="les lumières",
+        departure_speaker="l'enceinte",
+        departure_tv="la télé",
+        departure_apple="l'Apple TV et les HomePods",
+        departure_ha="Home Assistant",
+        departure_door_open="🚪 La porte de « {name} » est restée ouverte.",
+        departure_not_locked="🔓 « {name} » n'est pas fermée à clé.",
+        departure_not_locked_ask="🔓 « {name} » n'est pas fermée à clé : demande-moi de la fermer.",
+        departure_lock_fix="Fermer « {name} » à clé",
+        departure_lights_on="💡 {count} lumière(s) allumée(s) : {names}.",
+        departure_and_more=" et {count} autres",
+        departure_lights_fix="Éteindre les lumières",
+        departure_speaker_playing="🔊 L'enceinte joue encore.",
+        departure_speaker_fix="Mettre l'enceinte en veille",
+        departure_tv_on="📽️ Encore en marche : {name}{app}.",
+        departure_tv_fix="Éteindre : {name}",
+        departure_apple_tv_on="📺 L'Apple TV « {name} » est allumée{app}.",
+        departure_apple_tv_fix="Éteindre l'Apple TV « {name} »",
+        departure_homepod_playing="🔈 Le HomePod « {name} » joue encore.",
+        departure_homepod_fix="Mettre le HomePod « {name} » en pause",
+        departure_player_playing="🔊 « {name} » joue encore.",
+        departure_player_fix="Mettre « {name} » en pause",
     ),
 }
 

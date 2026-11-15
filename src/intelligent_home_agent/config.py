@@ -5,7 +5,7 @@ setting with a comment.
 """
 
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -16,6 +16,7 @@ from intelligent_home_agent.llm import (
     CUSTOM,
     DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_ANTHROPIC_SEARCH_MODEL,
+    DOCUMENT_PROVIDERS,
     PROVIDERS,
     WEB_SEARCH_PROVIDERS,
     needs_key,
@@ -109,6 +110,27 @@ class McpServer(BaseModel):
         return self
 
 
+class Drive(BaseModel):
+    """A file drive: one remote of the rclone sidecar (docs/drives.md)."""
+
+    # Short name the tools take, e.g. "gdrive", "nas".
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,19}$")
+    # What the user calls it ("Google Drive", "Home NAS"); the service's name when empty.
+    label: str = ""
+    # The remote as rclone's config names it, with an optional folder: "gdrive:",
+    # "nas:Documents", or a view made with rclone's combine or alias.
+    remote: str = Field(pattern=r"^[\w][\w .+@-]*:[^\x00-\x1f]*$")
+    # rclone's type of the storage behind it (drive, iclouddrive, onedrive, dropbox,
+    # webdav, sftp, s3...): only used to say what to do when its login fails, and where
+    # the service keeps what is deleted. Empty: general advice.
+    backend: str = ""
+    # The agent only lists, searches and reads there.
+    read_only: bool = False
+    # Index the text inside its files for search_drive_content (every readable file is
+    # downloaded once): false for a drive too big or billed by the download.
+    content: bool = True
+
+
 class Settings(BaseSettings):
     # Empty values (HOME_LATITUDE=) mean "not set", as in .env.example.
     model_config = SettingsConfigDict(
@@ -138,6 +160,22 @@ class Settings(BaseSettings):
     # than a spoken one: the user can wait for it.
     max_chat_tokens: int = 4096
     max_chat_tool_iterations: int = 30
+
+    # --- Claude on a Claude subscription instead of the API (docs/subscription.md) -----
+    # Who answers. "api": the provider's API with the key above. "subscription", only
+    # with LLM_PROVIDER=anthropic: Claude Code through the Agent SDK (the "subscription"
+    # extra), signed in with CLAUDE_CODE_OAUTH_TOKEN, on the user's Claude plan. The API
+    # takes what the subscription can't (a file to read, a usage limit, an error) when
+    # LLM_API_KEY is set; without a key those turns get a reply that says so.
+    engine: Literal["api", "subscription"] = "api"
+    # The token `claude setup-token` prints (valid a year).
+    claude_code_oauth_token: SecretStr | None = None
+    # Empty: LLM_MODEL.
+    subscription_model: str = ""
+    # Where the subscription answers, among voice, notification, chat: it starts a Claude
+    # Code process per turn, a few seconds a chat can wait for and a voice hardly can. The
+    # API answers the others; without LLM_API_KEY the subscription answers everywhere.
+    subscription_displays: CsvList = ["chat"]
 
     # --- Home Assistant (optional: without a token, the home tools are off) ------------
     ha_url: str = "http://homeassistant.local:8123"
@@ -177,6 +215,57 @@ class Settings(BaseSettings):
     # Devialet Phantom speaker: its address; no login. Volumes are capped.
     devialet_url: str | None = None
     devialet_max_volume: int = Field(70, ge=0, le=100)
+    # A Google TV / Android TV device (a TV, a projector, a box): its address, and the
+    # client certificate scripts/android_tv_pair.py had it accept. Needs the android-tv
+    # extra. ANDROID_TV_NAME is what the user calls it ("TV", "projector").
+    android_tv_host: str | None = None
+    android_tv_client_cert: SecretStr | None = None
+    android_tv_client_key: SecretStr | None = None
+    android_tv_max_volume: int = Field(70, ge=0, le=100)
+    android_tv_name: str = "TV"
+    # Apps besides the built-in ones (netflix, youtube, prime video, disney+), as JSON:
+    # {"name": {"package": "...", "link": "deep link, or null"}}; "name": null drops one.
+    android_tv_apps: dict[str, Any] = {}
+    # The live TV app (one of the apps) that takes a channel number typed on the remote,
+    # and names for those numbers, as JSON: {"news one": 1}. Empty: no live channels.
+    android_tv_channel_app: str | None = None
+    android_tv_channels: dict[str, Any] = {}
+    # Apple TV and HomePods through pyatv (the apple extra): the profile JSON that
+    # `scripts/apple_devices.py profile` prints on the home network, and the Apple TV's
+    # pairing from `scripts/apple_devices.py pair`. Empty profile: no tool.
+    apple_devices: str = ""
+    apple_tv_companion_credentials: SecretStr | None = None
+    apple_tv_airplay_credentials: SecretStr | None = None
+    # Nuki smart lock through the Nuki Web API (token from web.nuki.io > API).
+    nuki_api_token: SecretStr | None = None
+    # Proof only the user has, asked before a door opens (scripts/unlock_codes_setup.py):
+    # an authenticator app's secret and/or a secret phrase. Neither: opening always waits
+    # for the user's go in a later message.
+    unlock_totp_secret: SecretStr | None = None
+    unlock_phrase: SecretStr | None = None
+    # Netatmo cameras, weather station, thermostat (scripts/netatmo_login.py).
+    netatmo_client_id: str | None = None
+    netatmo_client_secret: SecretStr | None = None
+    netatmo_refresh_token: SecretStr | None = None
+    # PetKit feeder and litter box (cloud, unofficial API: the petkit extra), through a
+    # second PetKit account the devices are shared with. PETKIT_REGION: a country code
+    # PetKit routes to its regional server; HOME_COUNTRY when empty.
+    petkit_username: str | None = None
+    petkit_password: SecretStr | None = None
+    petkit_region: str | None = None
+    # With NTFY_URL: a push when the litter or the food gets under these levels (%), and
+    # when the waste bin is full, again every PETKIT_BIN_REMIND_MINUTES; nothing between
+    # PETKIT_QUIET_START and PETKIT_QUIET_END (hours of the day).
+    petkit_alerts: bool = True
+    petkit_litter_alert_percent: int = Field(50, ge=0, le=100)
+    petkit_food_alert_percent: int = Field(45, ge=0, le=100)
+    petkit_bin_remind_minutes: int = Field(120, ge=1)
+    petkit_check_minutes: int = Field(180, ge=1)
+    petkit_quiet_start: int = Field(22, ge=0, le=23)
+    petkit_quiet_end: int = Field(8, ge=0, le=23)
+    # Leaving home (POST /v1/departure, departure.py): what is still unlocked, on or
+    # playing among the devices set up, each fix waiting for the user's go.
+    departure_check: bool = True
 
     # --- Assistant persona -------------------------------------------------------------
     assistant_name: str = "Assistant"
@@ -273,8 +362,52 @@ class Settings(BaseSettings):
     assistant_reminders_repo: str | None = None
     assistant_reminders_path: str = "reminders"
 
+    # --- Health: Withings scale (weigh-ins, read-only; docs/health.md) -----------------
+    withings_client_id: str | None = None
+    withings_client_secret: SecretStr | None = None
+    withings_refresh_token: SecretStr | None = None
+
+    # --- Parcels the agent notes when it reads a shipping email (needs MAIL_ACCOUNTS) ---
+    deliveries_enabled: bool = True
+
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
+
+    # --- Documents, PDFs and pictures (docs/documents.md) ------------------------------
+    # The files of the conversation listed and opened, PDFs written, forms filled, pages
+    # copied, drawings rendered. Nothing leaves the machine. What needs the "documents"
+    # extra is simply absent without it.
+    documents_enabled: bool = True
+    # auto: US Letter where it is the usual paper (from HOME_COUNTRY), else A4.
+    paper_size: Literal["auto", "a4", "letter"] = "auto"
+    # A folder with the fonts to write PDFs and drawings in (a Regular and a Bold .ttf or
+    # .otf of one family). Empty: DejaVu Sans, which the Docker image installs.
+    pdf_font_dir: str | None = None
+    # Photos of gym and home exercises from a public-domain bank on GitHub.
+    exercise_photos_enabled: bool = False
+    # Calculations and charts run as Python in the model provider's sandbox, billed there.
+    # Anthropic only (it needs a code execution tool and a Files API).
+    code_execution_enabled: bool = False
+    # Empty: LLM_MODEL.
+    code_execution_model: str = ""
+
+    # --- Pictures and videos made by an AI model, billed by its provider ---------------
+    # Google (AI Studio key): Gemini's image model and Veo.
+    generation_gemini_api_key: SecretStr | None = None
+    generation_gemini_image_model: str = "gemini-2.5-flash-image"
+    generation_gemini_video_model: str = "veo-3.1-lite-generate-001"
+    # OpenAI (gpt-image, Sora), or with GENERATION_OPENAI_BASE_URL any server that speaks
+    # OpenAI's images API (a local one needs no key). A model set to "off": none of that
+    # kind, e.g. GENERATION_OPENAI_VIDEO_MODEL=off for a server that only makes pictures.
+    generation_openai_api_key: SecretStr | None = None
+    generation_openai_base_url: str | None = None
+    generation_openai_image_model: str = "gpt-image-2"
+    generation_openai_video_model: str = "sora-2"
+    # The provider used when the model names none; the first one configured when empty.
+    generation_default_provider: Literal["", "gemini", "openai"] = ""
+    # Most of each a single request may make.
+    generation_max_images: int = Field(6, ge=0)
+    generation_max_videos: int = Field(2, ge=0)
 
     # --- What the agent keeps on disk --------------------------------------------------
     # Where the agent keeps what must survive a restart (the journal, a connector's rotated
@@ -305,6 +438,31 @@ class Settings(BaseSettings):
     kb_url: str | None = None
     kb_token: SecretStr | None = None
 
+    # --- File drives through an rclone sidecar (compose/drive.yml, docs/drives.md) -----
+    # Where the sidecar's API is (set by compose/drive.yml) and the password both share.
+    # Tools exist once the URL, the password and at least one drive are set.
+    drive_url: str | None = None
+    drive_user: str = "agent"
+    drive_password: SecretStr | None = None
+    # The drives, a JSON list: name, remote, and optionally label, backend, read_only,
+    # content.
+    drives: list[Drive] = []
+    # How old the index of file names may get before it is rebuilt.
+    drive_index_hours: float = Field(24, gt=0)
+    # Copies of what the agent deletes, in DATA_DIR/drive-trash: how long they are kept,
+    # the biggest item copied and the most the trash may hold. Beyond that, a deletion
+    # waits for the user to accept it without a copy.
+    drive_trash_days: float = Field(30, gt=0)
+    drive_trash_max_item_mb: int = Field(1024, ge=0)
+    drive_trash_max_total_mb: int = Field(5120, ge=0)
+    # Index the text inside the files (PDF, office, text) for search by content.
+    drive_content: bool = True
+    # Scanned PDFs: "model" has the model read them (a few per hour, each a paid request;
+    # needs a provider that takes PDFs, anthropic today), "off" lists them by name only.
+    drive_ocr: Literal["off", "model"] = "off"
+    # Empty: a small Claude model with anthropic.
+    drive_ocr_model: str = ""
+
     # --- Push notifications (ntfy, optional) -------------------------------------------
     # Full topic URL, e.g. https://ntfy.sh/some-long-random-topic or a self-hosted server.
     ntfy_url: str | None = None
@@ -318,6 +476,7 @@ class Settings(BaseSettings):
         "brief_sections",
         "outdoor_activities",
         "web_trusted_domains",
+        "subscription_displays",
         mode="before",
     )
     @classmethod
@@ -359,6 +518,28 @@ class Settings(BaseSettings):
             raise ValueError("two MCP_SERVERS entries share a name")
         return value
 
+    @field_validator("drives")
+    @classmethod
+    def _distinct_drives(cls, value: list[Drive]) -> list[Drive]:
+        names = [drive.name for drive in value]
+        if len(set(names)) != len(names):
+            raise ValueError("two DRIVES entries share a name")
+        return value
+
+    @property
+    def drives_enabled(self) -> bool:
+        return bool(self.drives and self.drive_url and self.drive_password)
+
+    @property
+    def subscription_enabled(self) -> bool:
+        return self.engine == "subscription" and self.claude_code_oauth_token is not None
+
+    @property
+    def drive_ocr_enabled(self) -> bool:
+        """Scans are only read where the provider takes a PDF as a document; elsewhere
+        DRIVE_OCR=model falls back to the text layers alone (main logs it)."""
+        return self.drive_ocr == "model" and self.llm_provider in DOCUMENT_PROVIDERS
+
     @field_validator("llm_provider")
     @classmethod
     def _known_provider(cls, value: str) -> str:
@@ -369,7 +550,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _model_is_usable(self) -> "Settings":
-        if needs_key(self.llm_provider) and self.llm_api_key is None:
+        if self.engine == "subscription":
+            # Checked first: with it, Claude needs no API key.
+            if self.llm_provider != ANTHROPIC:
+                raise ValueError(
+                    "ENGINE=subscription is Claude on a Claude plan: it needs "
+                    f"LLM_PROVIDER=anthropic, not {self.llm_provider}"
+                )
+            if self.claude_code_oauth_token is None:
+                raise ValueError(
+                    "ENGINE=subscription needs CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token`)"
+                )
+            unknown = set(self.subscription_displays) - {"voice", "notification", "chat"}
+            if unknown:
+                raise ValueError(
+                    f"SUBSCRIPTION_DISPLAYS: unknown {sorted(unknown)}; known: voice, "
+                    "notification, chat"
+                )
+        elif needs_key(self.llm_provider) and self.llm_api_key is None:
             raise ValueError(f"LLM_PROVIDER={self.llm_provider} needs LLM_API_KEY")
         if self.llm_provider == CUSTOM and not self.llm_base_url:
             raise ValueError("LLM_PROVIDER=openai-compatible needs LLM_BASE_URL")
@@ -377,6 +575,10 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        if not self.drive_ocr_model:
+            self.drive_ocr_model = (
+                DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
+            )
         return self
 
     @model_validator(mode="after")
