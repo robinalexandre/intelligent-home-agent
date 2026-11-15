@@ -265,6 +265,12 @@ class AndroidTV:
                 "The TV device no longer accepts the agent: pair it again "
                 "(scripts/android_tv_pair.py)."
             ) from exc
+        except ssl.SSLError as exc:
+            # Read when connecting: base64 of something that is no certificate and key.
+            raise ToolError(
+                "ANDROID_TV_CLIENT_CERT and ANDROID_TV_CLIENT_KEY are not a certificate and "
+                "its key: pair the TV device again (scripts/android_tv_pair.py)."
+            ) from exc
         except (CannotConnect, ConnectionClosed, TimeoutError) as exc:
             remote.disconnect()
             raise TVUnreachable(UNREACHABLE) from exc

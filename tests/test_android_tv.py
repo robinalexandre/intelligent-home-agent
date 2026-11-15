@@ -355,3 +355,11 @@ def test_the_screen_elements_read_over_adb_keep_labels_and_focus():
 def test_a_certificate_that_is_not_the_pairing_scripts_says_so():
     with pytest.raises(ValueError, match="ANDROID_TV_CLIENT_CERT and ANDROID_TV_CLIENT_KEY"):
         AndroidTV("192.168.1.60", "-----BEGIN CERTIFICATE-----", encode_pem(b"K"))
+
+
+async def test_a_certificate_that_cannot_be_loaded_is_said_not_raised_as_a_crash():
+    # Fails when the certificate is loaded, before anything is sent to the device.
+    tv = AndroidTV("192.0.2.1", encode_pem(b"not a certificate"), encode_pem(b"nor a key"))
+    with pytest.raises(ToolError, match="pair the TV device again"):
+        async with tv.connect():
+            pass
