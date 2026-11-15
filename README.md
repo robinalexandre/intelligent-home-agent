@@ -39,15 +39,19 @@ spoken morning briefing and evening recap.
 
 ## Quick start
 
-### Docker Compose
-
 ```bash
 python3 scripts/setup.py              # asks a few questions, writes .env
 docker compose up -d --build
 curl -s localhost:8000/health
 ```
 
-### Local
+**[Setup, step by step](docs/setup.md)** walks through every choice: where it runs (a
+home server, a Raspberry Pi, a VPS, with or without Docker), which model (Claude, OpenAI,
+Mistral, Gemini, a local model with Ollama...), how it reaches Home Assistant, how you
+reach it (home network, Tailscale, Cloudflare Tunnel, your own domain) and how you talk
+to it.
+
+### For development
 
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
@@ -72,8 +76,9 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 |---|---|---|
 | `AGENT_API_TOKEN` | required | Bearer token every client sends. |
 | `LLM_PROVIDER` | `anthropic` | Model provider. See "Model providers" below. |
-| `LLM_API_KEY` | required | Provider API key (`ANTHROPIC_API_KEY` also accepted). |
-| `LLM_MODEL` | `claude-sonnet-5-5` | Model for the conversation. |
+| `LLM_API_KEY` | required, except local servers | Provider API key (`ANTHROPIC_API_KEY` also accepted). |
+| `LLM_MODEL` | `claude-sonnet-5-5` for Anthropic, else required | Model for the conversation; it must support tool calling. |
+| `LLM_BASE_URL` | the provider's | Address of an OpenAI-compatible server. |
 | `ASSISTANT_NAME` | `Assistant` | What the assistant calls itself; also closes a conversation ("thanks, Assistant"). |
 | `LANGUAGE` | `en` | `en` or `fr`. |
 | `TIMEZONE` | `UTC` | IANA time zone. |
@@ -121,10 +126,16 @@ front matter of `title`, `on` (when it starts showing), `until` (last day), and 
 ### Model providers
 
 The agent loop, memory and tools speak one message format and call the model through a
-small interface (`LLMClient` in `llm.py`). Anthropic is the only provider shipped; adding
-another is one class that converts requests and responses (steps in
-[AGENTS.md](AGENTS.md)). Web search uses Anthropic's server-side search tool and is off
-for other providers.
+small interface (`LLMClient` in `llm.py`). Two clients are shipped:
+
+- **Anthropic** (`LLM_PROVIDER=anthropic`), the default;
+- **OpenAI-compatible**, for every server that speaks the Chat Completions API: `openai`,
+  `mistral`, `gemini`, `groq`, `openrouter`, local models with `ollama` or `lmstudio`, and
+  `openai-compatible` with `LLM_BASE_URL` for anything else (llama.cpp, vLLM, a gateway).
+
+[Setup, step 2](docs/setup.md#2-the-model) has the table. A provider with another API is
+one class that converts requests and responses (steps in [AGENTS.md](AGENTS.md)). Web
+search uses Anthropic's server-side search tool and is off for other providers.
 
 ## Integrations
 
@@ -163,13 +174,15 @@ The guardrails are enforced in code, not only in the prompt.
 ```
 src/intelligent_home_agent/   app, agent loop, prompts, settings, tools/
 scripts/                      setup.py (onboarding), build_shortcuts.py (Siri)
-docs/                         deployment, integrations, Siri Shortcut
+compose/                      one file per way to reach the agent (Caddy, Tailscale...)
+docs/                         setup step by step, deployment, integrations, Siri Shortcut
 tests/                        pytest, no network
 ```
 
 ## Roadmap
 
-- [ ] A second model provider (OpenAI-compatible endpoint, local models)
+- [x] A second model provider (OpenAI-compatible endpoint, local models)
+- [ ] Web search with providers other than Anthropic
 - [ ] Optional: Home Assistant's MCP server instead of the REST tools
 - [ ] Package as a Home Assistant add-on
 - [ ] Rate limiting and request logs

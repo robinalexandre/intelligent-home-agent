@@ -1,0 +1,20 @@
+# Behind a Traefik you already run with the Docker provider. Needs AGENT_DOMAIN in .env.
+# TRAEFIK_NETWORK is the Docker network Traefik shares with its services (default: proxy),
+# TRAEFIK_ENTRYPOINT its HTTPS entry point (websecure) and TRAEFIK_CERTRESOLVER its
+# certificate resolver (letsencrypt).
+services:
+  agent:
+    networks: [default, traefik]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.home-agent.rule=Host(`${AGENT_DOMAIN:?Set AGENT_DOMAIN in .env}`)
+      - traefik.http.routers.home-agent.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.home-agent.tls=true
+      - traefik.http.routers.home-agent.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.home-agent.loadbalancer.server.port=8000
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-proxy}
+    external: true

@@ -181,7 +181,8 @@ def prompt_config(settings: Settings) -> PromptConfig:
 def build_agent(
     settings: Settings, ha: HomeAssistantClient | None, http: httpx.AsyncClient
 ) -> Agent:
-    llm = build_llm_client(settings.llm_provider, settings.llm_api_key.get_secret_value())
+    key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
+    llm = build_llm_client(settings.llm_provider, key, settings.llm_base_url)
     registry = build_registry(settings, ha, http, llm)
     return Agent(
         llm,

@@ -33,6 +33,36 @@ from intelligent_home_agent.activities import (  # noqa: E402
     match_activities,
 )
 
+# Kept in step with intelligent_home_agent.llm (not imported: it needs httpx installed).
+MODELS = {
+    "anthropic": "Claude, with an Anthropic API key (the only one with web search)",
+    "openai": "OpenAI, with an API key",
+    "mistral": "Mistral, with an API key",
+    "gemini": "Google Gemini, with an API key",
+    "groq": "Groq, with an API key",
+    "openrouter": "OpenRouter: many models behind one API key",
+    "ollama": "a local model with Ollama: nothing leaves the machine, no key",
+    "lmstudio": "a local model with LM Studio, no key",
+    "openai-compatible": "any other server that speaks the OpenAI chat API (give its URL)",
+}
+KEYLESS = {"ollama", "lmstudio", "openai-compatible"}
+ACCESS = {
+    "local": "this machine only (127.0.0.1:8000): to try it, or behind your own proxy",
+    "lan": "the home network, plain HTTP on port 8000: clients at home only",
+    "tailscale": "your Tailscale network, HTTPS: your own devices, from anywhere",
+    "funnel": "Tailscale Funnel: a public HTTPS address, no domain or open port needed",
+    "cloudflare": "Cloudflare Tunnel: public HTTPS on a domain at Cloudflare, no open port",
+    "caddy": "your own domain, HTTPS by Caddy: ports 80 and 443 open to this machine",
+    "traefik": "your own domain, behind a Traefik you already run",
+}
+COMPOSE_FILES = {
+    "tailscale": "tailscale",
+    "funnel": "tailscale",
+    "cloudflare": "cloudflared",
+    "caddy": "caddy",
+    "traefik": "traefik",
+}
+
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 COMPASS = "N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW".split()
 SECTIONS = {
@@ -54,6 +84,8 @@ CHANNELS = {
 }
 SECRET_KEYS = {
     "AGENT_API_TOKEN",
+    "TS_AUTHKEY",
+    "TUNNEL_TOKEN",
     "LLM_API_KEY",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
@@ -101,6 +133,18 @@ class Prompter:
                 return float(self.ask(question, default).replace(",", "."))
             except ValueError:
                 self.say("  Please type a number.")
+
+    def pick(self, question: str, options: dict[str, str], default: str) -> str:
+        """One option, by number or name."""
+        keys = list(options)
+        for i, key in enumerate(keys, 1):
+            self.say(f"  {i}. {key}: {options[key]}")
+        while True:
+            raw = self.ask(f"{question} (number or name)", default)
+            key = keys[int(raw) - 1] if raw.isdigit() and 0 < int(raw) <= len(keys) else raw
+            if key in options:
+                return key
+            self.say(f"  Unknown: {raw}")
 
     def choose(self, question: str, options: dict[str, str], default: list[str]) -> list[str]:
         keys = list(options)
@@ -182,12 +226,76 @@ def ask_home(p: Prompter, env: dict[str, str], lookup: Callable[[str, str], dict
         env["HOME_LONGITUDE"] = str(p.number("Longitude"))
 
 
-def ask_model(p: Prompter, env: dict[str, str]) -> None:
-    p.say("\n# Language model (Anthropic is the provider shipped; see AGENTS.md to add one)")
-    env["LLM_PROVIDER"] = "anthropic"
-    if key := p.secret("API key"):
+def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
+    p.say("\n# Language model: who answers?")
+    provider = p.pick("Provider", MODELS, "anthropic")
+    env["LLM_PROVIDER"] = provider
+    if provider == "openai-compatible":
+        env["LLM_BASE_URL"] = p.ask("Server URL, usually ending in /v1")
+    elif provider == "ollama" and docker:
+        if p.yes("Run Ollama in Docker next to the agent (no: it already runs here)?", True):
+            env["_COMPOSE_OLLAMA"] = "1"
+        else:
+            env["LLM_BASE_URL"] = "http://host.docker.internal:11434/v1"
+    elif provider == "lmstudio" and docker:
+        env["LLM_BASE_URL"] = "http://host.docker.internal:1234/v1"
+    if key := p.secret("API key" + (" (if the server wants one)" if provider in KEYLESS else "")):
         env["LLM_API_KEY"] = key
-    env["LLM_MODEL"] = p.ask("Model", "claude-sonnet-5-5")
+    if provider == "anthropic":
+        env["LLM_MODEL"] = p.ask("Model", "claude-sonnet-5-5")
+        return
+    p.say("  Pick a model that supports tool calling (function calling).")
+    while not (model := p.ask("Model name, as the provider spells it")):
+        p.say("  A model name is needed.")
+    env["LLM_MODEL"] = model
+
+
+def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
+    """How clients reach the agent; returns the address they will use, when known."""
+    p.say("\n# Where will clients (phone, speaker, Home Assistant) reach the agent from?")
+    access = p.pick("Access", ACCESS, "local")
+    files = ["docker-compose.yml"]
+    address = None
+    if access == "local":
+        address = "http://127.0.0.1:8000"
+    elif access == "lan":
+        env["AGENT_BIND"] = "0.0.0.0"  # noqa: S104
+        address = "http://<this machine's address>:8000"
+    elif access in {"tailscale", "funnel"}:
+        if key := p.secret("Tailscale auth key (admin console > Settings > Keys)"):
+            env["TS_AUTHKEY"] = key
+        env["TS_HOSTNAME"] = p.ask("Name of the agent on your tailnet", "home-agent")
+        if access == "funnel":
+            env["TS_SERVE"] = "funnel"
+        address = f"https://{env['TS_HOSTNAME']}.<your tailnet>.ts.net"
+    elif access == "cloudflare":
+        if token := p.secret("Tunnel token (Cloudflare Zero Trust > Networks > Tunnels)"):
+            env["TUNNEL_TOKEN"] = token
+        address = "https://<the public hostname you gave the tunnel>"
+    else:
+        while not (domain := p.ask("Domain name for the agent, e.g. agent.example.com")):
+            p.say("  A domain name is needed.")
+        env["AGENT_DOMAIN"] = domain
+        address = f"https://{domain}"
+        if access == "traefik":
+            env["TRAEFIK_NETWORK"] = p.ask("Docker network Traefik shares with services", "proxy")
+            env["TRAEFIK_CERTRESOLVER"] = p.ask("Traefik certificate resolver", "letsencrypt")
+    if access in COMPOSE_FILES:
+        files.append(f"compose/{COMPOSE_FILES[access]}.yml")
+    elif env.get("HA_URL") and p.yes(
+        "Is Home Assistant on your Tailscale network, out of this machine's direct reach?",
+        False,
+    ):
+        if key := p.secret("Tailscale auth key (admin console > Settings > Keys)"):
+            env["TS_AUTHKEY"] = key
+        files.append("compose/tailscale.yml")
+    if env.pop("_COMPOSE_OLLAMA", None):
+        files.append("compose/ollama.yml")
+    if len(files) > 1:
+        # ":" on every system, Windows included.
+        env["COMPOSE_PATH_SEPARATOR"] = ":"
+        env["COMPOSE_FILE"] = ":".join(files)
+    return address
 
 
 def ask_brief(p: Prompter, env: dict[str, str]) -> list[str]:
@@ -313,7 +421,22 @@ def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
 
 GROUPS = [
     ("API", ["AGENT_API_TOKEN"]),
-    ("Language model", ["LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL"]),
+    (
+        "Docker Compose: how the agent is reached (docs/setup.md)",
+        [
+            "COMPOSE_PATH_SEPARATOR",
+            "COMPOSE_FILE",
+            "AGENT_BIND",
+            "AGENT_DOMAIN",
+            "TRAEFIK_NETWORK",
+            "TRAEFIK_CERTRESOLVER",
+            "TS_AUTHKEY",
+            "TS_HOSTNAME",
+            "TS_SERVE",
+            "TUNNEL_TOKEN",
+        ],
+    ),
+    ("Language model", ["LLM_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"]),
     ("Assistant", ["ASSISTANT_NAME", "LANGUAGE", "TIMEZONE"]),
     ("Home", ["HOME_CITY", "HOME_COUNTRY", "HOME_LATITUDE", "HOME_LONGITUDE"]),
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
@@ -360,12 +483,14 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         p.say("Nothing written.")
         return False
     env: dict[str, str] = {"AGENT_API_TOKEN": secrets.token_urlsafe(32)}
+    docker = p.yes("Will the agent run with Docker Compose (no: straight with Python)?", True)
     ask_identity(p, env)
-    ask_model(p, env)
+    ask_model(p, env, docker=docker)
     ask_home(p, env, lookup)
     sections = ask_brief(p, env)
     ask_activities(p, env)
     ask_sources(p, env, sections)
+    address = ask_access(p, env) if docker else None
     channels = ask_channels(p, env)
 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -374,11 +499,26 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     p.say(f"\nWrote {path} (readable by you only):")
     for line in summary(env):
         p.say(line)
-    if "LLM_API_KEY" not in env:
-        p.say("\nLLM_API_KEY is still empty: add it to .env before starting.")
+    missing = [
+        key
+        for key, needed in (
+            ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS),
+            ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
+            ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
+        )
+        if needed and key not in env
+    ]
+    if missing:
+        p.say(f"\nStill empty, add to .env before starting: {', '.join(missing)}.")
     p.say("\nNext steps:")
-    p.say("  Start: docker compose up -d --build   (or: uvicorn intelligent_home_agent.main:app)")
-    p.say("  Clients authenticate with AGENT_API_TOKEN from .env.")
+    if docker:
+        p.say("  Start: docker compose up -d --build")
+        if "compose/ollama.yml" in env.get("COMPOSE_FILE", ""):
+            p.say(f"  Then: docker compose exec ollama ollama pull {env['LLM_MODEL']}")
+        p.say(f"  The agent will answer at {address}")
+    else:
+        p.say("  Start: pip install -e . && uvicorn intelligent_home_agent.main:app")
+    p.say("  Check: docs/setup.md, step 6. Clients authenticate with AGENT_API_TOKEN from .env.")
     for channel in channels:
         p.say(f"  {NEXT_STEPS[channel]}")
     return True

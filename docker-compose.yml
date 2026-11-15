@@ -1,5 +1,8 @@
-# Minimal stack: the agent alone, listening on localhost. Put an HTTPS reverse proxy
-# (Caddy, Traefik, nginx...) in front of it before exposing it; see docs/deployment.md.
+# The agent alone, listening on this machine only (127.0.0.1:8000). AGENT_BIND=0.0.0.0 in
+# .env opens it to the home network in plain HTTP: never on a machine with a public address.
+# Add one file from compose/ to choose how it is reached: scripts/setup.py writes the
+# choice as COMPOSE_FILE in .env, so `docker compose up -d` is always the whole command.
+# See docs/setup.md.
 name: intelligent-home-agent
 
 services:
@@ -7,5 +10,9 @@ services:
     build: .
     env_file: .env
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${AGENT_BIND:-127.0.0.1}:8000:8000"
+    # Lets the agent reach a service on the host itself (a local model server, Home
+    # Assistant in host mode) as host.docker.internal, on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

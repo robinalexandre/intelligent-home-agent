@@ -1,5 +1,8 @@
 # Deployment
 
+For a first install, follow [setup.md](setup.md): it covers the same ground one choice at
+a time, with ready-made Compose files. This page is the reference behind it.
+
 ## Where to run it
 
 Any machine with Docker or Python 3.12+ that can reach Home Assistant (if you use it) and
@@ -33,16 +36,17 @@ docker compose up -d --build
 docker compose logs -f agent      # the startup log lists the tools that are on
 ```
 
-The compose file publishes the agent on `127.0.0.1:8000` only. Put an HTTPS reverse proxy
-in front before exposing it. With Caddy, which gets certificates by itself:
+The compose file publishes the agent on `127.0.0.1:8000` only. To expose it, add one of
+the files in `compose/` (Caddy, Traefik, Tailscale, Cloudflare Tunnel: see
+[setup.md](setup.md#4-reaching-the-agent)), or point a reverse proxy you already run to
+that port. With a Caddy installed on the host, for example:
 
 ```
 agent.example.com {
     reverse_proxy 127.0.0.1:8000
 }
 ```
-
-Traefik or nginx work the same way. The agent starts without Home Assistant: general
+The agent starts without Home Assistant: general
 questions work, home tools are off until `HA_TOKEN` is set.
 
 Smoke test:
@@ -63,8 +67,9 @@ port 8123.
 
 If you'd rather not install anything on the VPS host, run the VPN as a sidecar container
 in userspace mode and let the agent go through its outbound HTTP proxy, which is what
-`HA_PROXY_URL` is for. Only the Home Assistant client uses that proxy. In a
-`docker-compose.override.yml` next to the compose file:
+`HA_PROXY_URL` is for. Only the Home Assistant client uses that proxy.
+`compose/tailscale.yml` does it (and serves the agent on the tailnet); the part that
+matters for Home Assistant is:
 
 ```yaml
 services:

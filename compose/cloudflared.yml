@@ -1,0 +1,12 @@
+# A Cloudflare Tunnel: a public HTTPS address on a domain you have at Cloudflare, with no
+# port opened on the router. Create the tunnel in Cloudflare Zero Trust (Networks >
+# Tunnels), give it a public hostname with the service http://agent:8000, and put its
+# token in .env as TUNNEL_TOKEN.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in .env}
+    depends_on: [agent]
+    restart: unless-stopped

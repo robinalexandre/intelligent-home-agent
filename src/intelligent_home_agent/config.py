@@ -7,10 +7,17 @@ setting with a comment.
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from intelligent_home_agent.activities import resolve
+from intelligent_home_agent.llm import (
+    ANTHROPIC,
+    CUSTOM,
+    DEFAULT_ANTHROPIC_MODEL,
+    PROVIDERS,
+    needs_key,
+)
 
 CsvList = Annotated[list[str], NoDecode]
 
@@ -64,13 +71,19 @@ class Settings(BaseSettings):
     agent_api_token: SecretStr = Field(description="Bearer token every client must send.")
 
     # --- Language model ----------------------------------------------------------------
-    llm_provider: str = "anthropic"
-    llm_api_key: SecretStr = Field(
-        validation_alias=AliasChoices("llm_api_key", "anthropic_api_key")
+    # anthropic, one of the Chat Completions endpoints known by name (openai, mistral, groq,
+    # openrouter, gemini, ollama, lmstudio), or openai-compatible with LLM_BASE_URL.
+    llm_provider: str = ANTHROPIC
+    # Not needed by a local server (ollama, lmstudio, openai-compatible).
+    llm_api_key: SecretStr | None = Field(
+        None, validation_alias=AliasChoices("llm_api_key", "anthropic_api_key")
     )
-    llm_model: str = Field(
-        "claude-sonnet-5-5", validation_alias=AliasChoices("llm_model", "anthropic_model")
-    )
+    # Required except for anthropic, where it defaults to DEFAULT_ANTHROPIC_MODEL.
+    llm_model: str = Field("", validation_alias=AliasChoices("llm_model", "anthropic_model"))
+    # Where the Chat Completions API is, ending in /v1 for most servers. Required for
+    # openai-compatible; for a named provider it replaces the usual address (e.g. Ollama
+    # on another machine: http://192.168.1.20:11434/v1).
+    llm_base_url: str | None = None
     max_tokens: int = 1024
     max_tool_iterations: int = 8
 
@@ -201,6 +214,26 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_slash(cls, value: str) -> str:
         return value.rstrip("/")
+
+    @field_validator("llm_provider")
+    @classmethod
+    def _known_provider(cls, value: str) -> str:
+        value = value.strip().casefold()
+        if value not in PROVIDERS:
+            raise ValueError(f"unknown provider; available: {', '.join(PROVIDERS)}")
+        return value
+
+    @model_validator(mode="after")
+    def _model_is_usable(self) -> "Settings":
+        if needs_key(self.llm_provider) and self.llm_api_key is None:
+            raise ValueError(f"LLM_PROVIDER={self.llm_provider} needs LLM_API_KEY")
+        if self.llm_provider == CUSTOM and not self.llm_base_url:
+            raise ValueError("LLM_PROVIDER=openai-compatible needs LLM_BASE_URL")
+        if not self.llm_model:
+            if self.llm_provider != ANTHROPIC:
+                raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
+            self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        return self
 
 
 @lru_cache

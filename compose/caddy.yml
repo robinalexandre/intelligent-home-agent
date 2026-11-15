@@ -1,0 +1,19 @@
+# HTTPS on your own domain, certificates handled by Caddy. Needs AGENT_DOMAIN in .env, a
+# DNS record pointing it to this machine, and ports 80 and 443 reachable from the internet.
+services:
+  caddy:
+    image: caddy:2
+    command: caddy reverse-proxy --from ${AGENT_DOMAIN:?Set AGENT_DOMAIN in .env} --to agent:8000
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [agent]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

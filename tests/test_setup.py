@@ -9,9 +9,11 @@ setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
 
 ANSWERS = [
+    "",  # with Docker Compose
     "Nova",  # name
     "fr",  # language
     "Europe/Paris",  # time zone
+    "",  # provider: anthropic
     "claude-test",  # model
     "Springfield",  # city
     "y",  # look it up
@@ -32,6 +34,7 @@ ANSWERS = [
     "y",  # CalDAV
     "https://caldav.example.com",
     "someone",  # username
+    "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
 ]
@@ -87,6 +90,70 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     for secret in ("sk-very-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
         assert secret not in output
     assert "LLM_API_KEY = (set)" in output
+    assert "COMPOSE_FILE" not in env and "http://127.0.0.1:8000" in output
+
+
+def run_with(tmp_path, answers, secrets_typed):
+    read, queue = scripted(answers)
+    read_secret, secret_queue = scripted(secrets_typed)
+    printed = []
+    path = tmp_path / ".env"
+    assert setup.run(setup.Prompter(read, read_secret, printed.append), path)
+    assert queue == [] and secret_queue == []
+    env = dict(
+        line.split("=", 1) for line in path.read_text().splitlines() if line and line[0] != "#"
+    )
+    return env, "\n".join(printed)
+
+
+# Name, language, time zone; then after the model: no city, no sections, no activities.
+START = ["", "en", "UTC"]
+NOTHING_ELSE = ["", "weather", "short", ""]
+
+
+def test_a_local_model_reached_over_tailscale(tmp_path):
+    answers = ["", *START, "ollama", "y", "some-model", *NOTHING_ELSE]
+    answers += ["n", "funnel", "agent", "scheduled"]  # no Home Assistant, access, name, channel
+    env, output = run_with(tmp_path, answers, ["", "tskey-secret"])
+    assert env["LLM_PROVIDER"] == "ollama" and "LLM_API_KEY" not in env
+    assert "LLM_BASE_URL" not in env  # set by compose/ollama.yml
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/tailscale.yml:compose/ollama.yml"
+    assert env["COMPOSE_PATH_SEPARATOR"] == ":"
+    assert (env["TS_SERVE"], env["TS_HOSTNAME"]) == ("funnel", "agent")
+    assert "tskey-secret" not in output and "Still empty" not in output
+    assert "ollama pull some-model" in output and "https://agent.<your tailnet>.ts.net" in output
+    for file in env["COMPOSE_FILE"].split(":"):
+        assert (SCRIPT.parent.parent / file).is_file()
+
+
+def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
+    answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m"]
+    answers += [*NOTHING_ELSE, "n", "caddy", "", "agent.example.com", "siri"]
+    env, output = run_with(tmp_path, answers, [""])
+    assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
+    assert env["AGENT_DOMAIN"] == "agent.example.com"
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
+    assert "Still empty" not in output and "https://agent.example.com" in output
+    answers = ["", *START, "mistral", "m", *NOTHING_ELSE, "n", "cloudflare", "siri"]
+    (tmp_path / "other").mkdir()
+    env, output = run_with(tmp_path / "other", answers, ["", ""])
+    assert "Still empty, add to .env before starting: LLM_API_KEY, TUNNEL_TOKEN." in output
+
+
+def test_without_docker_no_compose_question(tmp_path):
+    answers = ["n", *START, "lmstudio", "m", *NOTHING_ELSE, "n", "siri"]
+    env, output = run_with(tmp_path, answers, [""])
+    assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
+    assert "uvicorn intelligent_home_agent.main:app" in output
+
+
+def test_wizard_offers_every_provider_and_every_compose_file():
+    from intelligent_home_agent import llm
+
+    assert set(setup.MODELS) == set(llm.PROVIDERS)
+    assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
+    shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama"}
 
 
 def test_existing_env_is_kept_unless_confirmed(tmp_path):
