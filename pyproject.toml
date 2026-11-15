@@ -27,6 +27,8 @@ dependencies = [
     "pillow>=10",
     "pypdf>=6.0",
     "dnspython>=2.6",
+    # The WhatsApp chat (whatsapp.py): poll votes and reactions come over WAHA's socket.
+    "websockets>=13",
 ]
 
 [project.optional-dependencies]
