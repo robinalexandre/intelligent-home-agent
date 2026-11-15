@@ -28,6 +28,8 @@ dependencies = [
     "pillow>=10",
     "pypdf>=6.0",
     "dnspython>=2.6",
+    # The WhatsApp chat (whatsapp.py): poll votes and reactions come over WAHA's socket.
+    "websockets>=13",
 ]
 
 [project.optional-dependencies]
@@ -63,10 +65,21 @@ devices = [
     "pyatv==0.18.0",
     "srptools==1.0.1",
 ]
+# Apple Reminders, Notes and Find My through icloud.com's private API (docs/apple.md):
+# pinned, as Apple changes that API without notice and each release follows.
+icloud = ["pyicloud==2026.10.1"]
+# Drives the remote browser (compose/browser.yml, docs/browser.md) over Chrome's control
+# port; no browser is downloaded. Below 1.65, the last line known to drive the Chrome image
+# pinned there: a newer release may speak a protocol that image lacks.
+browser = ["playwright>=1.55,<1.65"]
 # Claude on a Claude subscription instead of the API (ENGINE=subscription,
 # docs/subscription.md): Claude Code through the Agent SDK, whose wheel brings the Claude
 # Code binary (some 400 MB). Without it the feature is absent and the API answers.
 subscription = ["claude-agent-sdk>=0.2"]
+# Voice messages sent in a chat, transcribed on the server (WHISPER_MODEL, docs/chat.md).
+# Without it a voice message gets a line asking to write instead. PyAV 19 dropped an
+# argument faster-whisper 1.2.1 still passes to av.open.
+voice = ["faster-whisper>=1.1", "av>=11,<19"]
 # The nightly review's lessons curated into the knowledge base (docs/review.md): the
 # curator of the public claude-code-kit's kb tool, pinned to the commit compose/kb.yml
 # builds. Without it the lessons are not curated.
@@ -77,6 +90,8 @@ curation = [
 video = ["av>=11"]
 dev = [
     "cryptography>=42",
+    # The tests of the iCloud apps use its exception types.
+    "pyicloud==2026.10.1",
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "respx>=0.21",

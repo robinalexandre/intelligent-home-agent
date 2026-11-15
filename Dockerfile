@@ -8,6 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Add "video" for MP4 animations (some 40 MB more): --build-arg EXTRAS=documents,video.
 # Add "subscription" for Claude on a Claude plan (docs/subscription.md; Claude Code
 # itself, some 400 MB): EXTRAS=documents,subscription.
+# "voice" transcribes the voice messages sent in a chat (docs/chat.md).
 # Add "curation" for the nightly review's lessons curated into notes (docs/review.md).
 # Empty for the smallest image: --build-arg EXTRAS= --build-arg FONT_PACKAGES=
 ARG EXTRAS=documents

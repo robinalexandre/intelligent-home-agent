@@ -81,6 +81,48 @@ class Strings:
     draft_line: str
     draft_files: str
     draft_check: str
+    # A chat in a messaging app (chat_session.py, whatsapp.py, telegram.py): what the code
+    # says there by itself, the choice that lists what waits for the user's go and its
+    # two closing options, and what it answers to the user's picks.
+    chat_stopped: str
+    chat_file_unreadable: str
+    chat_voice_unclear: str
+    chat_still_working: str
+    chat_reminders_not_created: str
+    chat_choice_expired: str
+    waiting_in_poll: str
+    poll_name: str
+    poll_validate: str
+    poll_cancel: str
+    poll_see_above: str
+    poll_cancelled: str
+    poll_cancelled_note: str
+    poll_nothing_ticked: str
+    go_done: str
+    go_failed: str
+    go_note: str
+    # Marking other WhatsApp chats as read (tools/whatsapp_chats.py).
+    whatsapp_mark_read_summary: str
+    # Sets the register of a voice message for the speech model (transcription.py).
+    voice_prompt: str
+    # News of what runs in the background (progress.py).
+    progress_waiting: str
+    progress_late: str
+    progress_share: str
+    progress_item: str
+    # Apple Reminders and Find My (tools/reminders.py, tools/find_my.py): their writes as
+    # the user reads them before giving their go.
+    reminder_create_summary: str
+    reminder_update_summary: str
+    reminder_complete_summary: str
+    reminder_named: str
+    reminder_in_list: str
+    reminder_in_minutes: str
+    reminder_due: str
+    reminder_change_title: str
+    reminder_change_notes: str
+    device_ring_summary: str
+    device_owner: str
     # File drives (tools/drives.py): how a write reads in the list of what waits. A place
     # is a drive's label and a path; an item of the local trash is where it was.
     drive_place: str
@@ -162,11 +204,6 @@ class Strings:
     # The titles of the briefing and the recap when they run by themselves (tasks.py).
     morning_briefing_title: str
     evening_recap_title: str
-    # News of what runs in the background for the user (progress.py).
-    progress_line: str
-    progress_waiting: str
-    progress_late: str
-    progress_share: str
     # Coding jobs (docs/jobs.md): how their writes read before the user's go, the line the
     # code writes above a coder's report, and the few words a runner adds to the coder's.
     job_on_repo: str
@@ -263,6 +300,49 @@ LANGUAGES: dict[str, Strings] = {
             "Files attached after reading content written by others ({files}): check the "
             "recipients before sending."
         ),
+        chat_stopped=(
+            "I'm restarting and didn't finish answering this message: send it again in a minute."
+        ),
+        chat_file_unreadable=(
+            "I can't get this file: PDF, images, text, voice messages and office files "
+            "only, {megabytes} MB at most."
+        ),
+        chat_voice_unclear="I couldn't make out this voice message, can you write it?",
+        chat_still_working=(
+            "⏳ Still on your request ({minutes} min). I'll be back as soon as it's done."
+        ),
+        chat_reminders_not_created=(
+            "I can't create reminders on your phone from this chat, ask by voice: {titles}."
+        ),
+        chat_choice_expired="This one is too old for me: ask me again.",
+        waiting_in_poll="🕒 *Waiting for your go*, pick below 👇",
+        poll_name="Which ones do I do? Tick, then Go",
+        poll_validate="✅ Go",
+        poll_cancel="❌ Cancel",
+        poll_see_above="{number}. → see no. {number} above",
+        poll_cancelled="Cancelled, I do nothing from this list.",
+        poll_cancelled_note="Cancelled.",
+        poll_nothing_ticked="Nothing ticked: tick what I should do, then Go.",
+        go_done="✅ {summary}{note}",
+        go_failed="❌ {summary}: {error}",
+        go_note=" ({note})",
+        whatsapp_mark_read_summary="Mark as read on WhatsApp the messages of: {names}",
+        voice_prompt="Voice message to my assistant: remind me tomorrow, tonight, next week.",
+        progress_waiting="waiting",
+        progress_late="longer than expected, {minutes} min",
+        progress_share="~{percent}% ({minutes} min of ~{estimate})",
+        progress_item="{label}: {state}",
+        reminder_create_summary='Create the reminder "{title}"{where}{when}{notes}',
+        reminder_update_summary="Change the reminder {reminder}: {what}",
+        reminder_complete_summary="Tick the reminder {reminder}",
+        reminder_named='"{title}" ({list})',
+        reminder_in_list=" in {list}",
+        reminder_in_minutes="{minutes} min after your go",
+        reminder_due="due {when}",
+        reminder_change_title='title "{title}"',
+        reminder_change_notes="notes: {notes}",
+        device_ring_summary='Play a sound on "{name}" ({model}{whose})',
+        device_owner=", {owner}'s",
         drive_place="{drive}: {path}",
         drive_renamed=' as "{name}"',
         drive_create_folder="Create the folder {place}",
@@ -349,10 +429,6 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix='Pause the HomePod "{name}"',
         departure_player_playing='🔊 "{name}" is still playing.',
         departure_player_fix='Pause "{name}"',
-        progress_line="{label}: {state}",
-        progress_waiting="waiting",
-        progress_late="longer than expected, {minutes} min",
-        progress_share="~{percent}% ({minutes} min of ~{estimate})",
         job_on_repo=" on {repo}",
         job_start_summary='Start the job "{title}"{where}: {request}',
         job_ask_summary="Tell job {job}: {message}",
@@ -449,6 +525,53 @@ LANGUAGES: dict[str, Strings] = {
             "Fichiers joints après lecture d'un contenu écrit par d'autres ({files}) : "
             "vérifie les destinataires avant d'envoyer."
         ),
+        chat_stopped=(
+            "Je redémarre et je n'ai pas fini de répondre à ce message : renvoie-le-moi "
+            "dans une minute."
+        ),
+        chat_file_unreadable=(
+            "Je ne peux pas récupérer ce fichier : PDF, images, texte, vocaux et fichiers "
+            "bureautiques seulement, {megabytes} Mo max."
+        ),
+        chat_voice_unclear="Je n'ai pas réussi à comprendre ce vocal, tu peux me l'écrire ?",
+        chat_still_working=(
+            "⏳ Toujours sur ta demande ({minutes} min). Je reviens vers toi dès que c'est fini."
+        ),
+        chat_reminders_not_created=(
+            "Je ne peux pas créer de rappel sur ton téléphone depuis ce chat, demande-le à "
+            "la voix : {titles}."
+        ),
+        chat_choice_expired="Celui-ci est trop ancien pour moi : redemande-moi.",
+        waiting_in_poll="🕒 *En attente de ton accord*, choisis ci-dessous 👇",
+        poll_name="Je fais lesquels ? Coche, puis Valider",
+        poll_validate="✅ Valider",
+        poll_cancel="❌ Annuler",
+        poll_see_above="{number}. → détail n°{number} ci-dessus",
+        poll_cancelled="Annulé, je ne fais rien de cette liste.",
+        poll_cancelled_note="Annulé.",
+        poll_nothing_ticked="Rien de coché : coche ce que je fais, puis Valider.",
+        go_done="✅ {summary}{note}",
+        go_failed="❌ {summary} : {error}",
+        go_note=" ({note})",
+        whatsapp_mark_read_summary="Marquer comme lus sur WhatsApp les messages de : {names}",
+        voice_prompt=(
+            "Message vocal à mon assistant : rappelle-moi demain, ce soir, la semaine prochaine."
+        ),
+        progress_waiting="en attente",
+        progress_late="plus long que prévu, {minutes} min",
+        progress_share="~{percent} % ({minutes} min sur ~{estimate})",
+        progress_item="{label} : {state}",
+        reminder_create_summary="Créer le rappel « {title} »{where}{when}{notes}",
+        reminder_update_summary="Modifier le rappel {reminder} : {what}",
+        reminder_complete_summary="Cocher le rappel {reminder}",
+        reminder_named="« {title} » ({list})",
+        reminder_in_list=" dans {list}",
+        reminder_in_minutes="{minutes} min après ton accord",
+        reminder_due="pour le {when}",
+        reminder_change_title="titre « {title} »",
+        reminder_change_notes="notes : {notes}",
+        device_ring_summary="Faire sonner « {name} » ({model}{whose})",
+        device_owner=", de {owner}",
         drive_place="{drive} : {path}",
         drive_renamed=" sous le nom « {name} »",
         drive_create_folder="Créer le dossier {place}",
@@ -535,10 +658,6 @@ LANGUAGES: dict[str, Strings] = {
         departure_homepod_fix="Mettre le HomePod « {name} » en pause",
         departure_player_playing="🔊 « {name} » joue encore.",
         departure_player_fix="Mettre « {name} » en pause",
-        progress_line="{label} : {state}",
-        progress_waiting="en attente",
-        progress_late="plus long que prévu, {minutes} min",
-        progress_share="~{percent} % ({minutes} min sur ~{estimate})",
         job_on_repo=" sur {repo}",
         job_start_summary="Lancer le job « {title} »{where} : {request}",
         job_ask_summary="Dire au job {job} : {message}",

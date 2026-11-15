@@ -1,0 +1,20 @@
+# The door to the remote browser's page (browser-gate in compose/browser.yml), behind the
+# login: every request is first shown to browser-auth (Authelia), which lets it through or
+# sends the visitor to the login page. Without browser-auth running, nothing is served.
+{
+	auto_https off
+	admin off
+	servers {
+		# The proxy in front (Caddy, Traefik, a tunnel) is on a Docker network: its
+		# X-Forwarded-Proto and Host are what the login page needs to see.
+		trusted_proxies static private_ranges
+	}
+}
+
+:8080 {
+	forward_auth browser-auth:9091 {
+		uri /api/authz/forward-auth
+		copy_headers Remote-User
+	}
+	reverse_proxy browser:3000
+}

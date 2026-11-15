@@ -1,10 +1,13 @@
-"""News of the sub-tasks that run in the background for a request of the user's own.
+"""News of what runs in the background for a request of the user's own.
 
-A coding job goes on after the reply left. Each one gets an estimate from how long the
-last ones of its kind took (its default until there are some), said when it starts; then,
-about each quarter of that time, the user hears in one line where every running one
-stands, through the channel the reports leave by (deliver.py). Tasks the user left earlier
-and the code's own runs (the nightly review) are not tracked: nobody is waiting for them.
+Something long (a long analysis, a job handed to another program) goes on after the chat
+answered. Each one gets an estimate from how long the last ones of its kind took (its
+default until there are some), said when it starts; then, about each quarter of that
+time, the chat hears in one line where every running one stands. What the user did not
+just ask for (a scheduled run) is not tracked: nobody is waiting for it.
+
+A feature that starts such work takes the chat's ``Tracker`` (``ChatSession.tracker``):
+``run = tracker.begin(kind, label, default_seconds)``, then ``run.end()``.
 """
 
 from __future__ import annotations
@@ -12,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import statistics
 import time
 from collections.abc import Awaitable, Callable
@@ -35,7 +37,7 @@ class Run:
     kind: str
     label: str
     estimate: float
-    # How far it got, in a few words (what the coder last said).
+    # How far it got, in a few words (the searches made, the step it is on).
     detail: Callable[[], str] | None = None
     started: float | None = None
     quarters: int = 0
@@ -111,10 +113,7 @@ class Tracker:
         durations[run.kind] = kept
         try:
             self._file.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._file.with_name(self._file.name + ".tmp")
-            tmp.write_text(json.dumps(durations))
-            os.chmod(tmp, 0o600)
-            tmp.replace(self._file)
+            self._file.write_text(json.dumps(durations))
         except OSError:
             log.warning("Could not keep the durations of %s", run.kind, exc_info=True)
 
@@ -136,7 +135,7 @@ class Tracker:
                     )
                 if run.detail is not None and (detail := run.detail()):
                     state += f", {detail}"
-            parts.append(self._texts.progress_line.format(label=run.label, state=state))
+            parts.append(self._texts.progress_item.format(label=run.label, state=state))
         return "⏳ " + " · ".join(parts)
 
     def _crossed(self) -> list[Run]:

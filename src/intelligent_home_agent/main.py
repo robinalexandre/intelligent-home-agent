@@ -9,13 +9,13 @@ import hashlib
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -25,6 +25,13 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 from intelligent_home_agent import __version__, curation
 from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.agent import REPEATING_TAG, TASK_TAG, Agent
+from intelligent_home_agent.chat import ChatChannel
+from intelligent_home_agent.chat_session import (
+    PLAN_TAG,
+    ChatReports,
+    ChatSession,
+    too_long_for_option,
+)
 from intelligent_home_agent.coder_approvals import Approvals, build_coder_permission_tools
 from intelligent_home_agent.config import Settings, get_settings
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
@@ -35,7 +42,7 @@ from intelligent_home_agent.conversations import (
     ConversationStore,
     FileStore,
 )
-from intelligent_home_agent.deliver import Delivery, NtfyReports, Outbox
+from intelligent_home_agent.deliver import Delivery, NtfyReports, Outbox, ReportChannel
 from intelligent_home_agent.departure import Departure
 from intelligent_home_agent.departure import record as record_departure
 from intelligent_home_agent.drive_content import (
@@ -52,6 +59,8 @@ from intelligent_home_agent.home_devices import (
     home_network_client,
 )
 from intelligent_home_agent.i18n import strings
+from intelligent_home_agent.icloud_web import ICloudWeb, session_dir
+from intelligent_home_agent.icloud_web import available as icloud_available
 from intelligent_home_agent.jobs import DONE as JOB_DONE
 from intelligent_home_agent.jobs import FAILED as JOB_FAILED
 from intelligent_home_agent.jobs import IDLE as JOB_IDLE
@@ -72,12 +81,16 @@ from intelligent_home_agent.tasks import (
     built_in_tasks,
     says_nothing,
 )
+from intelligent_home_agent.telegram import TelegramApi, TelegramBot
 from intelligent_home_agent.tools import (
     CalDavCalendar,
     CardDavBirthdays,
     EntityPolicy,
+    FindMy,
     GitHub,
     GitHubFile,
+    ICloudNotes,
+    ICloudReminders,
     ImapMailbox,
     Investigator,
     KnowledgeBase,
@@ -87,12 +100,14 @@ from intelligent_home_agent.tools import (
     MergedCalendar,
     OpenMeteo,
     ReminderRepo,
+    RemoteBrowser,
     Router,
     Tool,
     ToolRegistry,
     TurnedDown,
     WebPages,
     build_assistant_reminder_tools,
+    build_browser_tools,
     build_calendar_tools,
     build_calendar_write_tools,
     build_draft_tools,
@@ -100,15 +115,18 @@ from intelligent_home_agent.tools import (
     build_drives,
     build_email_tools,
     build_engine_web_tools,
+    build_find_my_tools,
     build_general_tools,
     build_github_tools,
     build_home_assistant_tools,
     build_knowledge_tools,
     build_memory_tools,
+    build_note_tools,
     build_osint_tools,
     build_outdoor_tools,
     build_past_conversation_tools,
     build_procedure_tools,
+    build_reminder_tools,
     build_search_engine,
     build_surf_tools,
     build_travel_tools,
@@ -126,6 +144,7 @@ from intelligent_home_agent.tools.assistant_notes import (
     RepoFolder,
     build_assistant_note_tools,
 )
+from intelligent_home_agent.tools.browser import available as browser_available
 from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
@@ -154,21 +173,27 @@ from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.repos import Repositories, build_repository_tools
 from intelligent_home_agent.tools.scheduled_tasks import build_task_tools
+from intelligent_home_agent.tools.vpn import Vpn
 from intelligent_home_agent.tools.vulnerabilities import (
     Vulnerabilities,
     build_vulnerability_tools,
 )
+from intelligent_home_agent.tools.whatsapp_chats import build_whatsapp_chat_tools
 from intelligent_home_agent.tools.withings import Withings, WithingsAuth, build_withings_tools
+from intelligent_home_agent.transcription import Transcriber, shared_transcriber
+from intelligent_home_agent.transcription import available as voice_available
+from intelligent_home_agent.whatsapp import Waha, WhatsAppChannel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# A chat channel asks for news every few seconds, and a Telegram address holds the bot's
+# token: neither belongs in the log. Tool calls are logged anyway.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 DEFAULT_CONVERSATION = "default"
 MAX_FILES = 5
 # A PDF of 20 MB, the most the agent reads, once in base64.
 MAX_FILE_BASE64_CHARS = 28_000_000
-# How a plan the user approved comes back to the agent, as a request of its own.
-PLAN_TAG = "[Plan you proposed and the user approved as shown; do it now as their request:"
 
 
 class FileIn(BaseModel):
@@ -203,6 +228,10 @@ class AskRequest(BaseModel):
     display: Literal["voice", "notification", "chat"] = "voice"
     # Files the user sends along (a PDF, a photo, a text or office document).
     files: list[FileIn] = Field(default=[], max_length=MAX_FILES)
+    # "chat" also sends the reply in the chat channel (docs/chat.md) and continues the
+    # conversation there, whatever conversation_id and display say; a channel's name
+    # ("whatsapp", "telegram") picks one when several are set up.
+    deliver: str = Field(default="response", max_length=64)
 
 
 class FileOut(BaseModel):
@@ -229,12 +258,17 @@ class BriefingRequest(BaseModel):
     context: str | None = Field(default=None, max_length=4000)
     # Also send the reply as a push notification (needs NTFY_URL).
     push: bool = False
+    # "chat" (or a channel's name) sends the briefing in the chat channel, where the
+    # user can answer it: it then joins that chat's conversation (docs/chat.md).
+    deliver: str = Field(default="response", max_length=64)
 
 
 class BriefingResponse(BaseModel):
     reply: str
     actions: list[dict] = []
     pushed: bool = False
+    # Sent in the chat channel (deliver).
+    delivered: bool = False
 
 
 class DepartureRequest(BaseModel):
@@ -242,6 +276,9 @@ class DepartureRequest(BaseModel):
     conversation_id: str = Field(default=DEFAULT_CONVERSATION, max_length=64)
     # Also send the message as a push notification (needs NTFY_URL).
     push: bool = False
+    # "chat" (or a channel's name) says it in the chat channel instead, where each fix is
+    # a tick away (docs/chat.md); conversation_id is then that chat's.
+    deliver: str = Field(default="response", max_length=64)
 
 
 class DepartureResponse(BaseModel):
@@ -280,7 +317,21 @@ def build_registry(
         home = (settings.home_latitude, settings.home_longitude)
 
     registry = ToolRegistry()
-    registry.extend(build_general_tools(settings.timezone))
+    icloud = build_icloud(settings)
+    # With iCloud, reminders are written there; else the client app makes them on
+    # the phone.
+    registry.extend(build_general_tools(settings.timezone, phone_reminders=icloud is None))
+    if icloud is not None:
+        reminders = ICloudReminders(
+            icloud, settings.icloud_reminder_lists, settings.icloud_reminders_default_list
+        )
+        registry.extend(build_reminder_tools(reminders, settings.timezone, settings.language))
+        if settings.icloud_notes:
+            registry.extend(build_note_tools(ICloudNotes(icloud), settings.timezone))
+        if settings.icloud_find_my:
+            registry.extend(
+                build_find_my_tools(FindMy(icloud), settings.timezone, home, settings.language)
+            )
     if ha is not None:
         registry.extend(build_home_assistant_tools(ha, policy))
     # The clients others share (the pet supplies watch) and those to close at the end.
@@ -424,6 +475,11 @@ def build_registry(
     if settings.web_pages_enabled:
         trusted = trusted_domains(settings.home_country, settings.web_trusted_domains)
         registry.extend(build_web_page_tools(WebPages(trusted), language=settings.language))
+    browser = build_browser(settings, http)
+    registry.extend(build_browser_tools(browser))
+    if browser is not None and browser.vpn is not None:
+        # gluetun connects as it starts: the VPN is stopped whenever nothing browses abroad.
+        registry.jobs.append(browser.keep_vpn_off)
     if settings.investigations_enabled:
         investigator = Investigator(http, nominatim_url=settings.nominatim_url)
         registry.extend(build_osint_tools(investigator, settings.public_url))
@@ -432,9 +488,26 @@ def build_registry(
     registry.llm = llm
     registry.job_runner = build_job_runner(settings, http)
     registry.extend(build_job_tools(registry.job_runner, settings.language))
+    if settings.whatsapp_enabled and settings.whatsapp_reading_enabled and http is not None:
+        # On the user's own account, whichever session the chat itself goes through.
+        waha = Waha(
+            http, settings.waha_url, settings.waha_api_key.get_secret_value(), settings.waha_session
+        )
+        transcriber = build_transcriber(settings)
+        registry.extend(
+            build_whatsapp_chat_tools(
+                waha,
+                settings.whatsapp_readable_chats,
+                settings.timezone,
+                language=settings.language,
+                transcribe=transcriber.transcribe if transcriber else None,
+            )
+        )
     # The core's own tools, last: the writes waiting for the user's go (the registry parks
     # them whatever is configured) and the long results read part by part.
-    registry.extend(build_proposal_tools(registry, language=settings.language))
+    registry.extend(
+        build_proposal_tools(registry, language=settings.language, polls=settings.chat_enabled)
+    )
     registry.extend(build_long_result_tools())
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
@@ -546,6 +619,40 @@ def add_drives(
             )
 
 
+def build_browser(settings: Settings, http: httpx.AsyncClient) -> RemoteBrowser | None:
+    """The remote Chrome the user logs into (docs/browser.md), with its VPN exit when
+    compose/vpn.yml is there."""
+    if not settings.browser_cdp_host:
+        return None
+    if not settings.browser_public_url:
+        log.error("The remote browser needs BROWSER_PUBLIC_URL, the address of its page")
+        return None
+    if not browser_available():
+        log.error('BROWSER_CDP_HOST needs the playwright package: pip install ".[browser]"')
+        return None
+    key = settings.vpn_control_key
+    return RemoteBrowser(
+        settings.browser_cdp_host,
+        settings.browser_cdp_port,
+        settings.browser_public_url,
+        Path(settings.browser_downloads_dir),
+        Path(settings.data_dir) / "browser-sites.json",
+        trusted_domains(settings.home_country, settings.web_trusted_domains),
+        vpn=Vpn(http, settings.vpn_control_url, key.get_secret_value()) if key else None,
+        abroad_proxy=settings.browser_abroad_proxy or "",
+    )
+
+
+def build_icloud(settings: Settings) -> ICloudWeb | None:
+    """The iCloud web session behind Reminders, Notes and Find My (docs/apple.md)."""
+    if not settings.icloud_apple_id:
+        return None
+    if not icloud_available():
+        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[apple]"')
+        return None
+    return ICloudWeb(settings.icloud_apple_id, session_dir(settings.data_dir))
+
+
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
     connectors = []
     for server in settings.mcp_servers:
@@ -590,12 +697,14 @@ def prompt_config(settings: Settings) -> PromptConfig:
         weather_detail=settings.weather_detail,
         spot_example=spots[0].name if spots else None,
         user_name=settings.user_name,
+        browser_abroad=bool(settings.vpn_control_key and settings.browser_abroad_proxy),
     )
 
 
 def build_pet_alerts(settings: Settings, devices: dict) -> PetAlerts | None:
     """The pet supplies watch, when the PetKit tools and a push channel are set up."""
-    if not (settings.petkit_alerts and settings.ntfy_url and "petkit" in devices):
+    reached = settings.ntfy_url or settings.chat_enabled
+    if not (settings.petkit_alerts and reached and "petkit" in devices):
         return None
     return PetAlerts(
         devices["petkit"].status,
@@ -804,18 +913,26 @@ def reports_reach(settings: Settings) -> str | None:
     (deliver.ReportChannel) is named here and added in build_delivery."""
     if settings.tasks_store == "off":
         return None
+    if settings.chat_enabled:
+        return ChatReports.reaches
     return NtfyReports.reaches if settings.ntfy_url else None
 
 
-def build_delivery(settings: Settings, ntfy: Ntfy | None) -> Delivery:
-    channels = [NtfyReports(ntfy, settings.assistant_name)] if ntfy is not None else []
+def build_delivery(
+    settings: Settings, ntfy: Ntfy | None, chats: dict[str, ChatSession] | None = None
+) -> Delivery:
+    """A chat first, where the user can answer and approve; ntfy after it, for a report
+    the chat could not take."""
+    channels: list[ReportChannel] = [ChatReports(session) for session in (chats or {}).values()]
+    if ntfy is not None:
+        channels.append(NtfyReports(ntfy, settings.assistant_name))
     return Delivery(channels, Outbox(Path(settings.data_dir) / "task-outbox.json"))
 
 
 def jobs_reach(settings: Settings) -> bool:
     """Whether a coding job's report can reach the user: without a way, there are no jobs.
     A new channel of build_delivery is named here too."""
-    return bool(settings.ntfy_url)
+    return bool(settings.chat_enabled or settings.ntfy_url)
 
 
 def build_job_runner(settings: Settings, http: httpx.AsyncClient) -> JobRunner | None:
@@ -824,7 +941,9 @@ def build_job_runner(settings: Settings, http: httpx.AsyncClient) -> JobRunner |
     if not settings.jobs_enabled:
         return None
     if not jobs_reach(settings):
-        log.warning("coding jobs: off, nothing reaches the user for their reports (NTFY_URL)")
+        log.warning(
+            "coding jobs: off, nothing reaches the user for their reports (a chat, NTFY_URL)"
+        )
         return None
     s = strings(settings.language)
     backend: Backend
@@ -1025,13 +1144,19 @@ def start_jobs(app: FastAPI, http: httpx.AsyncClient, background: list) -> JobRu
         return None
     s = strings(settings.language)
     delivery: Delivery = app.state.delivery
-    tracker = Tracker(
-        lambda text: delivery.deliver(s.job_news_title, text),
-        Path(settings.data_dir) / "progress-durations.json",
-        settings.language,
-    )
+    chat = next(iter(getattr(app.state, "chats", {}).values()), None)
+    if chat is not None and chat.tracker is not None:
+        # The chat's own tracker, already running: the news go where the user talks.
+        tracker = chat.tracker
+    else:
+        tracker = Tracker(
+            lambda text: delivery.deliver(s.job_news_title, text),
+            Path(settings.data_dir) / "progress-durations.json",
+            settings.language,
+        )
+        background.append(tracker.run)
     runner.attach(report=lambda job, text: report_job(app, job, text), tracker=tracker)
-    background += [tracker.run, runner.resume]
+    background.append(runner.resume)
     if settings.jobs_runner == "claude_code":
         approvals = Approvals(
             lambda request_id, question, summary: ask_coder_permission(
@@ -1072,6 +1197,19 @@ def start_jobs(app: FastAPI, http: httpx.AsyncClient, background: list) -> JobRu
             settings.review_at.strftime("%H:%M"),
         )
     return runner
+
+
+async def tell_user(app: FastAPI, title: str, text: str) -> None:
+    """A line the code writes by itself (an alert): in the chat when there is one, else
+    as a push notification."""
+    for session in app.state.chats.values():
+        try:
+            await session.channel.send(text)
+            return
+        except httpx.HTTPError as exc:
+            log.warning("Could not say it in the chat (%s): %s", session.name, exc)
+    if app.state.ntfy is not None:
+        await app.state.ntfy.send(title, text)
 
 
 def build_task_folder(settings: Settings, http: httpx.AsyncClient) -> NoteFolder | None:
@@ -1183,7 +1321,9 @@ async def answer_task(
         # silent marker itself.
         said = "" if says_nothing(reply.text) and reply.actions else reply.text
         if held is None:
-            said = with_waiting(said, reply.actions, conv, settings.language).strip()
+            said = with_waiting(
+                said, reply.actions, conv, settings.language, _option_chars(channel)
+            ).strip()
         else:
             held.extend(
                 a for a in reply.actions if a.get("type") in {"draft", "written", "proposal"}
@@ -1191,7 +1331,15 @@ async def answer_task(
         if conversation_id is not None:
             store.touch(conv)
             save_conversation(store, settings, conv)
+    if (share := getattr(channel, "share_files", None)) is not None:
+        # A chat takes the files the run made (a PDF, a chart), before its report.
+        await share(conv, reply.actions)
     return said
+
+
+def _option_chars(channel: ReportChannel | None) -> int | None:
+    """A chat shows what waits as a choice to tick under the report (chat_session.py)."""
+    return getattr(channel, "option_chars", None)
 
 
 async def run_task(
@@ -1286,7 +1434,7 @@ async def run_digest(
     if held and conversation_id is not None:
         conv = app.state.store.get(conversation_id, settings.chat_conversation_ttl_seconds)
         async with conv.lock:
-            text = with_waiting(text, held, conv, settings.language)
+            text = with_waiting(text, held, conv, settings.language, _option_chars(channel))
             save_conversation(app.state.store, settings, conv)
     elif held:
         text = with_waiting(text, held, Conversation(id="task"), settings.language)
@@ -1401,10 +1549,18 @@ def restore_conversations(store: ConversationStore, settings: Settings) -> int:
     return restored
 
 
-def with_waiting(text: str, actions: list[dict], conv: Conversation, language: str = "en") -> str:
+def with_waiting(
+    text: str,
+    actions: list[dict],
+    conv: Conversation,
+    language: str = "en",
+    option_chars: int | None = None,
+) -> str:
     """Add, written by the code, every write done without a go and every action waiting
     for the user's go in the turn, so none goes unnoticed; only actions listed here can
-    run on their yes."""
+    run on their yes. ``option_chars``: the reply goes to a chat that shows them as a
+    choice to tick right below (chat_session.py), each option that long at most: only
+    those too long for an option are written out here."""
     s = strings(language)
     lines = [
         s.written_line.format(summary=a["summary"]) for a in actions if a.get("type") == "written"
@@ -1419,10 +1575,125 @@ def with_waiting(text: str, actions: list[dict], conv: Conversation, language: s
             lines.append(s.draft_check.format(files=", ".join(draft["check"])))
     proposals = [a for a in actions if a.get("type") == "proposal"]
     if proposals:
-        lines += ["", s.waiting_header] if lines else [s.waiting_header]
-        lines += [f"{p['number']}. {p['summary']}" for p in proposals]
+        header = s.waiting_header if option_chars is None else s.waiting_in_poll
+        lines += ["", header] if lines else [header]
+        lines += [
+            f"{p['number']}. {p['summary']}"
+            for p in proposals
+            if option_chars is None or too_long_for_option(p["number"], p["summary"], option_chars)
+        ]
         conv.mark_shown([p["number"] for p in proposals])
     return "\n".join([text, "", *lines]) if lines else text
+
+
+def build_transcriber(settings: Settings) -> Transcriber | None:
+    """Voice messages as text, when WHISPER_MODEL is set and the "voice" extra is there."""
+    if not settings.whisper_model:
+        return None
+    if not voice_available():
+        log.error('WHISPER_MODEL needs the faster-whisper package: pip install ".[voice]"')
+        return None
+    return shared_transcriber(
+        settings.whisper_model,
+        str(Path(settings.data_dir) / "whisper"),
+        tuple(settings.whisper_languages or [settings.language]),
+    )
+
+
+@dataclass
+class Channels:
+    """The chat channels that are set up, and the loops that keep them listening."""
+
+    channels: list[ChatChannel]
+    loops: list[Coroutine[Any, Any, None]]
+
+
+def build_channels(settings: Settings, http: httpx.AsyncClient) -> Channels:
+    """One channel per chat the agent can be talked to in (docs/chat.md); none unless
+    configured. A new messaging app is one more block here."""
+    built = Channels([], [])
+    if not settings.chat_enabled:
+        return built
+    transcriber = build_transcriber(settings)
+    transcribe = transcriber.transcribe if transcriber else None
+    if transcriber:
+        built.loops.append(transcriber.warm_up())
+    if settings.whatsapp_enabled:
+        whatsapp = WhatsAppChannel(
+            Waha(http, *settings.chat_waha),
+            settings.whatsapp_chat_id,
+            language=settings.language,
+            marker=settings.whatsapp_marker,
+            poll_seconds=settings.whatsapp_poll_seconds,
+            transcribe=transcribe,
+            own_number=settings.whatsapp_own_number,
+        )
+        built.channels.append(whatsapp)
+        built.loops += whatsapp.tasks()
+    if settings.telegram_enabled:
+        api = TelegramApi(
+            http, settings.telegram_bot_token.get_secret_value(), settings.telegram_api_url
+        )
+        bot = TelegramBot(
+            api, settings.telegram_chat_ids, language=settings.language, transcribe=transcribe
+        )
+        built.loops.append(bot.run())
+        for channel in bot.channels.values():
+            built.channels.append(channel)
+            built.loops += channel.tasks()
+    return built
+
+
+def chat_conversation(app: FastAPI, channel: str) -> Conversation:
+    """A channel's conversation: kept across restarts, with its files and what waits."""
+    settings: Settings = app.state.settings
+    conv = app.state.store.get(f"chat-{channel}", settings.chat_conversation_ttl_seconds)
+    conv.kept = True
+    keep_files(settings, conv)
+    return conv
+
+
+def build_sessions(app: FastAPI, channels: list[ChatChannel]) -> dict[str, ChatSession]:
+    settings: Settings = app.state.settings
+    sessions = {}
+
+    def save(conv: Conversation) -> None:
+        app.state.store.touch(conv)
+        save_conversation(app.state.store, settings, conv)
+
+    for channel in channels:
+        tracker = Tracker(
+            channel.send, Path(settings.data_dir) / "run-durations.json", settings.language
+        )
+        session = ChatSession(
+            channel,
+            app.state.agent,
+            conversation=lambda name=channel.name: chat_conversation(app, name),
+            save=save,
+            with_waiting=lambda text, actions, conv, option_chars=None: with_waiting(
+                text, actions, conv, settings.language, option_chars
+            ),
+            language=settings.language,
+            vote_grace_seconds=settings.chat_vote_grace_seconds,
+            tracker=tracker,
+        )
+        channel.bind(session)
+        sessions[channel.name] = session
+    return sessions
+
+
+def chat_session(request: Request, deliver: str) -> ChatSession | None:
+    """The chat a request asks its reply to be sent in: None for "response"; "chat" is
+    the first channel set up, anything else a channel's name."""
+    if deliver == "response":
+        return None
+    sessions: dict[str, ChatSession] = request.app.state.chats
+    session = next(iter(sessions.values()), None) if deliver == "chat" else sessions.get(deliver)
+    if session is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, f"No chat channel is set up for {deliver!r}"
+        )
+    return session
 
 
 async def answer(request: Request, conv: Conversation, body: AskRequest) -> tuple[str, list[dict]]:
@@ -1487,7 +1758,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.ntfy_url:
         token = settings.ntfy_token.get_secret_value() if settings.ntfy_token else None
         app.state.ntfy = Ntfy(http, settings.ntfy_url, token)
-    app.state.delivery = build_delivery(settings, app.state.ntfy)
+    # The chat channels (docs/chat.md): each listens for the user's messages, and is where
+    # what the agent says by itself goes first.
+    built = build_channels(settings, http)
+    app.state.chats = build_sessions(app, built.channels)
+    listening = [asyncio.create_task(loop) for loop in built.loops]
+    listening += [asyncio.create_task(s.tracker.run()) for s in app.state.chats.values()]
+    if app.state.chats:
+        log.info("chat channels: %s", ", ".join(app.state.chats))
+    app.state.delivery = build_delivery(settings, app.state.ntfy, app.state.chats)
     # What the tools keep doing in the background (a drive's index kept fresh), and the
     # tasks the agent starts by itself.
     registry = getattr(app.state.agent, "tools", None)
@@ -1505,14 +1784,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         check = Departure(registry, language=settings.language, tv_name=settings.android_tv_name)
         app.state.departure = check if check.watches_something else None
     if (pets := build_pet_alerts(settings, devices)) is not None:
-        s = strings(settings.language)
-        ntfy = app.state.ntfy
-        jobs.append(
-            asyncio.create_task(pets.watch(lambda text: ntfy.send(s.pet_alert_title, text)))
-        )
+        title = strings(settings.language).pet_alert_title
+        jobs.append(asyncio.create_task(pets.watch(lambda text: tell_user(app, title, text))))
     try:
         yield
     finally:
+        # First, while the channels can still say an answer was cut short.
+        for task in listening:
+            task.cancel()
+        await asyncio.gather(*listening, return_exceptions=True)
         for job in jobs:
             job.cancel()
         await asyncio.gather(*jobs, return_exceptions=True)
@@ -1600,6 +1880,12 @@ async def health_ha(request: Request) -> dict[str, bool]:
 async def ask(body: AskRequest, request: Request) -> AskResponse:
     store: ConversationStore = request.app.state.store
     settings: Settings = request.app.state.settings
+    if (chat := chat_session(request, body.deliver)) is not None:
+        # Asked from elsewhere (a voice shortcut), answered in the chat too, where the
+        # user can go on: what waits for their go is shown there, as a choice.
+        files = [file.attachment() for file in body.files]
+        reply = await chat.request(body.text.strip(), body.context, files or None)
+        return AskResponse(reply=reply, conversation_id=chat.conversation().id)
     # A chat can be answered hours later; a voice exchange is over in minutes.
     ttl = settings.chat_conversation_ttl_seconds if body.display == "chat" else None
     conv = store.get(body.conversation_id, ttl)
@@ -1668,6 +1954,11 @@ async def briefing(body: BriefingRequest, request: Request) -> BriefingResponse:
     ntfy: Ntfy | None = request.app.state.ntfy
     if body.push and ntfy is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
+    if (chat := chat_session(request, body.deliver)) is not None:
+        # In the chat the briefing can be answered: it joins that conversation, and
+        # what it would have the user approve waits there for their go.
+        reply = await chat.request(text, body.context, scheduled=True)
+        return BriefingResponse(reply=reply, delivered=True)
     conv = Conversation(id=f"briefing-{body.kind}")
     # Nobody answers a scheduler's briefing, and its conversation ends with it: nothing
     # waits for a go there.
@@ -1711,12 +2002,14 @@ async def left_home(body: DepartureRequest, request: Request) -> DepartureRespon
     if body.push and ntfy is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
     store: ConversationStore = request.app.state.store
-    conv = store.get(body.conversation_id)
+    chat = chat_session(request, body.deliver)
+    conv = chat.conversation() if chat is not None else store.get(body.conversation_id)
+    option_chars = chat.channel.option_chars if chat is not None else None
     async with conv.lock:
         report = await check.check(conv)
         if not report.text:
             return DepartureResponse(reply="", conversation_id=conv.id)
-        text = with_waiting(report.text, report.actions, conv, settings.language)
+        text = with_waiting(report.text, report.actions, conv, settings.language, option_chars)
         record_departure(conv, text)
         # The answer may come a while after leaving: kept as long as a chat, and
         # across a restart like one.
@@ -1724,6 +2017,12 @@ async def left_home(body: DepartureRequest, request: Request) -> DepartureRespon
         conv.kept = True
         store.touch(conv)
         save_conversation(store, settings, conv)
+    if chat is not None:
+        try:
+            await chat.channel.send(text)
+            await chat.after_reply()
+        except httpx.HTTPError as exc:
+            log.warning("Could not say the departure check in the chat: %s", exc)
     pushed = False
     if body.push and ntfy is not None:
         title = strings(settings.language).departure_title

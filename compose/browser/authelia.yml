@@ -1,0 +1,57 @@
+# Login page in front of the remote browser (compose/browser-login.yml, docs/browser.md):
+# a passkey alone, or the password plus a one-time code. Read with
+# X_AUTHELIA_CONFIG_FILTERS=template; the secrets come from AUTHELIA_* variables, never
+# from this file.
+theme: auto
+
+server:
+  address: tcp://:9091
+
+log:
+  level: warn
+
+totp:
+  issuer: '{{ mustEnv "BROWSER_DOMAIN" }}'
+
+webauthn:
+  display_name: '{{ mustEnv "AUTH_DISPLAY_NAME" }}'
+  enable_passkey_login: true
+  # A passkey that checked a fingerprint or a face counts as both factors, so it logs in
+  # alone.
+  experimental_enable_passkey_uv_two_factors: true
+  selection_criteria:
+    discoverability: required
+    user_verification: required
+
+authentication_backend:
+  password_reset:
+    disable: true
+  password_change:
+    disable: true
+  file:
+    path: /data/users.yml
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: '{{ mustEnv "BROWSER_DOMAIN" }}'
+      policy: two_factor
+
+session:
+  inactivity: 1w
+  expiration: 4w
+  remember_me: 4w
+  cookies:
+    - domain: '{{ mustEnv "AUTH_COOKIE_DOMAIN" }}'
+      authelia_url: 'https://{{ mustEnv "AUTH_DOMAIN" }}'
+      default_redirection_url: 'https://{{ mustEnv "BROWSER_DOMAIN" }}'
+
+storage:
+  local:
+    path: /data/db.sqlite3
+
+# One user, no mail server: the one-time code to register a new passkey or authenticator
+# lands in this file (scripts/browser-auth.sh code).
+notifier:
+  filesystem:
+    filename: /data/notification.txt

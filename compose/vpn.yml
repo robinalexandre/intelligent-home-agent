@@ -1,0 +1,56 @@
+# Pages seen from another country, for the remote browser (after compose/browser.yml in
+# COMPOSE_FILE; see docs/browser.md): a VPN client, gluetun, whose proxy the browser's
+# filtering proxy hands those pages to. The agent picks the country through gluetun's
+# control server and stops the tunnel when the request ends; gluetun connects as it starts,
+# and the agent stops it within a minute.
+# gluetun speaks to most VPN providers. Needs in .env: VPN_SERVICE_PROVIDER (gluetun's name
+# for yours: mullvad, protonvpn, nordvpn, surfshark, "private internet access", ivpn,
+# windscribe, airvpn, expressvpn... its wiki lists them and what each one wants), the
+# credentials that provider uses (below), and VPN_CONTROL_KEY (openssl rand -hex 32).
+services:
+  agent:
+    environment:
+      VPN_CONTROL_URL: http://vpn:8000
+      BROWSER_ABROAD_PROXY: http://10.89.42.30:3129
+    networks:
+      default:
+      browser:
+        ipv4_address: 10.89.42.20
+      vpn:
+
+  # Its "abroad" port, which leaves through the VPN only (compose/browser/squid-vpn.conf).
+  browser-proxy:
+    volumes:
+      - ./compose/browser/squid-vpn.conf:/etc/squid/squid.conf:ro
+    networks:
+      browser:
+        ipv4_address: 10.89.42.30
+      browser_egress:
+      vpn:
+    depends_on: [vpn]
+
+  vpn:
+    image: qmcgaw/gluetun:v3.41.3
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    environment:
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER:?Set VPN_SERVICE_PROVIDER in .env}
+      # wireguard or openvpn, as your provider offers; then only the credentials it uses.
+      VPN_TYPE: ${VPN_TYPE:-wireguard}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES:-}
+      WIREGUARD_PRESHARED_KEY: ${WIREGUARD_PRESHARED_KEY:-}
+      OPENVPN_USER: ${OPENVPN_USER:-}
+      OPENVPN_PASSWORD: ${OPENVPN_PASSWORD:-}
+      HTTPPROXY: "on"
+      HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"apikey","apikey":"${VPN_CONTROL_KEY:?Set VPN_CONTROL_KEY in .env}"}'
+      TZ: ${TIMEZONE:-Etc/UTC}
+    # Reached by the filtering proxy (its proxy, port 8888) and the agent (its control
+    # server, port 8000) only.
+    networks: [vpn, vpn_egress]
+    restart: unless-stopped
+
+networks:
+  vpn:
+    internal: true
+  vpn_egress:

@@ -45,7 +45,8 @@ script file (JSON, JavaScript, XML), or downloads a public document (PDF, image,
 which is then kept in the conversation by its name. It follows redirects itself, at most
 five, reads at most 10 MB and gives up after 45 seconds.
 
-It doesn't log in anywhere and doesn't run JavaScript: a page built in the browser may
+It doesn't log in anywhere and doesn't run JavaScript (the optional remote browser does
+both: [browser.md](browser.md)): a page built in the browser may
 come back empty (the agent then looks for the data file the page's scripts name).
 
 **Only public addresses.** The agent runs inside your network, next to Home Assistant and
@@ -155,8 +156,9 @@ agent serves a copy at `PUBLIC_URL/s/<random token>/image.jpg`:
   is the only protection, and whoever gets the link during those minutes sees the picture;
 - only for a photo *you* sent, never one that came from an email or a page.
 
-The agent has no browser of its own, and these engines mostly need one: expect it to hand
-you the links to open rather than read the matches itself. With Tailscale Funnel or a
+Without the remote browser ([browser.md](browser.md)) the agent has no browser of its own,
+and these engines mostly need one: expect it to hand you the links to open rather than
+read the matches itself. With Tailscale Funnel or a
 Cloudflare Tunnel, set `PUBLIC_URL` yourself to the public address; behind Tailscale only
 or on the home network there is no public address, so leave it empty.
 

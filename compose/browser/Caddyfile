@@ -1,0 +1,13 @@
+# Caddy with the remote browser (compose/browser-caddy.yml): the agent, the browser's page
+# (through browser-gate, which asks the login first) and the login page itself.
+{$AGENT_DOMAIN} {
+	reverse_proxy agent:8000
+}
+
+{$BROWSER_DOMAIN} {
+	reverse_proxy browser-gate:8080
+}
+
+{$AUTH_DOMAIN} {
+	reverse_proxy browser-auth:9091
+}

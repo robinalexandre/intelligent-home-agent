@@ -227,6 +227,11 @@ TRAEFIK_CERTRESOLVER=letsencrypt
 
 Several files combine: `COMPOSE_FILE=docker-compose.yml:compose/caddy.yml:compose/ollama.yml`.
 
+A remote browser for sites behind your login adds its own files to that list
+(`compose/browser.yml` and, with Caddy or Traefik, a login page in front of it; with
+Tailscale, your tailnet is the login): [browser.md](browser.md). The wizard offers it with
+those three choices.
+
 ## 5. Talking to it
 
 | Channel | Free questions | Briefing | Setup |
@@ -235,6 +240,8 @@ Several files combine: `COMPOSE_FILE=docker-compose.yml:compose/caddy.yml:compos
 | Home Assistant Assist (voice satellites, the companion app on Android and watches) | yes | yes | [integrations.md](integrations.md#home-assistant-assist) |
 | Google Home, Alexa | through a Home Assistant routine | yes | [integrations.md](integrations.md) |
 | Push notifications (ntfy, any phone or desktop) | no | yes | `NTFY_URL` in `.env`, then the ntfy app |
+| WhatsApp (through a WAHA gateway you run, `compose/waha.yml`) | yes, in writing, with files and voice messages | yes, and you can answer it | [chat.md](chat.md#whatsapp) |
+| Telegram (a bot of your own) | yes, the same | yes, the same | [chat.md](chat.md#telegram) |
 | A scheduler (cron, Home Assistant, a hosted one) | n/a | yes | `POST /v1/briefing`, [integrations.md](integrations.md) |
 | Your own client | yes | yes | `POST /v1/ask` with `Authorization: Bearer <AGENT_API_TOKEN>` |
 

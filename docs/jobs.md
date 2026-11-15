@@ -6,7 +6,7 @@ coding subagent does it on its own while the agent keeps answering you:
 > "Start a job on me/shop: cache the catalogue's prices, with tests." → Job a3f1 started,
 > about 25 minutes.
 >
-> (later, as a push) 🛠️ Job a3f1 "Price cache" waits for your answer —
+> (later, in your chat or as a push) 🛠️ Job a3f1 "Price cache" waits for your answer —
 > https://github.com/me/shop/pull/12 Done, tests pass. Should the cache also be
 > invalidated when a product is updated?
 >
@@ -30,8 +30,9 @@ agent would be one more class with the methods of `jobs.Backend`.
   background task follows the runner's events: each time the coder stops (done, a
   question, a failure), its last words reach you under a line the code writes with the
   job's number and status, and the pull request's address once one appears in them.
-- **Reports leave the way the agent's own reports do** ([tasks](tasks.md)): through ntfy
-  today, through a chat when one is set up. They are also kept for a client to fetch
+- **Reports leave the way the agent's own reports do** ([tasks](tasks.md)): in your chat
+  when one is set up ([chat.md](chat.md)), where you answer them in the same
+  conversation, else as an ntfy push. They are also kept for a client to fetch
   (`GET /v1/tasks/reports`). While a job you just asked for runs, a short line says where
   it stands about each quarter of its expected time.
 - You answer through the agent, from any client: `ask_job` queues your message in the
@@ -115,7 +116,7 @@ the report), and the Console shows every session live.
 
 The wizard (`scripts/setup.py`) asks about it once a push channel is chosen. By hand:
 
-1. A way for reports to reach you: `NTFY_URL` (see [tasks](tasks.md)).
+1. A way for reports to reach you: a chat ([chat.md](chat.md)) or `NTFY_URL`.
 2. A GitHub token on the repositories the coder may work on, with **Contents** and
    **Pull requests** read and write (a fine-grained token limits it to a list).
 3. For `claude_code`, on a computer with a browser, signed in to your Claude account:
@@ -189,8 +190,8 @@ the agent, with the coder's token:
 
 - Through a one-way channel (ntfy), you get a line saying that a prompt waits in the
   Claude app, without its text, once a minute at most. You answer in the Claude app.
-- Through a channel you can answer in (a chat), the prompt arrives as a write waiting for
-  your go, like any other: your yes allows it, your no refuses it. The agent can never
+- In a chat, the prompt arrives as a write waiting for your go, like any other (a
+  choice to tick, or your yes): allowing it is always yours, a written no refuses it. The agent can never
   allow one by itself, whatever it read. No answer within 4 minutes: the hook decides
   nothing and the prompt stays open in the Claude app. A prompt that can't be shown whole
   (over 400 characters, several lines) is left to the app, and three at most wait at a

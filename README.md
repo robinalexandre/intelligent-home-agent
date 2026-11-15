@@ -24,6 +24,10 @@ spoken morning briefing and evening recap.
   files (a PDF, a photo, a text or office document) for the agent to read.
 - `POST /v1/briefing`: the morning briefing or evening recap, written to be read, optionally
   pushed to your phone and desktop through ntfy. Made for schedulers.
+- A chat with it in WhatsApp (through a WAHA gateway you run) or Telegram (through a
+  bot of your own): write, send files and voice messages, approve what it proposes
+  with a tap, and get its briefings and the tasks it runs by itself there
+  ([docs/chat.md](docs/chat.md)).
 - `POST /v1/departure`: called when you leave home (a phone automation), it says what
   is still unlocked, on or playing among the devices set up, and turns it off on your
   yes ([docs/home-devices.md](docs/home-devices.md#leaving-home)).
@@ -76,11 +80,19 @@ spoken morning briefing and evening recap.
     ([docs/memory.md](docs/memory.md)).
   - Public web pages and documents, read from site to site; never an address inside your
     network, and after private content only your country's public-service sites.
+  - Sites behind your login, in a real Chrome next to the agent: you log in yourself
+    from a link, it then opens pages, clicks and downloads (a certificate, a
+    statement, an invoice); optionally pages as seen from another country, through
+    a VPN subscription ([docs/browser.md](docs/browser.md)).
   - Investigations of a photo, a document, a link or a site: metadata (EXIF, author,
     dates), a domain's age and registrar, archives, certificates, places on
     OpenStreetMap, reverse image search links. Never to identify a private person. See
     [docs/web.md](docs/web.md) for the three.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
+  - If you use Apple devices, and only if you want it: your Apple Reminders read, added,
+    changed and ticked (repeating ones too), your Notes searched and read, your devices
+    found, through an iCloud login you type once and renew
+    ([docs/apple.md](docs/apple.md)).
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
   (English by default, French supported).
@@ -163,6 +175,11 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `INVESTIGATIONS_ENABLED`, `PUBLIC_URL` | `false`, unset | Investigation tools; the agent's public address, for reverse image search. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
 | `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
+| `BROWSER_PUBLIC_URL` (+ `compose/browser.yml`) | unset | Remote browser for sites behind your login; `BROWSER_GATE`, `BROWSER_DOMAIN` and the `AUTH_` settings say how its page is reached: [docs/browser.md](docs/browser.md). |
+| `VPN_SERVICE_PROVIDER`, `VPN_CONTROL_KEY` (+ `compose/vpn.yml`) | unset | Pages seen from another country, with any VPN provider gluetun supports. |
+| `ICLOUD_APPLE_ID` | unset | Apple Reminders, Notes and Find My through iCloud's web services, after a login by hand: [docs/apple.md](docs/apple.md). |
+| `ICLOUD_REMINDER_LISTS`, `ICLOUD_REMINDERS_DEFAULT_LIST` | all, the busiest | Reminders lists the agent sees, and where a new reminder goes. |
+| `ICLOUD_NOTES`, `ICLOUD_FIND_MY` | `true` | Set to `false` to leave Notes or Find My out. |
 | `CARDDAV_URL`, `CARDDAV_USERNAME`, `CARDDAV_PASSWORD` | unset | Contacts' birthdays in the agenda; the login defaults to CalDAV's. |
 | `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only; `"write": true` on an account allows drafts, flags and filing there. |
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
@@ -171,7 +188,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `NOTES_REPO`, `ASSISTANT_REMINDERS_PATH`, `HANDOFFS_PATH` | unset, `reminders`, `handoffs` | Notes for your coding sessions: `owner/repo` and its folders ([docs/tasks.md](docs/tasks.md)). `ASSISTANT_REMINDERS_REPO` still works. |
 | `NOTES_WRITE` | `false` | Let the agent leave reminders and handoff notes there and close reminders. |
 | `NOTES_CRYPT_KEY` | unset | Optional: the git-crypt key of that repository (`MEMORY_CRYPT_KEY` when it also holds the memory). |
-| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need `NTFY_URL`. |
+| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need a chat channel or `NTFY_URL`. |
 | `TASKS_PATH`, `TASKS_POLL_SECONDS` | `tasks`, `60` | The folder (in a repository: `<assistant>/tasks`) and how often it is checked. |
 | `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT` | unset | Send the briefing and the recap every day at that time (`07:30`). |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
@@ -188,6 +205,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `REVIEW_REPO`, `REVIEW_AT`, `REVIEW_ALLOW_PUBLIC` | unset, `05:30`, `false` | Nightly review: a coding job reads the day's journal and opens a pull request on your own private copy of this repository. Read [docs/review.md](docs/review.md) first. |
 | `REVIEW_LESSONS_REPO`, `REVIEW_LESSONS_PATH` | unset, `knowledge` | Optional: the review's lessons curated into your knowledge base's notes (needs the `curation` extra). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing` and for the tasks the agent runs by itself. |
+| `WAHA_URL`, `WAHA_API_KEY`, `WHATSAPP_CHAT_ID` | unset | WhatsApp chat through a WAHA gateway (`compose/waha.yml`): your number as `<digits>@c.us`. Also `AGENT_WAHA_SESSION` (a number of the agent's own), `WHATSAPP_READABLE_CHATS` (groups it may sum up), `WHATSAPP_MARKER`. See [docs/chat.md](docs/chat.md). |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS` | unset, empty | Telegram chat through a bot of your own; only the listed private chats reach the agent. |
+| `CHAT_VOTE_GRACE_SECONDS` | `5` | How long a one-tap answer in a chat can still be changed. |
+| `WHISPER_MODEL`, `WHISPER_LANGUAGES` | empty, `LANGUAGE` | Voice messages sent in a chat, transcribed on this machine (`voice` extra). |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
@@ -244,6 +265,7 @@ and the model you chose writes the answer from the results, in a request of its 
 Siri Shortcuts, Home Assistant Assist, Google Home and Alexa (through Home Assistant),
 ntfy push, and scheduled tasks (cron, Home Assistant, a chat or coding-assistant app):
 see [docs/integrations.md](docs/integrations.md) and [docs/siri-shortcut.md](docs/siri-shortcut.md).
+A chat in WhatsApp or Telegram: [docs/chat.md](docs/chat.md).
 
 ## Security model
 
@@ -290,6 +312,10 @@ The guardrails are enforced in code, not only in the prompt.
   report is yours, not public: after reading it, a web search in that request waits
   for your go, so no query can carry it out. Weigh-ins are never brought up unasked
   nor put in a briefing.
+- **iCloud apps**: the agent keeps a session to your iCloud account, never the
+  password; reminders and notes taint a request like an email, a reminder written after
+  a read waits for your go, and after a Find My read no new site opens and a search
+  waits, so a position can't leave.
 - **Web search**: a query is text that leaves the house. After private content was read
   the search waits for your go like a write; in any request, a query that repeats a
   number, an email address, a long token or a run of words from what the request holds
@@ -300,6 +326,12 @@ The guardrails are enforced in code, not only in the prompt.
   with a plain address (a site and a short readable path, no parameters); after private content, only your country's
   public-service sites and `WEB_TRUSTED_DOMAINS`, anything else waits for your go. A page
   that hides words for an assistant is flagged and ends free navigation.
+- **Remote browser**: you type your passwords yourself, in a page only you reach (a
+  login page with a passkey or a one-time code, or your Tailscale network); the
+  agent never types one. Chrome reaches websites through a proxy that refuses
+  private addresses. Clicks and typing only run in a request that read nothing but
+  that same site; after private content it opens only public-service sites and the
+  sites you logged into.
 - **Investigations**: lookups go to public registries and archives, never to the site
   investigated; after private content no GPS position and no DNS query goes out. A photo
   is put online for a reverse image search only if you sent it, stripped of its metadata,
@@ -343,6 +375,14 @@ The guardrails are enforced in code, not only in the prompt.
   removing a draft and creating a folder always do; filing never runs by itself in a
   scheduled task. Each saved draft is noted under the reply by the code, with a
   warning when it carries files after content written by others was read.
+- **Chat channels**: only you reach the agent through one. WhatsApp reads the one
+  chat you named; a Telegram bot drops everything that is not a private chat you
+  listed, before reading it. A message that quotes or forwards another, a file and
+  a group's messages are content written by others: what would act then waits for
+  your go, shown as a choice you tick, and only what was shown can run. WhatsApp
+  goes through an unofficial client (WAHA) whose volume is the account itself; the
+  Telegram token is kept out of logs. Voice messages are transcribed on your
+  machine. See [docs/chat.md](docs/chat.md).
 - **Coding jobs** (off by default): only your own message, in a request that read
   nothing else, starts a job or writes to one; otherwise it waits for your go. The
   coder runs in a container of its own with none of the agent's secrets, and can
