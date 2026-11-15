@@ -235,7 +235,7 @@ The agent follows them all, whichever way you talk to it.
   counts as delivered only when `SendMessage` itself ran with that address and that exact
   text and said it succeeded, whatever the relay's model claims. The session gets it as a
   message from another session, saying it comes from you through the agent, and acts on
-  it within its own permissions (its prompts still come to you, below); its answer stays
+  it within its own permissions (its prompts still come to you, above); its answer stays
   in the same conversation, in the Claude app, and reaches you with the turn-ended news.
   A session that is closed or was cut by a restart has no inbox: only the Claude app
   reopens it. A session set to bypass permissions holds such messages for approval in
