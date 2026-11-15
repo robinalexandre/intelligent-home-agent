@@ -59,6 +59,8 @@ MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_MESSAGE_CHARS = 3500
 # How long Telegram holds a getUpdates call open when nothing comes.
 POLL_TIMEOUT_SECONDS = 25
+# The least time between two calls that brought nothing.
+MIN_POLL_SECONDS = 1.0
 # Telegram drops "typing" after five seconds: it is renewed before that.
 TYPING_REFRESH_SECONDS = 4
 STOPPED_NOTICE_SECONDS = 5
@@ -582,8 +584,10 @@ class TelegramBot:
             if channel is not None:
                 channel.events.put_nowait(("reaction", reaction))
 
-    async def poll_once(self) -> None:
-        for update in await self._api.get_updates(self._offset, self._poll_timeout):
+    async def poll_once(self) -> int:
+        """Ask once for what was sent; how many updates came."""
+        updates = await self._api.get_updates(self._offset, self._poll_timeout)
+        for update in updates:
             if isinstance(update.get("update_id"), int):
                 # Confirmed to Telegram by the next call: never handed out twice.
                 self._offset = update["update_id"] + 1
@@ -591,14 +595,23 @@ class TelegramBot:
                 self.dispatch(update)
             except Exception:
                 log.exception("Telegram update failed")
+        return len(updates)
 
     async def run(self) -> None:
+        loop = asyncio.get_running_loop()
         while True:
+            asked = loop.time()
             try:
-                await self.poll_once()
+                came = await self.poll_once()
             except httpx.HTTPError as exc:
                 log.warning("Telegram unavailable: %s", exc)
                 await asyncio.sleep(self._retry_seconds)
+                continue
             except Exception:
                 log.exception("Telegram poll failed")
                 await asyncio.sleep(self._retry_seconds)
+                continue
+            # Telegram holds the call open when nothing came. A server that answers at
+            # once with nothing must not be asked in a tight loop.
+            if not came and loop.time() - asked < MIN_POLL_SECONDS:
+                await asyncio.sleep(MIN_POLL_SECONDS)
