@@ -14,6 +14,14 @@ ALL_TOOLS = {
     "get_outdoor_forecast",
     "create_reminder",
     "web_search",
+    "control_tv",
+    "control_apple_media",
+    "lock_door",
+    "get_home_security_status",
+    "get_pet_devices_status",
+    "get_body_measurements",
+    "note_delivery",
+    "list_deliveries",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 

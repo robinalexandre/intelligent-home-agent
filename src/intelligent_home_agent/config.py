@@ -5,7 +5,7 @@ setting with a comment.
 """
 
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -166,6 +166,57 @@ class Settings(BaseSettings):
     # Devialet Phantom speaker: its address; no login. Volumes are capped.
     devialet_url: str | None = None
     devialet_max_volume: int = Field(70, ge=0, le=100)
+    # A Google TV / Android TV device (a TV, a projector, a box): its address, and the
+    # client certificate scripts/android_tv_pair.py had it accept. Needs the android-tv
+    # extra. ANDROID_TV_NAME is what the user calls it ("TV", "projector").
+    android_tv_host: str | None = None
+    android_tv_client_cert: SecretStr | None = None
+    android_tv_client_key: SecretStr | None = None
+    android_tv_max_volume: int = Field(70, ge=0, le=100)
+    android_tv_name: str = "TV"
+    # Apps besides the built-in ones (netflix, youtube, prime video, disney+), as JSON:
+    # {"name": {"package": "...", "link": "deep link, or null"}}; "name": null drops one.
+    android_tv_apps: dict[str, Any] = {}
+    # The live TV app (one of the apps) that takes a channel number typed on the remote,
+    # and names for those numbers, as JSON: {"news one": 1}. Empty: no live channels.
+    android_tv_channel_app: str | None = None
+    android_tv_channels: dict[str, Any] = {}
+    # Apple TV and HomePods through pyatv (the apple extra): the profile JSON that
+    # `scripts/apple_devices.py profile` prints on the home network, and the Apple TV's
+    # pairing from `scripts/apple_devices.py pair`. Empty profile: no tool.
+    apple_devices: str = ""
+    apple_tv_companion_credentials: SecretStr | None = None
+    apple_tv_airplay_credentials: SecretStr | None = None
+    # Nuki smart lock through the Nuki Web API (token from web.nuki.io > API).
+    nuki_api_token: SecretStr | None = None
+    # Proof only the user has, asked before a door opens (scripts/unlock_codes_setup.py):
+    # an authenticator app's secret and/or a secret phrase. Neither: opening always waits
+    # for the user's go in a later message.
+    unlock_totp_secret: SecretStr | None = None
+    unlock_phrase: SecretStr | None = None
+    # Netatmo cameras, weather station, thermostat (scripts/netatmo_login.py).
+    netatmo_client_id: str | None = None
+    netatmo_client_secret: SecretStr | None = None
+    netatmo_refresh_token: SecretStr | None = None
+    # PetKit feeder and litter box (cloud, unofficial API: the petkit extra), through a
+    # second PetKit account the devices are shared with. PETKIT_REGION: a country code
+    # PetKit routes to its regional server; HOME_COUNTRY when empty.
+    petkit_username: str | None = None
+    petkit_password: SecretStr | None = None
+    petkit_region: str | None = None
+    # With NTFY_URL: a push when the litter or the food gets under these levels (%), and
+    # when the waste bin is full, again every PETKIT_BIN_REMIND_MINUTES; nothing between
+    # PETKIT_QUIET_START and PETKIT_QUIET_END (hours of the day).
+    petkit_alerts: bool = True
+    petkit_litter_alert_percent: int = Field(50, ge=0, le=100)
+    petkit_food_alert_percent: int = Field(45, ge=0, le=100)
+    petkit_bin_remind_minutes: int = Field(120, ge=1)
+    petkit_check_minutes: int = Field(180, ge=1)
+    petkit_quiet_start: int = Field(22, ge=0, le=23)
+    petkit_quiet_end: int = Field(8, ge=0, le=23)
+    # Leaving home (POST /v1/departure, departure.py): what is still unlocked, on or
+    # playing among the devices set up, each fix waiting for the user's go.
+    departure_check: bool = True
 
     # --- Assistant persona -------------------------------------------------------------
     assistant_name: str = "Assistant"
@@ -236,6 +287,14 @@ class Settings(BaseSettings):
     # can read: "owner/repo". Empty: no assistant reminders.
     assistant_reminders_repo: str | None = None
     assistant_reminders_path: str = "reminders"
+
+    # --- Health: Withings scale (weigh-ins, read-only; docs/health.md) -----------------
+    withings_client_id: str | None = None
+    withings_client_secret: SecretStr | None = None
+    withings_refresh_token: SecretStr | None = None
+
+    # --- Parcels the agent notes when it reads a shipping email (needs MAIL_ACCOUNTS) ---
+    deliveries_enabled: bool = True
 
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
