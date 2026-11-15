@@ -334,3 +334,19 @@ def test_descriptions_name_the_device_as_the_user_does():
     described = tools(tv=Beamer(FakeRemote()))
     assert described["get_tv_state"].description.startswith("The projector (a Google TV")
     assert "live tv (by name (news one, cine two) or number)" in described["control_tv"].description
+
+
+def test_the_screen_elements_read_over_adb_keep_labels_and_focus():
+    from intelligent_home_agent.tools.adb import parse_elements
+
+    xml = (
+        b'<hierarchy><node text="" content-desc="" focused="false" bounds="[0,0][1,1]">'
+        b'<node text="Play" focused="true" bounds="[10,10][90,40]"/>'
+        b'<node text="" content-desc="Settings" focused="false" bounds="[0,50][9,59]"/>'
+        b"</node></hierarchy>"
+    )
+    assert [e.line() for e in parse_elements(xml)] == [
+        "> Play [10,10][90,40]",
+        "  Settings [0,50][9,59]",
+    ]
+    assert parse_elements(b"not xml") == []
