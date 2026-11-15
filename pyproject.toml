@@ -108,3 +108,5 @@ extend-immutable-calls = ["fastapi.Depends"]
 "tests/*" = ["S105", "S106"]
 # Runs the installed git-crypt, when there is one, to check the codec against it.
 "tests/test_config_crypt.py" = ["S105", "S106", "S603", "S607"]
+# The coder container runs fixed commands (git, gh, claude) and calls the agent's fixed URL.
+"coder/*" = ["S310", "S603", "S607"]
