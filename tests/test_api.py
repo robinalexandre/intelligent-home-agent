@@ -187,7 +187,7 @@ def test_briefing_is_pushed_to_ntfy(make_client, respx_mock):
     assert resp.json()["pushed"] is True
     request = route.calls.last.request
     assert request.content == b"echo: Give me the morning briefing"
-    assert request.url.params["title"] == "Nova · Briefing"
+    assert request.url.params["title"] == "Nova · Morning briefing"
     assert request.headers["authorization"] == "Bearer tk_secret"
 
 
@@ -642,12 +642,12 @@ async def test_memory_is_local_files_in_the_data_directory_by_default(monkeypatc
         str(data_dir / "procedures.md"),
     )
     kept = main.build_kept(settings, http=None)
-    await kept.memory.remember("My accountant is Jo Martin")
+    await kept.memory.remember("My plumber is Sam Lee")
     kept.turned_down.add("Late parcel from the bookshop")
     assert (data_dir / "memory.md").read_text().startswith("# Nova — long-term memory")
     # Both reach every request's prompt, through the agent's memory hook.
     text = await kept.prompt_text()
-    assert text.startswith("- My accountant is Jo Martin (")
+    assert text.startswith("- My plumber is Sam Lee (")
     assert "Alerts the user turned down" in text and "- Late parcel from the bookshop" in text
     off = main.build_kept(settings_with(monkeypatch, MEMORY_STORE="off"), http=None)
     assert off.memory is None and off.procedures is None

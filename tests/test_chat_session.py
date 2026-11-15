@@ -210,7 +210,7 @@ async def test_a_vote_runs_exactly_the_chosen_writes():
     )
     read_an_email = ToolContext(conversation=chat.conv, tainted=True)
     long = (
-        "Documents/Work/administrative/billing/paid/2026/hosting/Invoice 0042 for April, paid.pdf"
+        "Documents/Recipes/desserts/cakes/with fruit/2026/summer/Plum cake with almonds, baked.pdf"
     )
     for folder in ("A", "B", long):
         await registry.run("save", {"to_folder": folder}, read_an_email)
@@ -227,7 +227,7 @@ async def test_a_vote_runs_exactly_the_chosen_writes():
         CANCEL,
     ]
     # Only the line the choice can't hold is written out in the message.
-    assert "pick below" in message and "folder: B" not in message and message.endswith("paid.pdf")
+    assert "pick below" in message and "folder: B" not in message and message.endswith("baked.pdf")
 
     b = "Save — to folder: B"
     await chat.session.chose("true_15550100@c.us_P1", [b])  # still ticking
@@ -337,13 +337,13 @@ async def test_after_the_go_the_agent_picks_up_the_request_by_itself():
 
     async def handoff(args, _ctx):
         done.append(args)
-        return {"created": "handoffs/2026-11-12-roof.md"}
+        return {"created": "handoffs/2026-11-12-shelf.md"}
 
     registry = chat.use(Tool("handoff", "", {"type": "object"}, handoff, needs_clean_turn=True))
     chat.agent.resume_reply = "Handoff written, now the reminder."
     read_a_page = ToolContext(conversation=chat.conv)
     read_a_page.read_page("example.com")
-    parked = await registry.run("handoff", {"title": "Roof"}, read_a_page)
+    parked = await registry.run("handoff", {"title": "Shelf"}, read_a_page)
     assert parked["status"] == "waiting_for_the_user"
     chat.shown("Shall I write it?", read_a_page)
     await chat.session.send_choices()
@@ -351,9 +351,9 @@ async def test_after_the_go_the_agent_picks_up_the_request_by_itself():
 
     await chat.session.chose("P1", [options[0], VALIDATE])
 
-    assert done == [{"title": "Roof"}]
+    assert done == [{"title": "Shelf"}]
     resumed = chat.agent.calls[-1]
-    assert resumed.startswith(RESUME_TAG) and "handoffs/2026-11-12-roof.md" in resumed
+    assert resumed.startswith(RESUME_TAG) and "handoffs/2026-11-12-shelf.md" in resumed
     # Only the agent's own write's result comes with it: the request is the user's own.
     assert chat.agent.options[-1]["tainted"] is False
     assert chat.channel.sent[-1] == "Handoff written, now the reminder."
@@ -368,7 +368,7 @@ async def test_what_the_go_itself_read_taints_the_request_that_picks_up():
 
     registry = chat.use(Tool("search", "", {"type": "object"}, search, always_propose=True))
     asked = ToolContext(conversation=chat.conv)
-    await registry.run("search", {"query": "roofers"}, asked)
+    await registry.run("search", {"query": "shelves"}, asked)
     chat.shown("", asked)
     await chat.session.send_choices()
 

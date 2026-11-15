@@ -436,11 +436,11 @@ LANGUAGES: dict[str, Strings] = {
         activity_alert_label="Activity alert",
         activity_alert_resume_label="Activity alert back on",
         activity_alert_forecast=(
-            "{icon} {activity} · {where}, {day} {start}–{end}: {facts}. (alert n°{id})"
+            "{icon} {activity} · {where}, {day} {start}–{end}: {facts}. (alert no. {id})"
         ),
         activity_alert_now=(
             "{icon} {activity} · {where}, now: {facts}, measured at {time} by {station}. "
-            "(alert n°{id})"
+            "(alert no. {id})"
         ),
         activity_alert_wind="{knots} kn {direction}",
         activity_alert_gusts="gusts {gusts} kn",

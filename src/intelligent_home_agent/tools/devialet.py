@@ -39,7 +39,7 @@ class Devialet:
         except httpx.HTTPError as exc:
             raise ToolError(
                 "The Devialet speaker is unreachable (off at the wall, or the home network "
-                f"through the Apple TV is down): {type(exc).__name__}."
+                f"can't be reached): {type(exc).__name__}."
             ) from exc
         if resp.status_code >= 400:
             detail = ""

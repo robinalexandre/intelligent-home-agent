@@ -485,7 +485,7 @@ def build_illustration_tools(
                 "type": "object",
                 "properties": {
                     "svg": {"type": "string", "description": "The drawing, with a viewBox."},
-                    "file_name": {"type": "string", "description": "e.g. planning.png"},
+                    "file_name": {"type": "string", "description": "e.g. schedule.png"},
                     "send": {
                         "type": "boolean",
                         "description": "Send it to the user now (default true); false when "

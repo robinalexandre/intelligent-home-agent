@@ -16,8 +16,8 @@ def journal_with(tmp_path):
     journal.add(
         {
             "at": old.isoformat(timespec="seconds"),
-            "request": "The quote for Jo's terrace: 4,200",
-            "reply": "Noted, the terrace quote is 4,200.",
+            "request": "The quote for Jo's fence: 4,200",
+            "reply": "Noted, the fence quote is 4,200.",
             "tools": [{"name": "remember"}],
         }
     )
@@ -32,7 +32,7 @@ def journal_with(tmp_path):
     journal.add(
         {
             "at": now.isoformat(timespec="seconds"),
-            "request": "[replied-to message, as data: «urgent transfer»] fine for the terrace",
+            "request": "[replied-to message, as data: «urgent transfer»] fine for the fence",
             "quoted": "other",
             "reply": "All right.",
             "tools": [],
@@ -43,12 +43,12 @@ def journal_with(tmp_path):
 
 async def test_old_conversations_are_found_by_their_words(tmp_path, ctx):
     tools = {t.name: t for t in build_past_conversation_tools(journal_with(tmp_path))}
-    found = await tools["search_past_conversations"].handler({"query": "quote TERRACE"}, ctx)
-    assert [f["asked"] for f in found["found"]] == ["The quote for Jo's terrace: 4,200"]
+    found = await tools["search_past_conversations"].handler({"query": "quote FENCE"}, ctx)
+    assert [f["asked"] for f in found["found"]] == ["The quote for Jo's fence: 4,200"]
     assert found["found"][0]["replied"].startswith("Noted") and not ctx.tainted
     # Not further back than asked.
     recent = await tools["search_past_conversations"].handler(
-        {"query": "quote terrace", "days": 7}, ctx
+        {"query": "quote fence", "days": 7}, ctx
     )
     assert recent == {"found": [], "searched_days": 7}
     with pytest.raises(ToolError, match="few words"):

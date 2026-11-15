@@ -31,9 +31,9 @@ CACHE_SECONDS = 6 * 3600
 _MULTIGET_BATCH = 200
 _NS = {"d": "DAV:", "c": "urn:ietf:params:xml:ns:carddav"}
 _PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
-# 1990-10-18, 19901018, --10-18, --1018, optionally followed by a time.
+# 2000-01-31, 20000131, --01-31, --0131, optionally followed by a time.
 _BDAY_RE = re.compile(r"^(?:(\d{4})|--)-?(\d{2})-?(\d{2})")
-# Apple writes BDAY;X-APPLE-OMIT-YEAR=1604:1604-10-18 when the year is unknown.
+# Apple writes BDAY;X-APPLE-OMIT-YEAR=1604:1604-01-31 when the year is unknown.
 _OMIT_YEAR_RE = re.compile(r"X-APPLE-OMIT-YEAR=(\d{4})", re.IGNORECASE)
 
 

@@ -57,12 +57,12 @@ def tools_for(service):
 
 
 ITEMS = [
-    summary("n3", "Sailing", 3, folder="Sport"),
+    summary("n3", "Baking", 3, folder="Pantry"),
     summary("n5", "Shopping", 5, snippet="bread, milk"),
     summary("n4", "Codes", 4, locked=True),
     summary("n2", "Old", 2, deleted=True),
 ]
-TEXTS = {"n3": "Small sail above 20 knots", "n5": "bread, milk, eggs", "n4": "secret"}
+TEXTS = {"n3": "Small tin above 20 scones", "n5": "bread, milk, eggs", "n4": "secret"}
 
 
 async def test_recent_notes_first_without_query(ctx):
@@ -70,8 +70,8 @@ async def test_recent_notes_first_without_query(ctx):
 
     result = await search.handler({}, ctx)
 
-    assert [n["title"] for n in result["notes"]] == ["Shopping", "Codes", "Sailing"]
-    assert result["folders"] == ["Notes", "Sport"]
+    assert [n["title"] for n in result["notes"]] == ["Shopping", "Codes", "Baking"]
+    assert result["folders"] == ["Notes", "Pantry"]
     assert result["notes"][0]["start"] == "bread, milk"
     assert search.taints
 
@@ -80,8 +80,8 @@ async def test_search_looks_inside_texts_but_never_opens_locked_notes(ctx):
     service = FakeNotes(list(ITEMS), TEXTS)
     search, _ = tools_for(service)
 
-    result = await search.handler({"query": "20 SAIL"}, ctx)
-    assert [n["title"] for n in result["notes"]] == ["Sailing"]
+    result = await search.handler({"query": "20 TIN"}, ctx)
+    assert [n["title"] for n in result["notes"]] == ["Baking"]
     assert "n4" not in service.fetched
 
     await search.handler({"query": "eggs"}, ctx)
@@ -93,8 +93,8 @@ async def test_read_note_gives_text_and_attachments(ctx):
 
     result = await read.handler({"id": "n3"}, ctx)
 
-    assert result["text"] == "Small sail above 20 knots" and result["attachments"] == ["quote.pdf"]
-    assert result["folder"] == "Sport" and result["truncated"] is False
+    assert result["text"] == "Small tin above 20 scones" and result["attachments"] == ["quote.pdf"]
+    assert result["folder"] == "Pantry" and result["truncated"] is False
     with pytest.raises(ToolError, match="locked"):
         await read.handler({"id": "n4"}, ctx)
     with pytest.raises(ToolError, match="search_apple_notes"):

@@ -250,7 +250,7 @@ def test_core_tools_get_their_paragraphs_only_when_registered():
     assert "run_proposals" not in bare and "read_result_part" not in bare
     text = prompt(tools={"get_weather", "run_proposals", "read_result_part"})
     assert "Actions waiting for the user's go" in text
-    assert '"yes", "oui"' in text and "drop_proposals" in text
+    assert '"yes", "yes except 2"' in text and "drop_proposals" in text
     assert "read_result_part reads the next ones" in text
 
 

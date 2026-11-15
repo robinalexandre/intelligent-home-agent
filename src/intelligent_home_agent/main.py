@@ -2084,7 +2084,7 @@ async def briefing(body: BriefingRequest, request: Request) -> BriefingResponse:
     )
     pushed = False
     if body.push and ntfy is not None:
-        title = "Briefing" if body.kind == "morning" else "Recap"
+        title = s.morning_briefing_title if body.kind == "morning" else s.evening_recap_title
         try:
             await ntfy.send(f"{settings.assistant_name} · {title}", reply.text)
             pushed = True

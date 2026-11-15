@@ -150,7 +150,7 @@ async def test_a_wind_window_tomorrow_is_announced_once_then_the_next_good_day(m
     clock.now += timedelta(hours=4)
     assert await alerts.check(sent) == [alert.id]
     assert sent == [
-        "🌬️ Wingfoil · North Beach, tomorrow 14:00–18:00: 16 kn W, gusts 22 kn. (alert n°1)"
+        "🌬️ Wingfoil · North Beach, tomorrow 14:00–18:00: 16 kn W, gusts 22 kn. (alert no. 1)"
     ]
     clock.now += timedelta(hours=2)
     assert await alerts.check(sent) == [] and len(sent) == 1  # once per good day
@@ -186,7 +186,7 @@ async def test_surf_is_judged_per_beach_and_fair_windows_can_be_skipped(make, sk
         sky.wind_knots[(0, hour)] = 3  # glassy
     assert await alerts.check(sent) == [1, picky.id]
     assert (
-        sent[0] == "🌊 Surf · South Bay, today 10:00–14:00: waves 1.4 m, period 11 s. (alert n°1)"
+        sent[0] == "🌊 Surf · South Bay, today 10:00–14:00: waves 1.4 m, period 11 s. (alert no. 1)"
     )
 
 
@@ -281,7 +281,7 @@ async def test_the_measured_wind_is_looked_at_every_round_and_said_once_a_day(ma
     assert await alerts.check(sent) == []
     assert sent == [
         "🌬️ Windsurf · North Beach, now: 16 kn W, gusts 21 kn, measured at 08:57 by "
-        "Pioupiou #2 (3.2 km away). (alert n°1)"
+        "Pioupiou #2 (3.2 km away). (alert no. 1)"
     ]
     assert sky.calls == 0  # no forecast read for it
     clock.now += timedelta(days=1)

@@ -111,7 +111,7 @@ class MailAccount(BaseModel):
     # log in with a user name).
     address: str | None = None
     # The special folders, when the server neither marks them (SPECIAL-USE) nor gives them
-    # a usual name: their exact names, e.g. "INBOX.Brouillons". Empty: found by itself.
+    # a usual name: their exact names, e.g. "INBOX.Drafts". Empty: found by itself.
     drafts: str | None = None
     sent: str | None = None
     trash: str | None = None
@@ -302,8 +302,9 @@ class Settings(BaseSettings):
     petkit_username: str | None = None
     petkit_password: SecretStr | None = None
     petkit_region: str | None = None
-    # With NTFY_URL: a push when the litter or the food gets under these levels (%), and
-    # when the waste bin is full, again every PETKIT_BIN_REMIND_MINUTES; nothing between
+    # With a chat or NTFY_URL: a message when the litter or the food gets under these
+    # levels (%), and when the waste bin is full, again every PETKIT_BIN_REMIND_MINUTES;
+    # nothing between
     # PETKIT_QUIET_START and PETKIT_QUIET_END (hours of the day).
     petkit_alerts: bool = True
     petkit_litter_alert_percent: int = Field(50, ge=0, le=100)
@@ -474,7 +475,7 @@ class Settings(BaseSettings):
     notes_crypt_key: SecretStr | None = None
 
     # --- Tasks the agent runs by itself (docs/tasks.md) ---------------------------------
-    # They need a way to reach the user (NTFY_URL); without one, there are none.
+    # They need a way to reach the user (a chat, or NTFY_URL); without one, there are none.
     # local: Markdown files in DATA_DIR/tasks. github: a folder of NOTES_REPO (the token
     # must be allowed to write its contents). off: none.
     tasks_store: Literal["local", "github", "off"] = "local"

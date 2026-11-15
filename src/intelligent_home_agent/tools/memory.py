@@ -275,7 +275,7 @@ def build_memory_tools(memory: Memory | None, language: str = "en") -> list[Tool
             name="remember",
             description=(
                 "Keep a durable fact about the user for every future conversation: people "
-                '("my accountant is Jo Martin, jo@example.com"), preferences, accounts, '
+                '("my plumber is Sam Lee, sam@example.com"), preferences, accounts, '
                 "habits. One short sentence. Only when the user asks or tells you such a "
                 "fact."
             ),

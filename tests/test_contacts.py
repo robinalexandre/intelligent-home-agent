@@ -26,8 +26,8 @@ def vcard(*lines):
 
 
 def test_parse_vcard_with_year():
-    card = vcard("N:Martin;Zoé;;;", "FN:Zoé Martin", "BDAY;VALUE=date:1990-10-18")
-    assert parse_vcard(card) == Birthday("Zoé Martin", 10, 18, 1990)
+    card = vcard("N:Martin;Zoé;;;", "FN:Zoé Martin", "BDAY;VALUE=date:1990-10-19")
+    assert parse_vcard(card) == Birthday("Zoé Martin", 10, 19, 1990)
 
 
 def test_parse_vcard_apple_omitted_year_and_folded_name():
@@ -37,7 +37,7 @@ def test_parse_vcard_apple_omitted_year_and_folded_name():
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [("19901018", (10, 18, 1990)), ("--1018", (10, 18, None)), ("--10-18", (10, 18, None))],
+    [("19901019", (10, 19, 1990)), ("--1019", (10, 19, None)), ("--10-19", (10, 19, None))],
 )
 def test_parse_vcard_date_formats(value, expected):
     assert parse_vcard(vcard("FN:Zoé", f"BDAY:{value}")) == Birthday("Zoé", *expected)
@@ -50,13 +50,13 @@ def test_parse_vcard_falls_back_to_n_and_skips_contacts_without_birthday():
 
 
 def test_birthday_events_in_range_with_age():
-    birthdays = [Birthday("Zoé", 10, 18, 1990), Birthday("Tom", 10, 20), Birthday("Max", 1, 1)]
-    start = datetime(2026, 10, 18, tzinfo=PARIS)
+    birthdays = [Birthday("Zoé", 10, 19, 1990), Birthday("Tom", 10, 20), Birthday("Max", 1, 1)]
+    start = datetime(2026, 10, 19, tzinfo=PARIS)
 
     events = birthday_events(birthdays, start, start + timedelta(days=3), PARIS)
 
     assert [(e.title, e.start) for e in events] == [
-        ("Zoé's birthday (36)", date(2026, 10, 18)),
+        ("Zoé's birthday (36)", date(2026, 10, 19)),
         ("Tom's birthday", date(2026, 10, 20)),
     ]
     assert all(e.all_day and e.calendar == "Birthdays" for e in events)
@@ -132,12 +132,12 @@ def mock_server(mock, cards):
 
 
 async def test_birthdays_are_read_from_the_contacts_once():
-    cards = [vcard("FN:Zoé Martin", "BDAY:1990-10-18"), vcard("FN:No Date")]
+    cards = [vcard("FN:Zoé Martin", "BDAY:1990-10-19"), vcard("FN:No Date")]
     async with httpx.AsyncClient() as http:
         with respx.mock() as mock:
             report = mock_server(mock, cards)
             source = CardDavBirthdays(http, CARDDAV, "sam@example.com", "pw", "Europe/Paris")
-            start = datetime(2026, 10, 18, tzinfo=PARIS)
+            start = datetime(2026, 10, 19, tzinfo=PARIS)
 
             events = await source.events(start, start + timedelta(days=1))
             await source.events(start, start + timedelta(days=1))
@@ -156,7 +156,7 @@ async def test_a_refused_login_is_a_tool_error():
             mock.route(method="PROPFIND").respond(401)
             source = CardDavBirthdays(http, CARDDAV, "sam@example.com", "bad", "Europe/Paris")
             with pytest.raises(ToolError, match="401"):
-                await source.events(datetime(2026, 10, 18, tzinfo=PARIS), datetime.now(PARIS))
+                await source.events(datetime(2026, 10, 19, tzinfo=PARIS), datetime.now(PARIS))
 
 
 class Source:
@@ -170,11 +170,11 @@ class Source:
 
 
 async def test_birthday_shows_in_calendar_tool_when_one_source_fails(ctx):
-    birthday = CalendarEvent("Zoé's birthday", date(2026, 10, 18), None, "Birthdays")
+    birthday = CalendarEvent("Zoé's birthday", date(2026, 10, 19), None, "Birthdays")
     merged = MergedCalendar([Source(error=ToolError("Calendar unavailable")), Source([birthday])])
     (tool,) = build_calendar_tools(merged, "Europe/Paris")
 
-    result = await tool.handler({"date": "2026-10-18"}, ctx)
+    result = await tool.handler({"date": "2026-10-19"}, ctx)
 
     assert [e["title"] for e in result["events"]] == ["Zoé's birthday"]
     assert result["events"][0]["all_day"]
@@ -183,4 +183,4 @@ async def test_birthday_shows_in_calendar_tool_when_one_source_fails(ctx):
 async def test_merged_calendar_fails_when_every_source_fails():
     merged = MergedCalendar([Source(error=ToolError("a")), Source(error=ToolError("b"))])
     with pytest.raises(ToolError):
-        await merged.events(datetime(2026, 10, 18, tzinfo=PARIS), datetime.now(PARIS))
+        await merged.events(datetime(2026, 10, 19, tzinfo=PARIS), datetime.now(PARIS))

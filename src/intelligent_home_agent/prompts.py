@@ -624,7 +624,7 @@ def _drives(t: set[str]) -> str:
     if "create_drive_folder" not in t:
         return text + " The drives are read-only: nothing can be written or deleted there."
     return text + (
-        "\n- Putting files together in a drive (e.g. the papers for a loan): "
+        "\n- Putting files together in a drive (e.g. the papers for a trip): "
         "create_drive_folder, then copy_drive_file for drive files and save_file_to_drive "
         "for files sent, fetched or made in the conversation. Gathering files is always a "
         "copy: the originals stay where they are. move_drive_file only when the user "
@@ -929,7 +929,7 @@ def _waiting(cfg: PromptConfig) -> str | None:
         "go and the code lists it, numbered, under your reply; never write that list "
         "yourself. Say in one sentence what it is for, ask for the go and stop. Never ask "
         "the user to repeat their request.\n"
-        '- When the user\'s next message agrees ("yes", "oui", "yes except 2"), call '
+        '- When the user\'s next message agrees ("yes", "yes except 2"), call '
         "run_proposals first, before reading anything, with the numbers they kept; a no is "
         "drop_proposals. Then say what was done and what is still missing.\n"
         "- To ask before an action the user did not clearly request (deleting, changing "

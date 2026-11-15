@@ -79,10 +79,10 @@ DRIVE = {
     "Documents/Work": folder(
         f("Documents/Work/Quote Jo 2026.pdf", 2048, "2026-10-01T10:00:00Z"),
         f("Documents/Work/Quote 2025.pdf", 1024, "2025-03-01T10:00:00Z"),
-        d("Documents/Work/FaceApp"),
+        d("Documents/Work/DemoApp"),
     ),
-    "Documents/Work/FaceApp": folder(
-        f("Documents/Work/FaceApp/build.gradle"), d("Documents/Work/FaceApp/app")
+    "Documents/Work/DemoApp": folder(
+        f("Documents/Work/DemoApp/build.gradle"), d("Documents/Work/DemoApp/app")
     ),
     "Desktop": folder(f("Desktop/photo.jpg", 99)),
 }
@@ -111,14 +111,14 @@ async def test_index_walks_the_folders_and_stops_at_code_projects(tmp_path, ctx)
         search = tools(reloaded)["search_drive_files"]
         result = await search.handler({"query": "quote JO"}, ctx)
         both = await search.handler({"query": "quote"}, ctx)
-        project = await search.handler({"query": "faceapp"}, ctx)
+        project = await search.handler({"query": "demoapp"}, ctx)
 
     walked = sorted(json.loads(c.request.content)["remote"] for c in route.calls)
-    assert walked == ["", "Desktop", "Documents", "Documents/Work", "Documents/Work/FaceApp"]
+    assert walked == ["", "Desktop", "Documents", "Documents/Work", "Documents/Work/DemoApp"]
     assert (drive.walk, reloaded.walk) == ("folders", "folders")
     assert project == {
         "count": 1,
-        "files": [{"drive": "docs", "path": "Documents/Work/FaceApp", "code_project": True}],
+        "files": [{"drive": "docs", "path": "Documents/Work/DemoApp", "code_project": True}],
     }
     assert json.loads(route.calls[0].request.content)["fs"] == "view:"
     assert result == {
@@ -169,7 +169,7 @@ async def test_a_service_that_lists_recursively_is_indexed_in_one_call(tmp_path,
     # The same shortcuts as the walk: the project is one entry, hidden files are left out.
     assert sorted(e["Path"] for e in fast.index) == [
         "Desktop/photo.jpg",
-        "Documents/Work/FaceApp",
+        "Documents/Work/DemoApp",
         "Documents/Work/Quote 2025.pdf",
         "Documents/Work/Quote Jo 2026.pdf",
     ]
@@ -386,16 +386,16 @@ def drive_with(*paths):
 
 @respx.mock
 async def test_a_folder_is_created_once(ctx):
-    routes = drive_with("Desktop/", "Desktop/Loan file/", "Desktop/notes.txt")
+    routes = drive_with("Desktop/", "Desktop/Trip file/", "Desktop/notes.txt")
     async with httpx.AsyncClient() as http:
         create = tools(a_drive(http))["create_drive_folder"]
         new = await create.handler({"path": "/Desktop/Café works/"}, ctx)
-        again = await create.handler({"path": "Desktop/Loan file"}, ctx)
+        again = await create.handler({"path": "Desktop/Trip file"}, ctx)
         with pytest.raises(ToolError, match="is a file"):
             await create.handler({"path": "Desktop/notes.txt"}, ctx)
 
     assert new == {"drive": "docs", "folder": "Desktop/Café works", "created": True}
-    assert again == {"drive": "docs", "folder": "Desktop/Loan file", "created": False}
+    assert again == {"drive": "docs", "folder": "Desktop/Trip file", "created": False}
     assert [json.loads(c.request.content)["remote"] for c in routes["mkdir"].calls] == [
         "Desktop/Café works"
     ]
@@ -470,34 +470,32 @@ async def test_a_move_is_its_own_tool_and_never_replaces_either(ctx):
 
 @respx.mock
 async def test_kept_files_are_saved_under_a_free_name(ctx):
-    routes = drive_with("Desktop/File/", "Desktop/File/Tax_notice_2026.pdf")
-    ctx.conversation.files["Tax_notice_2026.pdf"] = Attachment(
-        "Tax_notice_2026.pdf", "application/pdf", b"%PDF-tax"
+    routes = drive_with("Desktop/File/", "Desktop/File/Menu_2026.pdf")
+    ctx.conversation.files["Menu_2026.pdf"] = Attachment(
+        "Menu_2026.pdf", "application/pdf", b"%PDF-tax"
     )
     async with httpx.AsyncClient() as http:
         save = tools(a_drive(http))["save_file_to_drive"]
-        saved = await save.handler(
-            {"file_name": "Tax_notice_2026.pdf", "to_folder": "Desktop/File"}, ctx
-        )
-        with pytest.raises(ToolError, match="Kept files: Tax_notice_2026.pdf"):
+        saved = await save.handler({"file_name": "Menu_2026.pdf", "to_folder": "Desktop/File"}, ctx)
+        with pytest.raises(ToolError, match="Kept files: Menu_2026.pdf"):
             await save.handler({"file_name": "nope.pdf", "to_folder": "Desktop/File"}, ctx)
 
-    assert saved == {"drive": "docs", "saved_to": "Desktop/File/Tax_notice_2026_2.pdf"}
+    assert saved == {"drive": "docs", "saved_to": "Desktop/File/Menu_2026_2.pdf"}
     request = routes["uploadfile"].calls[0].request
     assert dict(request.url.params) == {"fs": "docs:", "remote": "Desktop/File"}
-    assert b'filename="Tax_notice_2026_2.pdf"' in request.content
+    assert b'filename="Menu_2026_2.pdf"' in request.content
     assert b"%PDF-tax" in request.content
 
 
 @respx.mock
 async def test_accented_paths_match_whatever_their_unicode_form(ctx):
     nfd = lambda path: unicodedata.normalize("NFD", path)  # noqa: E731
-    windows = nfd("Documents/Maison d'été/Fenêtres")
+    windows = nfd("Documents/Café d'été/Crêpes")
     routes = drive_with(
         "Documents/",
-        nfd("Documents/Maison d'été/"),
+        nfd("Documents/Café d'été/"),
         f"{windows}/",
-        nfd(f"{windows}/Facture fenêtres.pdf"),
+        nfd(f"{windows}/Recette crêpes.pdf"),
         "Downloads/quote.pdf",
     )
     ctx.conversation.files["quote.pdf"] = Attachment("quote.pdf", "application/pdf", b"%PDF")
@@ -508,21 +506,21 @@ async def test_accented_paths_match_whatever_their_unicode_form(ctx):
             {"file_name": "quote.pdf", "to_folder": asked}, ctx
         )
         copied = await drive_tools["copy_drive_file"].handler(
-            {"path": f"{asked}/Facture fenêtres.pdf", "to_folder": asked}, ctx
+            {"path": f"{asked}/Recette crêpes.pdf", "to_folder": asked}, ctx
         )
         moved = await drive_tools["move_drive_file"].handler(
             {"path": "Downloads/quote.pdf", "to_folder": asked}, ctx
         )
         with pytest.raises(ToolError, match="create it first"):
             await drive_tools["save_file_to_drive"].handler(
-                {"file_name": "quote.pdf", "to_folder": f"{asked}/Volets"}, ctx
+                {"file_name": "quote.pdf", "to_folder": f"{asked}/Notes"}, ctx
             )
 
     assert saved["saved_to"] == f"{windows}/quote.pdf"
     assert dict(routes["uploadfile"].calls[0].request.url.params)["remote"] == windows
-    assert copied["copied_to"] == nfd(f"{windows}/Facture fenêtres_2.pdf")
+    assert copied["copied_to"] == nfd(f"{windows}/Recette crêpes_2.pdf")
     sent = json.loads(routes["copyfile"].calls[0].request.content)
-    assert sent["srcRemote"] == nfd(f"{windows}/Facture fenêtres.pdf")
+    assert sent["srcRemote"] == nfd(f"{windows}/Recette crêpes.pdf")
     assert moved["moved_to"] == f"{windows}/quote.pdf"
 
 
@@ -895,26 +893,26 @@ async def test_a_folder_is_deleted_empty_unless_its_contents_are_asked_for(ctx):
 @respx.mock
 async def test_a_folder_is_copied_or_moved_into_a_new_folder_only(ctx):
     routes = drive_with(
-        "Documents/", "Documents/Loan/", "Desktop/", "Desktop/Loan/", "Desktop/Loan/x.pdf"
+        "Documents/", "Documents/Trip/", "Desktop/", "Desktop/Trip/", "Desktop/Trip/x.pdf"
     )
     async with httpx.AsyncClient() as http:
         drive_tools = tools(a_drive(http, remote="view:"))
         copied = await drive_tools["copy_drive_folder"].handler(
-            {"path": "Documents/Loan", "to_folder": "Desktop"}, ctx
+            {"path": "Documents/Trip", "to_folder": "Desktop"}, ctx
         )
         renamed = await drive_tools["move_drive_folder"].handler(
-            {"path": "Documents/Loan", "to_folder": "Documents", "name": "Loan 2026"}, ctx
+            {"path": "Documents/Trip", "to_folder": "Documents", "name": "Trip 2026"}, ctx
         )
         with pytest.raises(ToolError, match="inside itself"):
             await drive_tools["copy_drive_folder"].handler(
-                {"path": "Desktop", "to_folder": "Desktop/Loan"}, ctx
+                {"path": "Desktop", "to_folder": "Desktop/Trip"}, ctx
             )
 
-    assert copied == {"drive": "docs", "copied_to": "Desktop/Loan_2"}
-    assert renamed == {"drive": "docs", "moved_to": "Documents/Loan 2026"}
+    assert copied == {"drive": "docs", "copied_to": "Desktop/Trip_2"}
+    assert renamed == {"drive": "docs", "moved_to": "Documents/Trip 2026"}
     assert json.loads(routes["copy"].calls[0].request.content) == {
-        "srcFs": "view:Documents/Loan",
-        "dstFs": "view:Desktop/Loan_2",
+        "srcFs": "view:Documents/Trip",
+        "dstFs": "view:Desktop/Trip_2",
         "createEmptySrcDirs": True,
     }
     assert json.loads(routes["move"].calls[0].request.content)["deleteEmptySrcDirs"] is True
@@ -952,7 +950,7 @@ async def test_folder_size_and_recent_files(tmp_path, ctx):
 
 def test_copies_are_numbered():
     assert numbered("Quote.pdf", 1) == "Quote.pdf"
-    assert numbered("Quote windows.pdf", 2) == "Quote windows_2.pdf"
+    assert numbered("Quote garden.pdf", 2) == "Quote garden_2.pdf"
     assert numbered("notes", 3) == "notes_3"
 
 
@@ -975,7 +973,7 @@ def test_machine_and_generated_folders_are_left_out():
     assert not is_machine_folder(names("a.class", "b.class"))  # too few to judge
     assert skipped("0123456789abcdef0123456789abcdef")
     assert skipped("Thumbnail") and skipped("WEB-INF") and skipped(".git")
-    assert not skipped("Invoices 2024") and not skipped("Trip June 2011")
+    assert not skipped("Invoices 2024") and not skipped("Holiday May 2015")
 
 
 def test_file_names_are_made_safe_for_the_prompt():
@@ -989,10 +987,10 @@ async def test_decomposed_accents_and_new_subfolders_keep_one_spelling(ctx):
     # composed (NFC).
     nfd = lambda path: unicodedata.normalize("NFD", path)  # noqa: E731
     nfc = lambda path: unicodedata.normalize("NFC", path)  # noqa: E731
-    windows = nfd("Documents/Fenêtres")
-    routes = drive_with("Documents/", f"{windows}/", nfd(f"{windows}/Devis été.pdf"))
+    windows = nfd("Documents/Crêpes")
+    routes = drive_with("Documents/", f"{windows}/", nfd(f"{windows}/Carte été.pdf"))
 
-    children = {"Documents": [d(windows)], windows: [f(nfd(f"{windows}/Devis été.pdf"))]}
+    children = {"Documents": [d(windows)], windows: [f(nfd(f"{windows}/Carte été.pdf"))]}
 
     def listing(request):
         remote = json.loads(request.content)["remote"]
@@ -1007,15 +1005,15 @@ async def test_decomposed_accents_and_new_subfolders_keep_one_spelling(ctx):
         drive_tools = tools(a_drive(http))
         listed = await drive_tools["list_drive_folder"].handler({"path": nfc(windows)}, ctx)
         created = await drive_tools["create_drive_folder"].handler(
-            {"path": nfc(f"{windows}/Volets")}, ctx
+            {"path": nfc(f"{windows}/Notes")}, ctx
         )
 
     assert sent.filename == nfc("Reçu été.pdf")
     assert ctx.conversation.files.get(nfd("Reçu été.pdf")) is sent
-    assert nfd("Devis été.pdf") in json.dumps(listed, ensure_ascii=False)
+    assert nfd("Carte été.pdf") in json.dumps(listed, ensure_ascii=False)
     assert created["created"] is True
     # Under the drive's own spelling of the folder, not a second one spelled the other way.
-    assert json.loads(routes["mkdir"].calls[0].request.content)["remote"] == f"{windows}/Volets"
+    assert json.loads(routes["mkdir"].calls[0].request.content)["remote"] == f"{windows}/Notes"
 
 
 class FakeDrafts:

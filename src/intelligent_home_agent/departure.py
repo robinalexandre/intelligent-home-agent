@@ -16,9 +16,8 @@ A lock whose door is open is said but not offered: the bolt would close on nothi
 Home Assistant lock is said but not offered either: locks are a sensitive domain there,
 confirmed by the user in their own words.
 
-Seam: the private setup this comes from also noticed a departure by itself, from the
-phone leaving the home Wi-Fi (read on the router). That needs a router or presence tool,
-which is not ported.
+Not covered: noticing a departure without a client's call (the phone leaving the home
+Wi-Fi) would need a router or presence tool, which the agent does not have.
 """
 
 from __future__ import annotations

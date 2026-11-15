@@ -261,7 +261,7 @@ def build_pdf_form_tools(font_dir: Path = FONT_DIR, *, language: str = "en") -> 
                 "it has any, else each page's text with where it sits (x, y from the top-left "
                 "corner, w, h, in points), the dotted blanks to write on (blank) and the "
                 f"check boxes (box). At most {MAX_PAGES} pages: not for reading a long "
-                "document (a contract, a loan offer), which read_saved_file shows."
+                "document (a contract, a long report), which read_saved_file shows."
             ),
             input_schema={
                 "type": "object",

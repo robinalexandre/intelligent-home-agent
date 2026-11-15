@@ -47,8 +47,8 @@ async def test_creates_a_pdf_kept_by_name_and_shared(ctx, tmp_path):
     create = tools(tmp_path)["create_pdf"]  # no fonts here: the Latin-1 fallback
     result = await create.handler(
         {
-            "title": "Sworn statement",
-            "html": "<h1>Statement</h1><p>I, the undersigned Sam, certify… 1 200 €</p>"
+            "title": "Packing list",
+            "html": "<h1>Statement</h1><p>For the trip, Sam packs… 1 200 €</p>"
             "<ul><li>No outstanding debt</li></ul>",
             "file_name": "statement",
         },
@@ -162,13 +162,13 @@ def test_only_layout_tags_without_attributes_get_through():
 def test_a_table_cell_keeps_only_what_fpdf_lays_out():
     clean = sanitize(
         "<table><tr><th>Item</th><th><b>Amount</b></th></tr>"
-        "<tr><td>Loan<br>insurance included</td><td><b>1 500 €</b> a month</td></tr>"
+        "<tr><td>Tent<br>pegs included</td><td><b>2 300 €</b> a month</td></tr>"
         "<tr><td><p>Sam</p><p>Jo</p></td><td><ul><li>a</li><li><i>b</i></li></ul></td>"
         "</tr><tr><td><strong><em>Total</em></strong></td><td>x</td></tr></table>"
     )
     assert clean == (
         "<table><tr><th>Item</th><th><b>Amount</b></th></tr>"
-        "<tr><td>Loan\ninsurance included</td><td>1 500 € a month</td></tr>"
+        "<tr><td>Tent\npegs included</td><td>2 300 € a month</td></tr>"
         "<tr><td>Sam\nJo</td><td>a\nb</td></tr>"
         "<tr><td><b><i>Total</i></b></td><td>x</td></tr></table>"
     )
@@ -176,14 +176,14 @@ def test_a_table_cell_keeps_only_what_fpdf_lays_out():
 
 def test_line_breaks_and_mixed_emphasis_in_a_table_render(tmp_path):
     data = render_pdf(
-        "Agreement",
+        "Budget",
         "<table><tr><th>Who</th><th>Amount</th></tr>"
-        "<tr><td>Sam<br/>allowance + loan</td><td><b>1 500 EUR</b> / month<br>rounded</td></tr>"
+        "<tr><td>Sam<br/>tent + stove</td><td><b>2 300 EUR</b> / month<br>rounded</td></tr>"
         "</table>",
         tmp_path,
     )
     text = PdfReader(BytesIO(data)).pages[0].extract_text()
-    assert "allowance + loan" in text and "rounded" in text
+    assert "tent + stove" in text and "rounded" in text
 
 
 async def test_listing_files_from_elsewhere_taints_the_request(ctx, tmp_path):

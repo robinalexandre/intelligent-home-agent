@@ -140,11 +140,11 @@ async def test_merges_accounts_newest_first_and_reports_failures(ctx):
 
 
 def test_read_message_gives_the_whole_text_and_attachment_names():
-    raw = raw_email("Paperwork", "Hello,\n\n- Company extract\n- Tax certificate\n")
+    raw = raw_email("Paperwork", "Hello,\n\n- Opening hours\n- Price list\n")
     message = read_message(raw)
     assert message["subject"] == "Paperwork"
     assert message["from"] == "Jo Martin <jo@example.com>"
-    assert "- Tax certificate" in message["text"]
+    assert "- Price list" in message["text"]
     assert message["attachments"] == [{"name": "quote.pdf", "type": "application/pdf"}]
     (kept,) = message["files"]
     assert (kept.filename, kept.data, kept.origin) == ("quote.pdf", b"%PDF", "email")
@@ -256,16 +256,16 @@ async def test_draft_refuses_files_that_were_never_sent(ctx):
 
 
 def test_folder_names_use_modified_utf7():
-    assert encode_folder("Zoé Client") == "Zo&AOk- Client"
+    assert encode_folder("Café Orders") == "Caf&AOk- Orders"
     assert encode_folder("A&B") == "A&-B"
-    assert decode_folder("Zo&AOk- Client") == "Zoé Client"
+    assert decode_folder("Caf&AOk- Orders") == "Café Orders"
     assert decode_folder(encode_folder("Ünïcödé/日本 & co")) == "Ünïcödé/日本 & co"
 
 
 def test_folder_lines_are_parsed():
     trash = parse_folder(b'(\\HasNoChildren \\Trash) "/" "Deleted Messages"')
     assert trash.name == "Deleted Messages" and not trash.files_mail
-    assert parse_folder(b'(\\HasNoChildren) "/" "Zo&AOk- Client"').files_mail
+    assert parse_folder(b'(\\HasNoChildren) "/" "Caf&AOk- Orders"').files_mail
     assert parse_folder(b'(\\HasNoChildren) "/" Invoices').name == "Invoices"
     assert not parse_folder(b'(\\HasChildren) "/" "INBOX"').files_mail
 
@@ -404,24 +404,24 @@ def mailbox(name, server):
 
 
 def plain(capabilities=("IMAP4REV1", "MOVE"), inbox=None):
-    return FakeServer(list(capabilities), {"Zoé Client": "\\HasNoChildren"}, inbox)
+    return FakeServer(list(capabilities), {"Café Orders": "\\HasNoChildren"}, inbox)
 
 
 async def test_an_email_is_moved_into_a_folder_of_its_own_account():
     server = plain(inbox={"12": mail(), "13": mail("<other@example.com>")})
     box = mailbox("Home", server)
 
-    assert await box.move("12", "zoé client", box) == {"moved_to": "Home/Zoé Client"}
-    assert ("MOVE", "12", '"Zo&AOk- Client"') in server.commands
+    assert await box.move("12", "café orders", box) == {"moved_to": "Home/Café Orders"}
+    assert ("MOVE", "12", '"Caf&AOk- Orders"') in server.commands
     assert list(server.boxes["INBOX"]) == ["13"]
-    assert list(server.boxes["Zoé Client"].values()) == [mail()]
+    assert list(server.boxes["Café Orders"].values()) == [mail()]
 
 
 async def test_without_move_only_that_email_leaves_the_inbox_once_copied():
     server = plain(("IMAP4REV1", "UIDPLUS"), inbox={"12": mail(), "13": mail("<b@x>")})
     box = mailbox("Home", server)
 
-    assert await box.move("12", "Zoé Client", box) == {"moved_to": "Home/Zoé Client"}
+    assert await box.move("12", "Café Orders", box) == {"moved_to": "Home/Café Orders"}
     commands = [c[0] for c in server.commands]
     assert commands[commands.index("COPY") :] == ["COPY", "STORE", "EXPUNGE"]
     assert ("EXPUNGE", "12") in server.commands
@@ -432,9 +432,9 @@ async def test_without_move_or_uid_expunge_the_original_stays():
     server = plain(("IMAP4REV1",), inbox={"12": mail()})
     box = mailbox("Home", server)
 
-    result = await box.move("12", "Zoé Client", box)
+    result = await box.move("12", "Café Orders", box)
 
-    assert result["copied_to"] == "Home/Zoé Client"
+    assert result["copied_to"] == "Home/Café Orders"
     assert "still in INBOX" in result["original"]
     assert "12" in server.boxes["INBOX"]
     assert not {"STORE", "EXPUNGE"} & {c[0] for c in server.commands}
@@ -451,14 +451,14 @@ async def test_an_email_never_goes_to_the_trash_or_an_unknown_folder(folder):
     assert list(server.boxes["INBOX"]) == ["12"]
     assert not {"MOVE", "COPY"} & {c[0] for c in server.commands}
     if folder == "Nowhere":
-        assert "['Zoé Client']" in str(error.value)
+        assert "['Café Orders']" in str(error.value)
 
 
 async def test_a_missing_email_moves_nothing():
     server = plain(inbox={})
     box = mailbox("Home", server)
     with pytest.raises(ToolError, match="No email with this id"):
-        await box.move("12", "Zoé Client", box)
+        await box.move("12", "Café Orders", box)
 
 
 def gmail(inbox):
@@ -481,7 +481,7 @@ def dated(message_id, subject):
 
 async def test_recent_emails_come_from_every_folder_the_trash_included():
     server = plain(inbox={"12": dated("<a@x>", "Order")})
-    server.boxes["Zoé Client"]["20"] = dated("<b@x>", "Certificate")
+    server.boxes["Café Orders"]["20"] = dated("<b@x>", "Certificate")
     server.boxes["Deleted Messages"]["30"] = dated("<c@x>", "Parcel shipped")
     box = mailbox("Home", server)
 
@@ -490,7 +490,7 @@ async def test_recent_emails_come_from_every_folder_the_trash_included():
 
     assert set(by_subject) == {"Order", "Certificate", "Parcel shipped"}
     assert by_subject["Order"].uid == "12" and not by_subject["Order"].deleted
-    assert by_subject["Certificate"].uid == "20@Zoé Client"
+    assert by_subject["Certificate"].uid == "20@Café Orders"
     assert by_subject["Parcel shipped"].uid == "30@Deleted Messages"
     assert by_subject["Parcel shipped"].deleted
     assert (await box.message("30@Deleted Messages"))["subject"] == "Parcel shipped"
@@ -501,13 +501,13 @@ async def test_an_email_found_in_the_trash_can_be_filed_from_there():
     server.boxes["Deleted Messages"]["30"] = mail()
     box = mailbox("Home", server)
 
-    assert await box.move("30@Deleted Messages", "Zoé Client", box) == {
-        "moved_to": "Home/Zoé Client"
+    assert await box.move("30@Deleted Messages", "Café Orders", box) == {
+        "moved_to": "Home/Café Orders"
     }
     assert server.boxes["Deleted Messages"] == {}
 
 
-@pytest.mark.parametrize("email", ["5@Made up", "5@Drafts", "x@Zoé Client"])
+@pytest.mark.parametrize("email", ["5@Made up", "5@Drafts", "x@Café Orders"])
 async def test_an_id_only_reaches_the_folders_that_are_searched(email):
     server = plain()
     server.folders.update({"Sent Messages": "\\Sent", "Drafts": "\\Drafts"})
@@ -533,9 +533,9 @@ def to_max(subject, body, message_id):
 
 
 async def test_sent_emails_are_searched_and_read_but_never_filed_or_flagged(ctx):
-    server = plain(inbox={"12": from_kim("Maple Street", "The warranty of the boiler.", "<a@x>")})
+    server = plain(inbox={"12": from_kim("Bookshop", "The warranty of the kettle.", "<a@x>")})
     server.folders["Sent Messages"] = "\\Sent \\HasNoChildren"
-    server.boxes["Sent Messages"] = {"40": to_max("Boiler", "The warranty covers 300.", "<b@x>")}
+    server.boxes["Sent Messages"] = {"40": to_max("Kettle", "The warranty covers 300.", "<b@x>")}
     box = mailbox("Home", server)
     recent, search, read = build_email_tools([box], "Europe/Paris")
 
@@ -554,15 +554,15 @@ async def test_sent_emails_are_searched_and_read_but_never_filed_or_flagged(ctx)
     with pytest.raises(ToolError, match="email id given by get_recent_emails"):
         await box.flag("40@Sent Messages")
     with pytest.raises(ToolError, match="email id given by get_recent_emails"):
-        await box.move("40@Sent Messages", "Zoé Client", box)
+        await box.move("40@Sent Messages", "Café Orders", box)
     assert list(server.boxes["Sent Messages"]) == ["40"]
 
 
 async def test_gmail_sent_mail_is_found_by_its_mark_not_a_folder_named_sent(ctx):
     server = gmail({})
     server.folders.update({"Sent": "\\HasNoChildren", "[Gmail]/Messages envoyés": "\\Sent"})
-    server.boxes["Sent"] = {"5": to_max("Boiler", "A folder of mine.", "<a@x>")}
-    server.boxes["[Gmail]/Messages envoyés"] = {"9": to_max("Boiler", "Sent.", "<b@x>")}
+    server.boxes["Sent"] = {"5": to_max("Kettle", "A folder of mine.", "<a@x>")}
+    server.boxes["[Gmail]/Messages envoyés"] = {"9": to_max("Kettle", "Sent.", "<b@x>")}
     box = mailbox("Gmail", server)
 
     found = await box.search({"to": "max"}, datetime.now(UTC) - timedelta(days=1), 10, False)
@@ -592,36 +592,36 @@ async def test_gmail_shows_an_inbox_email_once_and_archived_ones_from_all_mail()
 async def test_a_gmail_email_is_filed_in_another_account_and_archived_in_gmail():
     source, target = gmail({"7": mail()}), plain()
 
-    result = await mailbox("Gmail", source).move("7", "Zoé Client", mailbox("Home", target))
+    result = await mailbox("Gmail", source).move("7", "Café Orders", mailbox("Home", target))
 
     assert result == {
-        "copied_to": "Home/Zoé Client",
+        "copied_to": "Home/Café Orders",
         "original": "archived in Gmail ([Gmail]/All Mail)",
     }
-    assert ("APPEND", "Zoé Client", "(\\Seen)") in target.commands
-    assert list(target.boxes["Zoé Client"].values()) == [mail()]
+    assert ("APPEND", "Café Orders", "(\\Seen)") in target.commands
+    assert list(target.boxes["Café Orders"].values()) == [mail()]
     assert source.boxes["INBOX"] == {} and source.boxes["[Gmail]/Trash"] == {}
     assert list(source.boxes["[Gmail]/All Mail"].values()) == [mail()]
 
 
 async def test_an_email_already_filed_there_is_not_copied_twice():
     source, target = gmail({"7": mail()}), plain()
-    target.boxes["Zoé Client"]["1"] = mail()
+    target.boxes["Café Orders"]["1"] = mail()
 
-    await mailbox("Gmail", source).move("7", "Zoé Client", mailbox("Home", target))
+    await mailbox("Gmail", source).move("7", "Café Orders", mailbox("Home", target))
 
-    assert len(target.boxes["Zoé Client"]) == 1
+    assert len(target.boxes["Café Orders"]) == 1
     assert "APPEND" not in {c[0] for c in target.commands}
 
 
 async def test_from_a_server_without_archive_the_original_stays_in_its_inbox():
     source, target = plain(inbox={"7": mail()}), plain()
 
-    result = await mailbox("Personal", source).move("7", "Zoé Client", mailbox("Home", target))
+    result = await mailbox("Personal", source).move("7", "Café Orders", mailbox("Home", target))
 
     assert result["original"] == "still in Personal INBOX"
     assert "7" in source.boxes["INBOX"]
-    assert len(target.boxes["Zoé Client"]) == 1
+    assert len(target.boxes["Café Orders"]) == 1
 
 
 async def test_moving_an_email_is_shown_to_the_user_and_needs_their_own_request(ctx):
@@ -630,18 +630,18 @@ async def test_moving_an_email_is_shown_to_the_user_and_needs_their_own_request(
         t.name: t for t in build_draft_tools([mailbox("Gmail", source), mailbox("Home", target)])
     }
     move, folders = tools["move_email"], tools["list_email_folders"]
-    args = {"account": "gmail", "id": "7", "folder": "Zoé Client", "to_account": "home"}
+    args = {"account": "gmail", "id": "7", "folder": "Café Orders", "to_account": "home"}
 
     assert move.needs_clean_turn and move.needs_user_request and move.proposable
     assert await move.summary(args) == (
-        'File into the folder "Zoé Client" (Home) the email of Gmail '
+        'File into the folder "Café Orders" (Home) the email of Gmail '
         '"Insurance certificate" from Kim Lee <kim@example.com>'
     )
     assert await folders.handler({"account": "home"}, ctx) == {
         "account": "Home",
-        "folders": ["Zoé Client"],
+        "folders": ["Café Orders"],
     }
-    assert (await move.handler(args, ctx))["copied_to"] == "Home/Zoé Client"
+    assert (await move.handler(args, ctx))["copied_to"] == "Home/Café Orders"
 
 
 async def test_a_subject_cant_pass_for_another_destination():
@@ -662,17 +662,19 @@ async def test_a_new_folder_always_waits_for_the_users_go_and_then_takes_emails(
     box = mailbox("Home", server)
     tools = {t.name: t for t in build_draft_tools([box])}
     create = tools["create_email_folder"]
-    args = {"account": "home", "name": " Clients / Jo  MARTIN "}
+    args = {"account": "home", "name": " Projects / Garden  SHED "}
 
     assert create.always_propose
-    assert await create.summary(args) == 'Create the mail folder "Clients/Jo MARTIN" (Home)'
+    assert await create.summary(args) == 'Create the mail folder "Projects/Garden SHED" (Home)'
     assert await create.handler(args, ctx) == {
         "account": "Home",
-        "folder": "Clients/Jo MARTIN",
+        "folder": "Projects/Garden SHED",
         "created": True,
     }
-    assert ("CREATE", "Clients/Jo MARTIN") in server.commands
-    assert await box.move("12", "Clients/Jo MARTIN", box) == {"moved_to": "Home/Clients/Jo MARTIN"}
+    assert ("CREATE", "Projects/Garden SHED") in server.commands
+    assert await box.move("12", "Projects/Garden SHED", box) == {
+        "moved_to": "Home/Projects/Garden SHED"
+    }
 
 
 async def test_a_folder_already_there_is_left_as_it_is(ctx):
@@ -681,9 +683,9 @@ async def test_a_folder_already_there_is_left_as_it_is(ctx):
         "create_email_folder"
     ]
 
-    result = await create.handler({"account": "home", "name": "zoé client"}, ctx)
+    result = await create.handler({"account": "home", "name": "café orders"}, ctx)
 
-    assert result == {"account": "Home", "folder": "Zoé Client", "created": False}
+    assert result == {"account": "Home", "folder": "Café Orders", "created": False}
     assert "CREATE" not in {c[0] for c in server.commands}
 
 
@@ -707,13 +709,13 @@ def test_a_refused_search_is_an_error_not_a_list_of_uids():
     assert search_uids(FakeImap([b"12 * 15"]), "ALL") == {b"12", b"15"}
 
 
-def draft(body="Hello Max,\n\nThe repairs come to [XX].\n\nSam", files=()):
+def draft(body="Hello Max,\n\nThe total comes to [XX].\n\nSam", files=()):
     msg = EmailMessage()
     msg["From"] = "Sam <sam@example.com>"
     msg["To"] = "Max Carter <max@example.com>"
     msg["Cc"] = "kim@example.com"
-    msg["Subject"] = "Deposit for Maple Street"
-    msg["In-Reply-To"] = "<inventory@example.com>"
+    msg["Subject"] = "Order 1042 at the bookshop"
+    msg["In-Reply-To"] = "<receipt@example.com>"
     msg.set_content(body)
     for name in files:
         msg.add_attachment(b"%PDF-inv", maintype="application", subtype="pdf", filename=name)
@@ -731,7 +733,7 @@ def draft_tools(server):
 
 
 async def test_drafts_are_listed_newest_first_and_taint_the_request(ctx):
-    server = with_drafts(plain(), {"5": draft(), "9": draft("Reminder", ["inventory.pdf"])})
+    server = with_drafts(plain(), {"5": draft(), "9": draft("Reminder", ["receipt.pdf"])})
     listing = draft_tools(server)["list_email_drafts"]
 
     result = await listing.handler({"account": "home"}, ctx)
@@ -741,12 +743,12 @@ async def test_drafts_are_listed_newest_first_and_taint_the_request(ctx):
     newest = result["drafts"][0]
     assert newest["to"] == "Max Carter <max@example.com>"
     assert newest["cc"] == "kim@example.com"
-    assert newest["attachments"] == [{"name": "inventory.pdf", "type": "application/pdf"}]
+    assert newest["attachments"] == [{"name": "receipt.pdf", "type": "application/pdf"}]
     assert "files" not in newest
 
 
 async def test_a_draft_is_changed_in_place_and_the_old_one_goes_to_the_trash(ctx):
-    old = draft(files=["inventory.pdf"])
+    old = draft(files=["receipt.pdf"])
     server = with_drafts(plain(), {"5": old})
     update = draft_tools(server)["update_email_draft"]
     capture = Attachment("screenshot.png", "image/png", b"\x89PNG-shot", "web")
@@ -754,7 +756,7 @@ async def test_a_draft_is_changed_in_place_and_the_old_one_goes_to_the_trash(ctx
     args = {
         "account": "home",
         "id": "5",
-        "body": "Hello Max,\n\nThe repairs come to 120.50.\n\nSam",
+        "body": "Hello Max,\n\nThe total comes to 120.50.\n\nSam",
         "attachments": ["screenshot.png"],
     }
 
@@ -766,11 +768,11 @@ async def test_a_draft_is_changed_in_place_and_the_old_one_goes_to_the_trash(ctx
     message = email.message_from_bytes(new, policy=default_policy)
     assert message["To"] == "Max Carter <max@example.com>"
     assert message["Cc"] == "kim@example.com"
-    assert message["Subject"] == "Deposit for Maple Street"
-    assert message["In-Reply-To"] == "<inventory@example.com>"
+    assert message["Subject"] == "Order 1042 at the bookshop"
+    assert message["In-Reply-To"] == "<receipt@example.com>"
     assert "120.50" in message.get_body().get_content()
     files = {p.get_filename(): p.get_content() for p in message.iter_attachments()}
-    assert files == {"inventory.pdf": b"%PDF-inv", "screenshot.png": b"\x89PNG-shot"}
+    assert files == {"receipt.pdf": b"%PDF-inv", "screenshot.png": b"\x89PNG-shot"}
     assert ("APPEND", "Drafts", "(\\Draft \\Seen)") in server.commands
 
 
@@ -788,12 +790,12 @@ async def test_changing_or_deleting_a_draft_always_waits_for_the_users_go():
 
     assert update.always_propose and delete.always_propose
     assert await update.summary(args) == (
-        'Change the draft of Home "Deposit for Maple Street" to Max Carter '
+        'Change the draft of Home "Order 1042 at the bookshop" to Max Carter '
         "<max@example.com>, kim@example.com: cc: nobody ; new text: Hello Max, Here is the "
         "screenshot. ; attach screenshot.png (the old one goes to the trash)"
     )
     assert await delete.summary({"account": "home", "id": "5"}) == (
-        'Delete the draft of Home "Deposit for Maple Street" to Max Carter '
+        'Delete the draft of Home "Order 1042 at the bookshop" to Max Carter '
         "<max@example.com>, kim@example.com (it goes to the trash)"
     )
 
@@ -816,7 +818,7 @@ async def test_a_server_that_cant_take_one_draft_out_keeps_it(ctx):
     with pytest.raises(ToolError, match="can't put this draft in the trash"):
         await tools["delete_email_draft"].handler({"account": "home", "id": "5"}, ctx)
     result = await tools["update_email_draft"].handler(
-        {"account": "home", "id": "5", "subject": "Deposit"}, ctx
+        {"account": "home", "id": "5", "subject": "Order"}, ctx
     )
 
     assert "still in the drafts" in result["old_draft"]
@@ -909,9 +911,7 @@ def from_kim(subject, body, message_id):
 
 async def test_emails_are_found_by_sender_in_every_folder_and_can_be_read(ctx):
     server = plain(inbox={"12": dated("<a@x>", "Order")})
-    server.boxes["Zoé Client"]["20"] = from_kim(
-        "Maple Street", "The warranty of the boiler.", "<b@x>"
-    )
+    server.boxes["Café Orders"]["20"] = from_kim("Bookshop", "The warranty of the kettle.", "<b@x>")
     server.boxes["Deleted Messages"]["30"] = from_kim("Photos", "The photos.", "<c@x>")
     _, search, read = build_email_tools([mailbox("Home", server)], "Europe/Paris")
 
@@ -919,22 +919,22 @@ async def test_emails_are_found_by_sender_in_every_folder_and_can_be_read(ctx):
     by_text = await search.handler({"text": "warranty"}, ctx)
 
     assert search.taints
-    assert sorted(e["id"] for e in found["emails"]) == ["20@Zoé Client", "30@Deleted Messages"]
-    assert [e["subject"] for e in by_text["emails"]] == ["Maple Street"]
+    assert sorted(e["id"] for e in found["emails"]) == ["20@Café Orders", "30@Deleted Messages"]
+    assert [e["subject"] for e in by_text["emails"]] == ["Bookshop"]
     assert 'FROM "kim.lee@example.com"' in server.searches[0]
-    message = await read.handler({"account": "home", "id": "20@Zoé Client"}, ctx)
+    message = await read.handler({"account": "home", "id": "20@Café Orders"}, ctx)
     assert "warranty" in message["text"]
 
 
 async def test_a_search_asks_each_folder_once_and_reads_unread_from_the_flags(ctx):
-    server = plain(inbox={"12": from_kim("Maple Street", "The warranty.", "<a@x>")})
-    server.boxes["Zoé Client"]["20"] = from_kim("Boiler", "The warranty too.", "<b@x>")
+    server = plain(inbox={"12": from_kim("Bookshop", "The warranty.", "<a@x>")})
+    server.boxes["Café Orders"]["20"] = from_kim("Kettle", "The warranty too.", "<b@x>")
     server.unseen = {"12"}
     search = build_email_tools([mailbox("Home", server)], "Europe/Paris")[1]
 
     found = await search.handler({"text": "warranty", "days": 14}, ctx)
 
-    assert {e["id"]: e["unread"] for e in found["emails"]} == {"12": True, "20@Zoé Client": False}
+    assert {e["id"]: e["unread"] for e in found["emails"]} == {"12": True, "20@Café Orders": False}
     # A TEXT search over a year of mail takes long: never a second one for the unread.
     # Inbox, the user's folder, the trash: one search each.
     assert len([c for c in server.commands if c[0] == "SEARCH"]) == 3
@@ -1155,7 +1155,7 @@ async def test_folders_under_the_inbox_are_filed_into_and_created_with_the_serve
 async def test_unmarked_special_folders_are_found_by_their_usual_names():
     server = dotted(inbox={"12": dated("<a@x>", "Order")})
     server.boxes["INBOX.Trash"]["30"] = dated("<b@x>", "Parcel shipped")
-    server.boxes["INBOX.Sent"]["40"] = to_max("Boiler", "Sent.", "<c@x>")
+    server.boxes["INBOX.Sent"]["40"] = to_max("Kettle", "Sent.", "<c@x>")
     box = mailbox("Home", server)
     since = datetime.now(UTC) - timedelta(hours=3)
 
@@ -1193,9 +1193,9 @@ async def test_drafts_go_to_the_servers_drafts_folder_whatever_its_name(folders,
 
 
 async def test_an_accounts_own_sent_and_trash_folders_win_and_never_take_filed_mail():
-    server = FakeServer(["IMAP4REV1", "MOVE"], {"Outgoing": "", "Bin2": "", "Zoé Client": ""})
+    server = FakeServer(["IMAP4REV1", "MOVE"], {"Outgoing": "", "Bin2": "", "Café Orders": ""})
     server.boxes["INBOX"]["12"] = mail()
-    server.boxes["Outgoing"]["40"] = to_max("Boiler", "Sent.", "<c@x>")
+    server.boxes["Outgoing"]["40"] = to_max("Kettle", "Sent.", "<c@x>")
     with_drafts(server, {"5": draft()})
     box = configured(server, sent="Outgoing", trash="Bin2")
 
@@ -1204,7 +1204,7 @@ async def test_an_accounts_own_sent_and_trash_folders_win_and_never_take_filed_m
 
     assert [m.uid for m in sent] == ["40@Outgoing"]
     assert deleted == {"deleted": True, "in_trash": "Home/Bin2"}
-    assert await box.folders() == ["Zoé Client"]
+    assert await box.folders() == ["Café Orders"]
     for folder in ("Outgoing", "Bin2"):
         with pytest.raises(ToolError, match="never file there"):
             await box.move("12", folder, box)
@@ -1256,7 +1256,7 @@ async def test_moving_an_email_never_runs_by_itself_in_a_scheduled_task(ctx):
     server = plain(inbox={"12": mail()})
     registry = ToolRegistry(build_draft_tools([mailbox("Home", server)]))
     scheduled = ToolContext(conversation=ctx.conversation, scheduled=True)
-    args = {"account": "home", "id": "12", "folder": "Zoé Client"}
+    args = {"account": "home", "id": "12", "folder": "Café Orders"}
 
     try:
         result = await registry.run("move_email", args, scheduled)

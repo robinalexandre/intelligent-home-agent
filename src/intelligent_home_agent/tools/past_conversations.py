@@ -3,7 +3,7 @@
 The journal (intelligent_home_agent.journal) keeps every turn, one file per day: what the
 user asked, the tools used and, for a request that read nothing of others', the reply.
 Here the agent reads one day of it ("what did we do today?", a recap) and searches all of
-it ("what we said about the quote for the terrace"). A turn that read an email or a page
+it ("what we said about the quote for the fence"). A turn that read an email or a page
 kept no reply; one quoting another message may repeat what an email said, so reading it
 taints the request like that email would.
 """
@@ -74,7 +74,7 @@ def build_past_conversation_tools(journal: Journal | None) -> list[Tool]:
     async def search_past_conversations(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         words = [w for w in _fold(str(args.get("query") or "")).split() if len(w) > 2]
         if not words:
-            raise ToolError('Give a few words of what was said, e.g. "terrace quote".')
+            raise ToolError('Give a few words of what was said, e.g. "fence quote".')
         try:
             days = min(max(int(args.get("days") or 90), 1), MAX_DAYS)
         except (TypeError, ValueError) as exc:
@@ -111,7 +111,7 @@ def build_past_conversation_tools(journal: Journal | None) -> list[Tool]:
             description=(
                 "Search the past conversations (as far back as the journal is kept, a year "
                 'at most) for words the user or you said: "what we said about the quote '
-                'for the terrace", "the number I gave you for the insurance". Every word '
+                'for the fence", "the number I gave you for the insurance". Every word '
                 "must appear; newest first."
             ),
             input_schema={

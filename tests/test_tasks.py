@@ -25,7 +25,7 @@ def task(title: str, on: str, body: str = "Prepare the file.", until: str = "") 
 async def test_a_due_task_starts_once_even_across_restarts(tmp_path):
     repo = FakeRepo(
         {
-            "a-loan.md": task("Loan file", "2026-01-01", "Copy my payslips into the Loan folder."),
+            "a-plants.md": task("Plants", "2026-01-01", "Water the plants on the balcony."),
             "b-later.md": task("Later", "2999-01-01"),
             "c-over.md": task("Over", "2026-01-01", until="2026-01-02"),
             "d-empty.md": task("Empty", "2026-01-01", body=""),
@@ -42,7 +42,7 @@ async def test_a_due_task_starts_once_even_across_restarts(tmp_path):
     await runner.check_once()
     await TaskRunner(repo, start, done, "Europe/Paris").check_once()  # type: ignore[arg-type]
 
-    assert started == [("Loan file", "Copy my payslips into the Loan folder.")]
+    assert started == [("Plants", "Water the plants on the balcony.")]
 
 
 async def test_a_started_task_moves_to_past_and_a_failed_move_still_runs_once(tmp_path):
@@ -65,7 +65,7 @@ async def test_a_started_task_moves_to_past_and_a_failed_move_still_runs_once(tm
 
 
 async def test_a_failing_task_is_not_run_again(tmp_path):
-    repo = FakeRepo({"a.md": task("Loan file", "2026-01-01")})
+    repo = FakeRepo({"a.md": task("Plants", "2026-01-01")})
     calls = 0
 
     async def start(_title: str, _body: str, _repeating: bool) -> None:
@@ -82,7 +82,7 @@ async def test_a_failing_task_is_not_run_again(tmp_path):
 
 
 async def test_a_repeating_task_runs_once_per_day_at_its_time_and_stays(tmp_path):
-    every = "---\ntitle: Bank receipts\non: 2026-10-22 12:00\nevery: 3 days\n---\n\nLook."
+    every = "---\ntitle: Backup check\non: 2026-10-22 12:00\nevery: 3 days\n---\n\nLook."
     repo = FakeRepo({"q.md": every})
     runs: list[bool] = []
     closed: list[str] = []
@@ -122,7 +122,7 @@ async def test_a_task_can_run_several_times_a_day(tmp_path):
 
 async def test_a_repeating_task_is_closed_for_the_day_after_its_last_run(tmp_path):
     files = {
-        "q.md": "---\ntitle: Receipts\non: 2026-10-22 12:00\nevery: day\n---\n\nLook.",
+        "q.md": "---\ntitle: Backups\non: 2026-10-22 12:00\nevery: day\n---\n\nLook.",
         "c.md": "---\ntitle: Parcels\non: 2026-10-22\nevery: day\ntimes: 08:00, 16:00\n---\n\nSee.",
     }
     runs: list[str] = []
@@ -130,7 +130,7 @@ async def test_a_repeating_task_is_closed_for_the_day_after_its_last_run(tmp_pat
 
     async def start(title: str, _body: str, _repeating: bool) -> None:
         runs.append(title)
-        if runs.count("Receipts") == 1 and title == "Receipts":
+        if runs.count("Backups") == 1 and title == "Backups":
             raise RuntimeError("boom")
 
     async def close_day(name: str, day: str) -> None:
@@ -151,12 +151,12 @@ async def test_a_repeating_task_is_closed_for_the_day_after_its_last_run(tmp_pat
     await runner.check_once(datetime(2026, 10, 23, 8, 0, tzinfo=PARIS))
     await runner.check_once(datetime(2026, 10, 23, 12, 0, tzinfo=PARIS))
 
-    assert runs == ["Parcels", "Receipts", "Parcels", "Parcels", "Receipts"]
+    assert runs == ["Parcels", "Backups", "Parcels", "Parcels", "Backups"]
     assert closed == [("c.md", "2026-10-22"), ("q.md", "2026-10-23")]
 
 
 async def test_a_task_the_user_closed_for_today_skips_the_day(tmp_path):
-    text = "---\ntitle: Receipts\non: 2026-10-22 12:00\nevery: day\ndone: 2026-10-22\n---\n\nLook."
+    text = "---\ntitle: Backups\non: 2026-10-22 12:00\nevery: day\ndone: 2026-10-22\n---\n\nLook."
     runs: list[str] = []
 
     async def start(title: str, _body: str, _repeating: bool) -> None:
@@ -166,14 +166,14 @@ async def test_a_task_the_user_closed_for_today_skips_the_day(tmp_path):
     await runner.check_once(datetime(2026, 10, 22, 12, 0, tzinfo=PARIS))
     await runner.check_once(datetime(2026, 10, 23, 12, 0, tzinfo=PARIS))
 
-    assert runs == ["Receipts"]
+    assert runs == ["Backups"]
 
 
 async def test_tasks_due_with_a_digest_run_inside_it(tmp_path):
     every = "---\ntitle: {}\non: 2026-10-22 09:00\nevery: day\n{}\n---\n\nV."
     files = {
         "a-parcels.md": every.format("Parcels", "times: 09:00, 11:00"),
-        "b-vps.md": every.format("VPS", ""),
+        "b-bins.md": every.format("Bins", ""),
         "c-brief.md": every.format("Briefing", "digest: yes"),
     }
     alone: list[str] = []
@@ -201,16 +201,16 @@ async def test_tasks_due_with_a_digest_run_inside_it(tmp_path):
     await runner.check_once(datetime(2026, 10, 22, 9, 1, tzinfo=PARIS))
     await runner.check_once(datetime(2026, 10, 22, 11, 0, tzinfo=PARIS))
 
-    assert digests == [("Briefing", ["Parcels", "VPS"])]
+    assert digests == [("Briefing", ["Parcels", "Bins"])]
     assert alone == ["Parcels"]
-    assert closed == ["b-vps.md", "c-brief.md", "a-parcels.md"]
+    assert closed == ["b-bins.md", "c-brief.md", "a-parcels.md"]
 
 
 async def test_a_task_with_digest_no_keeps_its_own_message(tmp_path):
     every = "---\ntitle: {}\non: 2026-10-22 09:00\nevery: day\n{}\n---\n\nV."
     files = {
-        "a-sheet.md": every.format("Sheet", "digest: no"),
-        "b-vps.md": every.format("VPS", ""),
+        "a-garden.md": every.format("Garden", "digest: no"),
+        "b-bins.md": every.format("Bins", ""),
         "c-brief.md": every.format("Briefing", "digest: yes"),
     }
     alone: list[tuple[str, bool]] = []
@@ -231,15 +231,15 @@ async def test_a_task_with_digest_no_keeps_its_own_message(tmp_path):
     )
     await runner.check_once(datetime(2026, 10, 22, 9, 0, tzinfo=PARIS))
 
-    assert alone == [("Sheet", True)]
-    assert digests == [("Briefing", ["VPS"])]
+    assert alone == [("Garden", True)]
+    assert digests == [("Briefing", ["Bins"])]
 
 
 async def test_a_fresh_task_runs_clean_with_its_previous_run_and_never_in_a_digest(tmp_path):
     every = "---\ntitle: {}\non: 2026-10-22 09:00\nevery: {}\n{}\n---\n\nV."
     files = {
         "a-watch.md": every.format("Tech watch", "2 days", "fresh: yes"),
-        "b-vps.md": every.format("VPS", "day", ""),
+        "b-bins.md": every.format("Bins", "day", ""),
         "c-brief.md": every.format("Briefing", "day", "digest: yes"),
     }
     alone: list[tuple[str, str, bool]] = []
@@ -269,7 +269,7 @@ async def test_a_fresh_task_runs_clean_with_its_previous_run_and_never_in_a_dige
     await runner.check_once(datetime(2026, 10, 23, 9, 0, tzinfo=PARIS))
     await runner.check_once(datetime(2026, 10, 24, 9, 0, tzinfo=PARIS))
 
-    assert digests == [("Briefing", ["VPS"])] * 3
+    assert digests == [("Briefing", ["Bins"])] * 3
     assert [(t, r) for t, _, r in alone] == [("Tech watch", False)] * 2
     assert fresh_runs == [True, True]  # silent when nothing came out
     assert "first run" in alone[0][1]
@@ -301,11 +301,11 @@ async def test_a_fresh_task_alone_does_not_wake_the_digest(tmp_path):
 
 def test_the_last_report_of_a_task_is_kept(tmp_path):
     reports = TaskReports(tmp_path / "r.json")
-    assert reports.get("Receipts") is None
-    reports.put("Receipts", "2 receipts missing", datetime(2026, 10, 22, 12, 0))
-    assert TaskReports(tmp_path / "r.json").get("Receipts") == {
+    assert reports.get("Backups") is None
+    reports.put("Backups", "2 backups missing", datetime(2026, 10, 22, 12, 0))
+    assert TaskReports(tmp_path / "r.json").get("Backups") == {
         "at": "2026-10-22 12:00",
-        "text": "2 receipts missing",
+        "text": "2 backups missing",
     }
 
 
@@ -354,7 +354,7 @@ async def test_a_gathered_task_refused_a_search_leaves_the_digest_but_the_digest
     every = "---\ntitle: {}\non: 2026-10-22 09:00\nevery: day\n{}\n---\n\nV."
     files = {
         "a-watch.md": every.format("Watch", ""),
-        "b-vps.md": every.format("VPS", ""),
+        "b-bins.md": every.format("Bins", ""),
         "c-brief.md": every.format("Briefing", "digest: yes"),
     }
     digests: list[list[str]] = []
@@ -371,7 +371,7 @@ async def test_a_gathered_task_refused_a_search_leaves_the_digest_but_the_digest
     await runner.check_once(datetime(2026, 10, 22, 9, 0, tzinfo=PARIS))
     await runner.check_once(datetime(2026, 10, 23, 9, 0, tzinfo=PARIS))
 
-    assert digests == [["Watch", "VPS"], ["VPS"]]
+    assert digests == [["Watch", "Bins"], ["Bins"]]
     assert alone == [("Watch", True)]
 
 
@@ -395,7 +395,7 @@ async def test_the_briefing_from_the_settings_runs_as_a_digest_and_a_file_replac
     built_in = built_in_tasks(strings("fr"), "7:30", "19:00")
     assert list(built_in) == ["morning-briefing.md", "evening-recap.md"]
     assert built_in_tasks(strings("en"), None, "") == {}
-    files = {"vps.md": "---\ntitle: Server\non: 2026-10-22 07:30\nevery: day\n---\n\nCheck it."}
+    files = {"bins.md": "---\ntitle: Server\non: 2026-10-22 07:30\nevery: day\n---\n\nCheck it."}
     digests: list[tuple[str, str, list[str]]] = []
     alone: list[str] = []
     closed: list[str] = []
@@ -426,7 +426,7 @@ async def test_the_briefing_from_the_settings_runs_as_a_digest_and_a_file_replac
     assert digests == [("Briefing du matin", "Fais-moi le briefing du matin", ["Server"])]
     assert alone == ["Récap du soir"]
     # Only what is in the folder is closed there: a task from the settings has no file.
-    assert closed == ["vps.md"]
+    assert closed == ["bins.md"]
 
     repo.files["morning-briefing.md"] = (
         "---\ntitle: My morning\non: 2026-10-01 06:00\nevery: weekday\n---\n\nOnly the weather."

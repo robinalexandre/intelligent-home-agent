@@ -334,7 +334,7 @@ class ActivityAlerts:
         for alert in self.alerts:
             if alert.id == wanted:
                 return alert
-        raise ToolError(f"No activity alert n°{wanted}: see list_activity_alerts.")
+        raise ToolError(f"No activity alert number {wanted}: see list_activity_alerts.")
 
     def add(self, activity: str, **given: Any) -> ActivityAlert:
         found, _ = match_activities(activity)

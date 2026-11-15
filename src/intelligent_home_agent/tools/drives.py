@@ -96,7 +96,7 @@ SOFTWARE_FOLDERS = frozenset({"bin", "lib", "libs", "doc", "docs", "src", "webap
 MACHINE_EXTENSIONS = frozenset(
     {
         ".class", ".jar", ".war", ".dll", ".so", ".dylib", ".o", ".a", ".exe", ".sys",
-        ".inf", ".cat", ".bin", ".dat", ".pyc", ".dc", ".grf", ".fst2", ".lp", ".map",
+        ".inf", ".cat", ".bin", ".dat", ".pyc", ".map",
         ".idx", ".pak", ".cab", ".msi", ".tx_", ".ex_", ".dl_", ".sy_",
     }
 )  # fmt: skip
@@ -508,7 +508,7 @@ class RcloneDrive:
         """Creates the folder and its parents; False when it was already there."""
         path = _clean_path(path)
         if not path:
-            raise ToolError("Give the new folder's path, e.g. Documents/Loan file.")
+            raise ToolError("Give the new folder's path, e.g. Documents/Trip plans.")
         item = await self.entry(path)
         if item and not item.get("IsDir"):
             raise ToolError(f"{path} is a file, not a folder.")
@@ -1246,7 +1246,7 @@ def build_drive_tools(drives: list[RcloneDrive], *, language: str = "en") -> lis
         return result
 
     path_arg = {"type": "string", "description": "Path from the top of the drive."}
-    to_folder = {"type": "string", "description": "An existing folder, e.g. Documents/Loan file"}
+    to_folder = {"type": "string", "description": "An existing folder, e.g. Documents/Trip plans"}
     new_name = {"type": "string", "description": "Name of the copy; default: the same name"}
     transfer = {"path": path_arg, "to_folder": to_folder, "name": new_name}
     if len(writable) > 1 or (several and writable):
@@ -1331,7 +1331,7 @@ def build_drive_tools(drives: list[RcloneDrive], *, language: str = "en") -> lis
         Tool(
             name="create_drive_folder",
             description=(
-                "Create a folder (and its parents) in a drive, e.g. Documents/Loan file. A "
+                "Create a folder (and its parents) in a drive, e.g. Documents/Trip plans. A "
                 "folder already there is left as it is. Only in a request that read nothing "
                 "else."
             ),

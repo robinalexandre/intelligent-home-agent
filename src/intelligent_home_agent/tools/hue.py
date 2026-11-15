@@ -83,8 +83,8 @@ class Hue:
             resp = await self._http.request(method, f"{self._base}/{path}", json=body)
         except httpx.HTTPError as exc:
             raise ToolError(
-                "The Hue bridge is unreachable (the home network is reached through the "
-                f"Apple TV): {type(exc).__name__}."
+                "The Hue bridge is unreachable (the home network can't be reached): "
+                f"{type(exc).__name__}."
             ) from exc
         if resp.status_code != 200:
             raise ToolError(f"The Hue bridge answered HTTP {resp.status_code}.")
@@ -106,7 +106,7 @@ def build_hue_tools(hue: Hue) -> list[Tool]:
     def find_room(groups: dict[str, Any], name: str) -> tuple[str, str]:
         wanted = _normalize(name)
         if wanted in _ALL_NAMES:
-            return ALL_LIGHTS, "toute la maison"
+            return ALL_LIGHTS, "the whole home"
         rooms = {k: g for k, g in groups.items() if g.get("type") in ("Room", "Zone")}
         for key, group in rooms.items():
             if _normalize(group["name"]) == wanted:

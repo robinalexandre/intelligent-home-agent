@@ -155,8 +155,8 @@ class AdbSession:
 
     async def elements(self, limit: int = 80) -> list[Element]:
         """What the screen shows, by the names apps give their elements."""
-        await self.shell("uiautomator dump /sdcard/home-agent-ui.xml >/dev/null 2>&1")
-        xml = await self._adb.run("-s", self.serial, "exec-out", "cat", "/sdcard/home-agent-ui.xml")
+        await self.shell("uiautomator dump /sdcard/agent-ui.xml >/dev/null 2>&1")
+        xml = await self._adb.run("-s", self.serial, "exec-out", "cat", "/sdcard/agent-ui.xml")
         return parse_elements(xml, limit)
 
     async def type_text(self, text: str) -> None:

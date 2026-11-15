@@ -248,7 +248,7 @@ async def test_a_reply_brings_the_message_it_points_at():
                     "m2",
                     102,
                     "That one",
-                    replyTo={"id": "true_x_m0", "body": "My roof quote"},
+                    replyTo={"id": "true_x_m0", "body": "My shelf quote"},
                 ),
                 message("m3", 103, "Just this"),
             ],
@@ -264,7 +264,7 @@ async def test_a_reply_brings_the_message_it_points_at():
     assert replies.asked == [
         "[The user replies to your own earlier message, quoted as data: «Tuesday 10am?»]\n\n"
         "Yes, that slot",
-        "[The user replies to their own earlier message, quoted as data: «My roof quote»]\n\n"
+        "[The user replies to their own earlier message, quoted as data: «My shelf quote»]\n\n"
         "That one",
         "Just this",
     ]

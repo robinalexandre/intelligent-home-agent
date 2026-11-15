@@ -1,7 +1,7 @@
-"""The pet's supplies watched: litter, food and the waste bin, pushed as notifications.
+"""The pet's supplies watched: litter, food and the waste bin, told to the user.
 
-Needs the PetKit tools (tools/petkit.py) and a push channel (NTFY_URL). In the daytime,
-every few hours (PETKIT_CHECK_MINUTES), the PetKit status is read (the same client as the
+Needs the PetKit tools (tools/petkit.py) and a way to reach the user (a chat, or
+NTFY_URL). In the daytime, every few hours (PETKIT_CHECK_MINUTES), the PetKit status is read (the same client as the
 tools: PetKit allows one session per account). A notification goes out only when something
 needs doing:
 
@@ -146,8 +146,8 @@ class PetAlerts:
             return []
         again = self._s.pet_bin_again if seen.get("last") else ""
         text = self._s.pet_bin_full.format(name=name, again=again)
-        # Seam: a chat that can show a button ("emptied") would stop the reminders on a
-        # tap; a push has no answer, so they stop when the box says it is no longer full.
+        # The reminders stop when the box says it is no longer full: the message itself
+        # takes no answer.
         await send(text)
         bins[name] = {"last": now}
         return [text]

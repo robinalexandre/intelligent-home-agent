@@ -337,7 +337,7 @@ def search_criteria(terms: dict[str, str]) -> tuple[str, str]:
 
 
 def encode_folder(name: str) -> str:
-    """A folder name in IMAP's modified UTF-7 (RFC 3501), e.g. Zoé -> Zo&AOk-."""
+    """A folder name in IMAP's modified UTF-7 (RFC 3501), e.g. Café -> Caf&AOk-."""
     out: list[str] = []
     run: list[str] = []
 
