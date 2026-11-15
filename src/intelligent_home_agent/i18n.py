@@ -160,6 +160,22 @@ class Strings:
     departure_player_playing: str
     departure_player_fix: str
 
+    # Notes left for the user's coding sessions and scheduled tasks (tools/assistant_notes.py,
+    # tools/scheduled_tasks.py): how their writes read before the user's go.
+    assistant_reminder_label: str
+    handoff_label: str
+    note_label: str
+    reminder_close_summary: str
+    reminder_stop_summary: str
+    reminder_delete_summary: str
+    handoff_delete_summary: str
+    task_label: str
+    task_update_label: str
+    task_delete_summary: str
+    # The titles of the briefing and the recap when they run by themselves (tasks.py).
+    morning_briefing_title: str
+    evening_recap_title: str
+
 
 LANGUAGES: dict[str, Strings] = {
     "en": Strings(
@@ -258,6 +274,18 @@ LANGUAGES: dict[str, Strings] = {
         drive_trash_unknown="local copy {id}",
         drive_restore="Put {item} back in its drive, replacing nothing",
         drive_purge="Erase for good the local copy of {item}",
+        assistant_reminder_label="Reminder for your coding sessions",
+        handoff_label="Handoff note for your next coding session",
+        note_label="“{title}” ({id})",
+        reminder_close_summary="Mark the assistant reminder {label} done",
+        reminder_stop_summary="Stop the repeating assistant reminder {label} for good",
+        reminder_delete_summary="Delete the assistant reminder {label} for good",
+        handoff_delete_summary="Delete the handoff note {path}",
+        task_label="Scheduled task",
+        task_update_label="Change the scheduled task",
+        task_delete_summary="Delete the scheduled task {label} for good",
+        morning_briefing_title="Morning briefing",
+        evening_recap_title="Evening recap",
         lock_door_summary='Lock the door "{name}" (Nuki)',
         unlock_door_summary='Unlock the door "{name}" (Nuki)',
         unlatch_door_summary='Open the door "{name}": unlock it and pull the latch (Nuki)',
@@ -415,6 +443,18 @@ LANGUAGES: dict[str, Strings] = {
         drive_trash_unknown="copie locale {id}",
         drive_restore="Remettre {item} dans son drive, sans rien remplacer",
         drive_purge="Effacer pour de bon la copie locale de {item}",
+        assistant_reminder_label="Rappel pour tes sessions de code",
+        handoff_label="Note de passation pour ta prochaine session de code",
+        note_label="« {title} » ({id})",
+        reminder_close_summary="Acquitter le rappel de l'assistant de code {label}",
+        reminder_stop_summary="Arrêter pour de bon le rappel répété {label}",
+        reminder_delete_summary="Supprimer pour de bon le rappel de l'assistant de code {label}",
+        handoff_delete_summary="Supprimer la note de passation {path}",
+        task_label="Tâche planifiée",
+        task_update_label="Modifier la tâche planifiée",
+        task_delete_summary="Supprimer pour de bon la tâche planifiée {label}",
+        morning_briefing_title="Briefing du matin",
+        evening_recap_title="Récap du soir",
         lock_door_summary="Verrouiller la porte « {name} » (Nuki)",
         unlock_door_summary="Déverrouiller la porte « {name} » (Nuki)",
         unlatch_door_summary="Ouvrir la porte « {name} » : déverrouiller et tirer le pêne (Nuki)",

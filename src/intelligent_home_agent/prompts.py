@@ -13,6 +13,10 @@ from zoneinfo import ZoneInfo
 
 from intelligent_home_agent.activities import FORECASTS, Activity
 from intelligent_home_agent.i18n import strings
+from intelligent_home_agent.tasks import SILENT_REPLY
+
+# agent.TASK_TAG, which can't be imported from here (a test keeps the two the same).
+TASK_TAG = "[Scheduled task the user left you:"
 
 _SPOKEN = """Your replies are read aloud by a voice assistant (Siri, a smart speaker...), so:
 - Answer in {lang}, in one to three short spoken sentences.
@@ -74,6 +78,10 @@ _PRIVATE_SOURCES = {
     "get_reminders": "Apple reminders",
     "search_apple_notes": "Apple notes",
     "read_apple_note": "Apple notes",
+    "list_repositories": "your repositories",
+    "browse_repository": "your repositories",
+    "search_repository": "your repositories",
+    "check_dependencies": "your repositories",
     "list_deliveries": "the parcels noted from emails",
     "read_drive_file": "files of a drive",
     "read_saved_file": "kept files",
@@ -399,6 +407,7 @@ def _daily_help(cfg: PromptConfig) -> str:
             "- get_assistant_reminders: what the user asked their coding assistant to remind "
             "them of; say each title in a few words, and its last day when it is today."
         )
+    lines.extend(_notes_and_tasks(t))
     lines.extend(_documents(t))
     return "\n".join(lines)
 
@@ -522,6 +531,91 @@ def _drives(t: set[str]) -> str:
         "copy of is refused: then propose delete_drive_without_copy and let the user "
         "decide."
     )
+
+
+def _notes_and_tasks(t: set[str] | frozenset[str]) -> list[str]:
+    """The notes left for the user's coding sessions, their repositories, and the tasks
+    the agent runs by itself (docs/tasks.md)."""
+    lines = []
+    if "create_assistant_reminder" in t:
+        lines.append(
+            "- create_assistant_reminder: a reminder for the user's coding sessions, for work "
+            "on code or projects. create_handoff: a note to pick a piece of work up in "
+            "their next coding session. Write both in the user's language, concrete enough "
+            "for a session days later; never put passwords, tokens or keys in them. When "
+            "the user says an assistant reminder is done, or no longer wanted: "
+            "close_assistant_reminder (stop for a repeating one they want gone) or, only "
+            "when they say delete, delete_assistant_reminder, with the id "
+            "get_assistant_reminders gave. Both always wait for their go, even after "
+            "reading the reminders.\n"
+            "- When the user asks for something none of your tools can do, say so plainly "
+            "in one sentence, then offer to leave a request in their assistant reminders "
+            "(create_assistant_reminder) so it can be built. Never pretend you did it."
+        )
+    if "browse_repository" in t:
+        lines.append(
+            "- The user's GitHub repositories, read-only: list_repositories, "
+            "browse_repository, search_repository. Their notes repository, when there is "
+            "one, is the default: look there first for anything about their work, projects, "
+            "servers, tools or plans before saying you don't know. Start from a folder "
+            "listing and open only the files you need."
+        )
+    if "check_dependencies" in t:
+        search = (
+            " web_search finds news of compromised packages in the tech the user runs; it "
+            "only runs at once before the request reads anything (repositories, "
+            "check_dependencies, emails): search first, then read."
+            if "web_search" in t
+            else ""
+        )
+        lines.append(
+            "- Security watch: check_dependencies lists the known flaws in a repository's "
+            "exact dependency versions (from its lockfiles). Report only what matters "
+            "(malicious, critical or high), each with its minimal fix: the version to "
+            f"upgrade to.{search}"
+        )
+    if "schedule_task" in t:
+        reminder = (
+            " A plain reminder goes to the phone with create_reminder; schedule_task when "
+            "you must look something up or write to the user at that time."
+            if "create_reminder" in t
+            else ' It is also how you remind the user of something at a time ("remind me '
+            'tomorrow at ten to call the plumber").'
+        )
+        lines.append(
+            "- schedule_task: something you will do by yourself later (a check, a piece of "
+            'work, a message at a time: "tomorrow morning, check whether the plumber '
+            f'answered").{reminder} Resolve relative times into a local date-time yourself. '
+            "list_scheduled_tasks shows your tasks (briefing, recap, checks). When the user "
+            "asks to change one (what it does, its time, its days), update_scheduled_task "
+            "with its id, never a second task; delete_scheduled_task only when they ask to "
+            "remove one. One thing covered by both a reminder and a task you scheduled is "
+            "said once, and never scheduled again.\n"
+            f'- A message starting with "{TASK_TAG}" is a request the user wrote earlier '
+            "for you to start on your own at that time: do it as if they had just asked, "
+            "and end with what they must check or answer. A repeating one comes with your "
+            "last report for it, and the ones before it: what you already said is in all "
+            "of them, since a report that only said what changed leaves the rest to the "
+            "earlier ones.\n"
+            "- Recurring tasks (repeating, fresh, a digest such as the briefing or the "
+            "recap when it runs by itself) are silent about nothing. Say only what is "
+            "useful: something new, something to do or decide, a real problem. A section "
+            'with nothing useful is left out entirely, never a line about it: no "no '
+            'parcel", "no wind", "nothing new", "the same as last time", "all fine". When '
+            "nothing at all is useful (nothing found, all fine, or only what you already "
+            f"said and the user has not answered), reply {SILENT_REPLY} alone, with no "
+            "sentence around it: the user gets no message. Otherwise say only what is new, "
+            "then what still waits for their answer in one line. A check you could not do "
+            "(a tool down) is one short line, said once: when one of your reports already "
+            f"said it, that is {SILENT_REPLY}. Only the user's own message gets an answer "
+            "however little there is.\n"
+            "- A task may come with what your other tasks due at the same time found: fold "
+            "each into one short line of your reply under a short label of its subject, "
+            "most urgent first, with what the user must do; leave out those that need "
+            f"nothing. When neither they nor your own sections hold anything useful, that "
+            f"is {SILENT_REPLY} too."
+        )
+    return lines
 
 
 def _activities(cfg: PromptConfig) -> str | None:

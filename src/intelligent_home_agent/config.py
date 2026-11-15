@@ -369,10 +369,40 @@ class Settings(BaseSettings):
 
     # --- GitHub (token that can read the user's repositories) --------------------------
     github_token: SecretStr | None = None
-    # Reminders left with a coding assistant, one Markdown file each in a repo the token
-    # can read: "owner/repo". Empty: no assistant reminders.
-    assistant_reminders_repo: str | None = None
+    # Let the agent list the user's repositories, read and search their files, and check
+    # their dependencies for known flaws (OSV.dev). Read-only.
+    github_repositories: bool = False
+
+    # --- Notes repository (docs/tasks.md): reminders and handoff notes for coding sessions
+    # A repository of notes the token can read, "owner/repo": reminders left with a coding
+    # assistant, one Markdown file each. Empty: no assistant reminders.
+    # ASSISTANT_REMINDERS_REPO is its former name.
+    notes_repo: str | None = Field(
+        None, validation_alias=AliasChoices("notes_repo", "assistant_reminders_repo")
+    )
     assistant_reminders_path: str = "reminders"
+    handoffs_path: str = "handoffs"
+    # Let the agent leave reminders and handoff notes there and close reminders (the token
+    # must be allowed to write the repository's contents). Off: the repository is only read.
+    notes_write: bool = False
+    # Optional, for a repository that encrypts folders with git-crypt: the key it exported
+    # (git-crypt export-key), as one base64 line. Empty: MEMORY_CRYPT_KEY when the memory
+    # is in the same repository.
+    notes_crypt_key: SecretStr | None = None
+
+    # --- Tasks the agent runs by itself (docs/tasks.md) ---------------------------------
+    # They need a way to reach the user (NTFY_URL); without one, there are none.
+    # local: Markdown files in DATA_DIR/tasks. github: a folder of NOTES_REPO (the token
+    # must be allowed to write its contents). off: none.
+    tasks_store: Literal["local", "github", "off"] = "local"
+    # Where the folder is. Empty: tasks, in DATA_DIR (local) or in a folder named after
+    # the assistant (github: "Nova" keeps nova/tasks).
+    tasks_path: str = ""
+    tasks_poll_seconds: float = Field(60, gt=0)
+    # The briefing and the recap, sent every day at that local time ("07:30"). Empty: only
+    # when asked.
+    morning_briefing_at: str | None = None
+    evening_recap_at: str | None = None
 
     # --- Health: Withings scale (weigh-ins, read-only; docs/health.md) -----------------
     withings_client_id: str | None = None
@@ -592,6 +622,24 @@ class Settings(BaseSettings):
             self.drive_ocr_model = (
                 DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
             )
+        return self
+
+    @field_validator("morning_briefing_at", "evening_recap_at")
+    @classmethod
+    def _a_time_of_day(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        hours, sep, minutes = value.strip().partition(":")
+        if not (sep and hours.isdigit() and minutes.isdigit() and len(minutes) == 2):
+            raise ValueError('a time of day is "HH:MM", e.g. 07:30')
+        if int(hours) > 23 or int(minutes) > 59:
+            raise ValueError('a time of day is "HH:MM", e.g. 07:30')
+        return f"{int(hours):02d}:{minutes}"
+
+    @model_validator(mode="after")
+    def _tasks_are_usable(self) -> "Settings":
+        if self.tasks_store == "github" and not (self.github_token and self.notes_repo):
+            raise ValueError("TASKS_STORE=github needs GITHUB_TOKEN and NOTES_REPO")
         return self
 
     @model_validator(mode="after")

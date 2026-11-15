@@ -12,7 +12,7 @@ def item(repo, title, days_open):
     return {
         "repository_url": f"{API_URL}/repos/{repo}",
         "title": title,
-        "user": {"login": "alex"},
+        "user": {"login": "sam"},
         "draft": False,
         "created_at": created.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -36,7 +36,7 @@ async def test_groups_pull_requests_waiting_for_the_user(ctx):
     assert result["review_requested"]["pull_requests"][0] == {
         "repo": "acme/api",
         "title": "Add invoices",
-        "author": "alex",
+        "author": "sam",
         "draft": False,
         "open_for_days": 3,
     }

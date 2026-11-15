@@ -43,7 +43,12 @@ src/intelligent_home_agent/
   conversations.py  conversation state: messages, files (Attachment), writes waiting for
                     the user's go (Proposal), pending Home Assistant confirmations; what
                     of a chat is saved in DATA_DIR (ConversationStore.save, FileStore)
-  config_crypt.py   git-crypt as a codec, for a memory kept in an encrypted repository
+  config_crypt.py   git-crypt as a codec, for a memory or notes kept in an encrypted
+                    repository
+  tasks.py          tasks the agent starts by itself: TaskRunner (a job of the app),
+                    TaskReports; main.run_task and run_digest answer them (docs/tasks.md)
+  deliver.py        where a report written with nobody asking goes: ReportChannel
+                    (ntfy; add a chat here), Delivery, Outbox (GET /v1/tasks/reports)
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
@@ -191,10 +196,21 @@ dict blocks, never SDK objects).
 Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/` and
 `files/` (chats only: `main.save_conversation`, `restore_conversations`, `file_store`),
 `memory.md` and `procedures.md` (unless `MEMORY_STORE=github`), `turned-down-alerts.json`.
+`tasks/` (unless `TASKS_STORE=github`), `tasks-done.json`, `tasks-reports.json` and
+`task-outbox.json` (which tasks ran, their last reports, what was sent).
 A feature that keeps a file follows the same pattern: written through a temporary file,
 mode 600, named by the code and never by what a client or a model sent. What must reach
 every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is
 the `memory=` hook of `Agent`; that text is also registered with the leak guard.
+
+## Adding a channel for what the agent says by itself
+
+A task's report leaves through `app.state.delivery` (`deliver.Delivery`). A new channel
+(a chat) is a class with the attributes of `deliver.ReportChannel` (`name`, `display`,
+`conversation_id`, `reaches`) and `async send(title, text)`. Put it first in
+`main.build_delivery` and name it in `main.reports_reach`, which is what turns the
+tasks on. With a `conversation_id`, tasks run in that conversation and may park writes
+for the user's go there (`main.answer_task`); with `None` (ntfy) nothing is parked.
 
 ## Adding an LLM provider
 

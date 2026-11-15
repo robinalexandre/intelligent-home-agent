@@ -129,3 +129,29 @@ __all__ = [
     "build_wind_tools",
     "trusted_domains",
 ]
+
+# Notes for the user's coding sessions, their repositories, and the agent's own tasks.
+from intelligent_home_agent.tools.assistant_notes import (  # noqa: E402
+    LocalFolder,
+    NotesRepo,
+    RepoFolder,
+    build_assistant_note_tools,
+)
+from intelligent_home_agent.tools.repos import Repositories, build_repository_tools  # noqa: E402
+from intelligent_home_agent.tools.scheduled_tasks import build_task_tools  # noqa: E402
+from intelligent_home_agent.tools.vulnerabilities import (  # noqa: E402
+    Vulnerabilities,
+    build_vulnerability_tools,
+)
+
+__all__ += [
+    "LocalFolder",
+    "NotesRepo",
+    "RepoFolder",
+    "Repositories",
+    "Vulnerabilities",
+    "build_assistant_note_tools",
+    "build_repository_tools",
+    "build_task_tools",
+    "build_vulnerability_tools",
+]
