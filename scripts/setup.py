@@ -550,7 +550,19 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
             if "reminders" in sections:
                 repo = p.ask("Repo with the coding-assistant reminders, owner/repo (empty: none)")
                 if repo:
-                    env["ASSISTANT_REMINDERS_REPO"] = repo
+                    env["NOTES_REPO"] = repo
+                    if p.yes(
+                        "  Let the agent leave reminders and handoff notes there for your "
+                        "coding sessions, and close reminders (the token must write to it)?",
+                        False,
+                    ):
+                        env["NOTES_WRITE"] = "true"
+            if p.yes(
+                "Let the agent read the files of your repositories and check their "
+                "dependencies for known flaws (read-only)?",
+                False,
+            ):
+                env["GITHUB_REPOSITORIES"] = "true"
 
 
 MEMORY = {
@@ -639,6 +651,35 @@ def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
     return channels
 
 
+def ask_time(p: Prompter, question: str) -> str:
+    while True:
+        answer = p.ask(question)
+        hours, _, minutes = answer.partition(":")
+        if not answer:
+            return ""
+        if hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60:
+            return f"{int(hours):02d}:{int(minutes):02d}"
+        p.say("  A time of day as HH:MM, e.g. 07:30; empty for none.")
+
+
+def ask_tasks(p: Prompter, env: dict[str, str]) -> None:
+    """Tasks the assistant runs by itself reach the user as a push: asked only with one."""
+    if "NTFY_URL" not in env:
+        return
+    p.say("\n# Tasks the assistant runs by itself, sent as a push (docs/tasks.md)")
+    p.say("  You can then ask it to check or remind you of something later, or every week.")
+    if at := ask_time(p, "Send the morning briefing every day at (HH:MM, empty: only when asked)"):
+        env["MORNING_BRIEFING_AT"] = at
+    if at := ask_time(p, "Send the evening recap every day at (HH:MM, empty: only when asked)"):
+        env["EVENING_RECAP_AT"] = at
+    if "NOTES_REPO" in env and p.yes(
+        f"Keep the tasks in {env['NOTES_REPO']} rather than on this machine, so you (and "
+        "your coding assistant) can write some there?",
+        False,
+    ):
+        env["TASKS_STORE"] = "github"
+
+
 GROUPS = [
     ("API", ["AGENT_API_TOKEN"]),
     (
@@ -686,7 +727,7 @@ GROUPS = [
         ],
     ),
     ("Mail", ["MAIL_ACCOUNTS"]),
-    ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
+    ("GitHub", ["GITHUB_TOKEN", "GITHUB_REPOSITORIES", "NOTES_REPO", "NOTES_WRITE"]),
     (
         "Documents and pictures",
         [
@@ -700,6 +741,7 @@ GROUPS = [
     ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
     ("File drives", ["DRIVE_PASSWORD", "DRIVES", "DRIVE_OCR"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
+    ("Tasks", ["TASKS_STORE", "MORNING_BRIEFING_AT", "EVENING_RECAP_AT"]),
 ]
 
 
@@ -757,6 +799,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     env.pop("_COMPOSE_OLLAMA", None)
     env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
+    ask_tasks(p, env)
 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:

@@ -51,6 +51,9 @@ ANSWERS = [
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
+    "7h",  # the briefing by itself: not a time, asked again
+    "7:30",
+    "",  # no recap by itself
 ]
 SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
@@ -101,6 +104,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
     assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
+    assert env["MORNING_BRIEFING_AT"] == "07:30" and "EVENING_RECAP_AT" not in env
+    assert "TASKS_STORE" not in env  # files on this machine, the default
     assert "HA_TOKEN" not in env and "NTFY_TOKEN" not in env
     assert len(env["AGENT_API_TOKEN"]) >= 40
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -309,3 +314,28 @@ def test_a_calendar_on_another_server_asks_for_both_addresses():
     assert queue == [] and "CALDAV_WRITE" not in env
     assert env["CALDAV_URL"] == "https://dav.example.com/"
     assert env["CARDDAV_URL"] == "https://dav.example.com/c/"
+
+
+def test_a_notes_repository_may_be_written_to_and_hold_the_tasks():
+    answers = ["n", "n", "me/notes", "y", "y"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["ghp-secret"])
+    env = {}
+    prompter = setup.Prompter(read, read_secret, lambda _line: None)
+    setup.ask_sources(prompter, env, ["reminders"])
+    assert queue == []
+    assert env == {
+        "GITHUB_TOKEN": "ghp-secret",
+        "NOTES_REPO": "me/notes",
+        "NOTES_WRITE": "true",
+        "GITHUB_REPOSITORIES": "true",
+    }
+
+    # Without a push nothing is asked: a task would have no way to reach the user.
+    setup.ask_tasks(setup.Prompter(*scripted([])[:1], read_secret, lambda _line: None), env)
+    env["NTFY_URL"] = "https://ntfy.example.com/topic"
+    read, queue = scripted(["", "19:00", "y"])
+    setup.ask_tasks(setup.Prompter(read, read_secret, lambda _line: None), env)
+    assert queue == []
+    assert env["EVENING_RECAP_AT"] == "19:00" and "MORNING_BRIEFING_AT" not in env
+    assert env["TASKS_STORE"] == "github"
