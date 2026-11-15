@@ -8,6 +8,7 @@ all behind `Authorization: Bearer <AGENT_API_TOKEN>`:
 | `POST /v1/ask` | `{"text": "...", "conversation_id": "...", "context": "...", "display": "voice" \| "notification" \| "chat", "files": [...]}` | A question or command, with a short memory per `conversation_id`. |
 | `POST /v1/briefing` | `{"kind": "morning" \| "evening", "context": "...", "push": false}` | The morning briefing or evening recap, written to be read. `push: true` also sends it through ntfy. Each call starts a fresh conversation. |
 | `GET /v1/files/{name}?conversation_id=...` | | A file of the conversation, e.g. one the agent made. |
+| `GET /v1/tasks/reports?since=...` | | What the tasks the agent ran by itself reported ([tasks.md](tasks.md)): the last 50, oldest first, each with `at`, `title`, `text`, `sent_by`. |
 | `POST /v1/reset?conversation_id=...` | | Forget a conversation now, with its saved copy and files. |
 
 Both `ask` and `briefing` return `reply` and `actions` (things the phone should do, such
@@ -174,7 +175,9 @@ and iOS and a web app with desktop notifications. Self-host it or use the public
 
 ## Scheduled tasks (cron, a chat or coding-assistant app)
 
-Anything that can run on a schedule and send an HTTPS request can deliver the briefing:
+The agent can send the briefing by itself (`MORNING_BRIEFING_AT`, with ntfy), and run
+other tasks you ask for: see [tasks.md](tasks.md). Without that, anything that can run
+on a schedule and send an HTTPS request can deliver the briefing:
 
 ```bash
 curl -s https://agent.example.com/v1/briefing \

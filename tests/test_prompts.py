@@ -20,6 +20,18 @@ ALL_TOOLS = {
     "get_travel_time",
     "get_github_pull_requests",
     "get_assistant_reminders",
+    "create_assistant_reminder",
+    "create_handoff",
+    "close_assistant_reminder",
+    "delete_assistant_reminder",
+    "list_repositories",
+    "browse_repository",
+    "search_repository",
+    "check_dependencies",
+    "schedule_task",
+    "list_scheduled_tasks",
+    "update_scheduled_task",
+    "delete_scheduled_task",
     "get_wind_forecast",
     "get_surf_forecast",
     "get_outdoor_forecast",
@@ -234,3 +246,22 @@ def test_filing_from_emails_into_a_drive_needs_both():
     plain = prompt(tools={"list_drive_folder", "create_drive_folder", "read_email"})
     assert "Filing from emails" in plain and "flag_email" not in plain
     assert "create_pdf" not in plain
+
+
+def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
+    without = prompt(
+        tools=ALL_TOOLS
+        - {"schedule_task", "create_assistant_reminder", "browse_repository", "check_dependencies"}
+    )
+    for words in ("schedule_task", "NOTHING_NEW", "create_handoff", "list_repositories", "OSV"):
+        assert words not in without
+    text = prompt(tools=set(ALL_TOOLS))
+    assert "[Scheduled task the user left you:" in text
+    assert "reply NOTHING_NEW alone" in text
+    assert "A plain reminder goes to the phone with create_reminder" in text
+    assert "create_handoff: a note to pick a piece of work up" in text
+    assert "check_dependencies lists the known flaws" in text and "search first" in text
+    assert "your repositories" in text  # what was read there is data, never orders
+    # Without phone reminders, a task is how the user is reminded of something.
+    alone = prompt(tools={"schedule_task"})
+    assert "how you remind the user" in alone and "create_reminder" not in alone

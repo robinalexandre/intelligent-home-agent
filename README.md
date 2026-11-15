@@ -38,6 +38,11 @@ spoken morning briefing and evening recap.
     sends or deletes an email ([docs/mail-calendar.md](docs/mail-calendar.md)).
   - When to leave for an appointment (driving time from home, OpenStreetMap).
   - GitHub pull requests waiting for you, and reminders left with a coding assistant.
+  - Tasks it runs by itself and sends as a push: a reminder at a time, a check every
+    week, the briefing each morning; silent when there is nothing new. And, in a
+    GitHub repository of yours, notes for your coding sessions (reminders, handoff
+    notes), your repositories read-only, and the known flaws in their dependencies
+    ([docs/tasks.md](docs/tasks.md)).
   - Connectors: any service that has an MCP server, such as your bank or your hosting
     provider, read freely and changed only on your yes
     ([docs/connectors.md](docs/connectors.md)).
@@ -138,7 +143,13 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only; `"write": true` on an account allows drafts, flags and filing there. |
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
 | `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
-| `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
+| `GITHUB_REPOSITORIES` | `false` | Read the files of your repositories and check their dependencies for known flaws (OSV.dev); read-only. |
+| `NOTES_REPO`, `ASSISTANT_REMINDERS_PATH`, `HANDOFFS_PATH` | unset, `reminders`, `handoffs` | Notes for your coding sessions: `owner/repo` and its folders ([docs/tasks.md](docs/tasks.md)). `ASSISTANT_REMINDERS_REPO` still works. |
+| `NOTES_WRITE` | `false` | Let the agent leave reminders and handoff notes there and close reminders. |
+| `NOTES_CRYPT_KEY` | unset | Optional: the git-crypt key of that repository (`MEMORY_CRYPT_KEY` when it also holds the memory). |
+| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need `NTFY_URL`. |
+| `TASKS_PATH`, `TASKS_POLL_SECONDS` | `tasks`, `60` | The folder (in a repository: `<assistant>/tasks`) and how often it is checked. |
+| `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT` | unset | Send the briefing and the recap every day at that time (`07:30`). |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
 | `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR` | `true`, `auto`, DejaVu | PDFs, forms and drawings ([docs/documents.md](docs/documents.md)); paper `a4`, `letter` or by country; a folder of fonts. |
 | `EXERCISE_PHOTOS_ENABLED` | `false` | Exercise photos from a public-domain bank. |
@@ -149,7 +160,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DRIVE_INDEX_HOURS` | `24` | How old the index of file names may get. |
 | `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
 | `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
-| `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
+| `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing` and for the tasks the agent runs by itself. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
@@ -178,8 +189,9 @@ Wind activities without spots fall back to the general weather. To add an activi
 
 `get_assistant_reminders` reads one Markdown file per reminder from a GitHub repo, with a
 front matter of `title`, `on` (when it starts showing), `until` (last day), and optional
-`where` and `machine`. Any coding agent can write these files; the format is in
-`tools/assistant_reminders.py`.
+`every`, `where`, `machine` and `group`. Any coding agent can write these files; with
+`NOTES_WRITE` the agent leaves and closes them too. The format, the handoff notes and
+the tasks that share it are in [docs/tasks.md](docs/tasks.md).
 
 ### Model providers
 
@@ -259,6 +271,13 @@ The guardrails are enforced in code, not only in the prompt.
   names of the tools used stay in conversation memory; the private content is dropped, so
   it can't steer later requests. A request that fails is rolled back entirely. The
   journal keeps neither the reply nor the tool arguments of a tainted request.
+- **Tasks**: a task is run later with nobody watching, so the agent only schedules one
+  in a request that read nothing written by others (else it waits for your go, shown
+  word for word), and only your own message changes or deletes one. A repeating task
+  starts as a request that read others' content: it reports, and neither searches the
+  web nor writes, unless it runs *fresh*, without what earlier runs read. Notes left
+  in the notes repository follow the same rule, and closing or deleting one always
+  asks first. Keys and tokens are refused in both.
 - **Memory**: a remembered fact comes back in every later request, so nothing is
   remembered, forgotten or saved as a procedure after a read or in a reply quoting a
   message without your go, shown with every word; passwords, keys and tokens are refused.
