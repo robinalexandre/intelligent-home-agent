@@ -50,6 +50,9 @@ ALL_TOOLS = {
     "domain_lookup",
     "osm_lookup",
     "reverse_image_search",
+    "read_whatsapp_chats",
+    "mark_whatsapp_chats_read",
+    "ask_in_poll",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 
@@ -204,3 +207,18 @@ def test_documents_and_pictures_are_mentioned_only_when_their_tools_exist():
     for absent in ("create_pdf", "fill_pdf", "copy_pdf_pages", "run_code", "list_saved_files"):
         assert absent not in bare
     assert "kept files were read" not in bare
+
+
+def test_the_chat_channel_rules_come_only_with_a_channel_and_only_in_the_chat():
+    def shown(display, tools=ALL_TOOLS):
+        cfg = PromptConfig(assistant_name="Nova", language="en", timezone="UTC", tools=set(tools))
+        return build_system_prompt(cfg, display=display)
+
+    text = shown("chat")
+    assert "ask it with ask_in_poll" in text and "A voice message comes as" in text
+    assert "Other WhatsApp chats: read_whatsapp_chats" in text
+    assert "WhatsApp chats" in text.split("Untrusted content")[1]
+    assert "ask_in_poll" not in shown("voice")
+    # A client that only says display "chat" (no channel set up) has no polls to offer.
+    bare = shown("chat", ALL_TOOLS - {"ask_in_poll", "read_whatsapp_chats"})
+    assert "ask_in_poll" not in bare and "read_whatsapp_chats" not in bare

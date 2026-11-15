@@ -157,6 +157,7 @@ def test_briefing_uses_the_language_and_a_fresh_conversation(make_client):
         "reply": "echo: Fais-moi le récap du soir",
         "actions": [],
         "pushed": False,
+        "delivered": False,
     }
     assert client.stub.calls == [
         ("briefing-evening", "Fais-moi le récap du soir", "Rappels: sport")
@@ -240,6 +241,9 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "domain_lookup",
         "osm_lookup",
         "reverse_image_search",
+        "ask_in_poll",
+        "read_whatsapp_chats",
+        "mark_whatsapp_chats_read",
     }
     # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
     # down, and the journal's search.
