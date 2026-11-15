@@ -2,6 +2,12 @@ from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.prompts import PromptConfig, build_system_prompt
 
 ALL_TOOLS = {
+    "start_job",
+    "ask_job",
+    "list_jobs",
+    "stop_job",
+    "allow_coder_permission",
+    "refuse_coder_permission",
     "call_service",
     "get_weather",
     "get_calendar_events",
@@ -273,3 +279,11 @@ def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
     # Without phone reminders, a task is how the user is reminded of something.
     alone = prompt(tools={"schedule_task"})
     assert "how you remind the user" in alone and "create_reminder" not in alone
+
+
+def test_coding_jobs_are_only_named_when_their_tools_exist():
+    text = prompt()
+    assert "start_job hands work" in text and "refuse_coder_permission" in text
+    assert "the coding jobs' reports" in text
+    without = prompt(tools=ALL_TOOLS - {"start_job", "list_jobs", "allow_coder_permission"})
+    assert "start_job" not in without and "coder" not in without

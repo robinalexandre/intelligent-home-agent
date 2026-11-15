@@ -242,6 +242,14 @@ class JobRunner:
         # The jobs being followed: one object each, shared by the follower and the tools.
         self._live: dict[str, Job] = {}
 
+    def attach(self, report: Reporter | None = None, tracker: Tracker | None = None) -> None:
+        """Where the reports go and who tells the news on the way, once the app is up:
+        the tools are built before it."""
+        if report is not None:
+            self._report = report
+        if tracker is not None:
+            self._tracker = tracker
+
     def console_url(self, job: Job) -> str:
         return self._backend.console_url(job.session_id)
 

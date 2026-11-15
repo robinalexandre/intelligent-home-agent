@@ -212,6 +212,11 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "create_reminder",
     } <= names
     assert not names & {
+        "start_job",
+        "ask_job",
+        "list_jobs",
+        "stop_job",
+        "allow_coder_permission",
         "list_entities",
         "call_service",
         "get_surf_forecast",

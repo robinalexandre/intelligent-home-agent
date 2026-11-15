@@ -4,6 +4,7 @@ Run ``python scripts/setup.py`` to write a .env interactively; .env.example list
 setting with a comment.
 """
 
+from datetime import time
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
@@ -493,6 +494,54 @@ class Settings(BaseSettings):
     # Empty: a small Claude model with anthropic.
     drive_ocr_model: str = ""
 
+    # --- Coding jobs handed to a subagent that works on its own (docs/jobs.md) ----------
+    # For people who code; off by default. Who runs them: "claude_code", Claude Code in
+    # the coder container (compose/coder.yml) on the user's Claude subscription, or
+    # "managed", an Anthropic Managed Agents session billed to the API (it needs
+    # LLM_PROVIDER=anthropic and its key). Reports reach the user as the agent's other
+    # reports do (NTFY_URL, a chat): without a way to reach them there are no jobs.
+    jobs_runner: Literal["off", "claude_code", "managed"] = "off"
+    # claude_code: where the coder container is (set by compose/coder.yml) and the secret
+    # both share.
+    coder_url: str | None = None
+    coder_token: SecretStr | None = None
+    # managed: the agent, the environment and the vault scripts/jobs_setup.py creates.
+    jobs_agent_id: str | None = None
+    jobs_environment_id: str | None = None
+    jobs_vault_id: str | None = None
+    # GitHub token with contents and pull-requests write on the repositories the coder may
+    # work on, and nothing else: its scope is what a job can touch. claude_code: the coder
+    # container holds it. managed: the session mounts the repository with it.
+    jobs_github_token: SecretStr | None = None
+    # managed: hard cap on what one job may spend, at list prices, and how many times the
+    # grader may send the coder back to its pull request.
+    jobs_budget_usd: float = Field(10, gt=0)
+    jobs_max_iterations: int = Field(5, ge=1)
+    jobs_workspace: str = "default"
+    # The git identity of the coder's commits (yours, on GitHub).
+    jobs_git_name: str | None = None
+    jobs_git_email: str | None = None
+    # claude_code: the coder's model, chosen by the agent per job from the request's
+    # complexity. managed: the model in agents/coder.md applies.
+    jobs_model_simple: str = "claude-sonnet-5-5"
+    jobs_model_normal: str = "claude-opus-5-5"
+    jobs_model_complex: str = "claude-fable-5-1"
+
+    # --- Nightly review of the agent's own requests (docs/review.md) --------------------
+    # Off by default. Your OWN copy of this repository ("owner/repo", one the jobs' token
+    # can push to): each night, once REVIEW_AT (local time, HH:MM) has passed, a coding
+    # job reads the day before's journal (your conversations) and opens a pull request
+    # there when something is worth fixing. Needs the coding jobs and the journal.
+    review_repo: str | None = None
+    review_at: time = time(5, 30)
+    # The journal only goes to a repository GitHub says is private, unless this is true.
+    review_allow_public: bool = False
+    # Optional: the notes repository your knowledge base indexes ("owner/repo",
+    # GITHUB_TOKEN allowed to write its contents) and its folder; the review's lessons
+    # are curated into notes there. Needs the "curation" extra. Empty: not curated.
+    review_lessons_repo: str | None = None
+    review_lessons_path: str = "knowledge"
+
     # --- Push notifications (ntfy, optional) -------------------------------------------
     # Full topic URL, e.g. https://ntfy.sh/some-long-random-topic or a self-hosted server.
     ntfy_url: str | None = None
@@ -554,6 +603,30 @@ class Settings(BaseSettings):
         names = [drive.name for drive in value]
         if len(set(names)) != len(names):
             raise ValueError("two DRIVES entries share a name")
+        return value
+
+    @property
+    def jobs_enabled(self) -> bool:
+        """Whether a runner of coding jobs is set up (main also wants a way to report)."""
+        if self.jobs_runner == "claude_code":
+            return bool(self.coder_url and self.coder_token)
+        if self.jobs_runner == "managed":
+            # Managed Agents is Anthropic's API: no other provider can run it.
+            return bool(
+                self.llm_provider == ANTHROPIC
+                and self.llm_api_key
+                and self.jobs_agent_id
+                and self.jobs_environment_id
+                and self.jobs_github_token
+            )
+        return False
+
+    @field_validator("review_repo", "review_lessons_repo")
+    @classmethod
+    def _owner_and_name(cls, value: str | None) -> str | None:
+        value = (value or "").strip() or None
+        if value is not None and (value.count("/") != 1 or value.startswith(("http", "/"))):
+            raise ValueError('a repository is written "owner/repo"')
         return value
 
     @property
