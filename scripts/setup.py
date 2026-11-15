@@ -146,6 +146,8 @@ SECRET_KEYS = {
     "KB_TOKEN",
     "KB_GITHUB_TOKEN",
     "DRIVE_PASSWORD",
+    "CODER_TOKEN",
+    "JOBS_GITHUB_TOKEN",
     "HUE_APP_KEY",
     "NUKI_API_TOKEN",
     "PETKIT_PASSWORD",
@@ -770,6 +772,46 @@ def ask_tasks(p: Prompter, env: dict[str, str]) -> None:
         env["TASKS_STORE"] = "github"
 
 
+def ask_jobs(p: Prompter, env: dict[str, str]) -> None:
+    """Coding jobs report as a push and their coder is a container of the stack: asked
+    only with both. They are for people who code, so the answer defaults to no."""
+    if "NTFY_URL" not in env:
+        return
+    p.say("\n# Coding jobs, for people who code (docs/jobs.md)")
+    p.say("  Ask the assistant for a fix or a feature on one of your GitHub repositories:")
+    p.say("  Claude Code does it in a container of its own, on your Claude subscription,")
+    p.say("  opens a pull request and reports as a push. Needs a Claude plan and GitHub.")
+    if not p.yes("Set them up?", False):
+        return
+    env["JOBS_RUNNER"] = "claude_code"
+    env["CODER_TOKEN"] = secrets.token_urlsafe(32)
+    p.say("  The coder can touch what its GitHub token can: make a fine-grained one, limited")
+    p.say("  to the repositories it may work on (Contents and Pull requests: read and write).")
+    if token := p.secret("That GitHub token"):
+        env["JOBS_GITHUB_TOKEN"] = token
+    if name := p.ask("Name on the coder's commits", env.get("USER_NAME", "")):
+        env["JOBS_GIT_NAME"] = name
+    if email := p.ask("Email on the coder's commits (the one of your GitHub account)"):
+        env["JOBS_GIT_EMAIL"] = email
+    if "CLAUDE_CODE_OAUTH_TOKEN" not in env:
+        p.say("  The coder signs in to your Claude plan: on a computer with a browser, install")
+        p.say("  Claude Code and run `claude setup-token` (the token is valid a year).")
+        if token := p.secret("Token from `claude setup-token`"):
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    files = env.get("COMPOSE_FILE", "docker-compose.yml").split(":")
+    env["COMPOSE_PATH_SEPARATOR"] = ":"
+    env["COMPOSE_FILE"] = ":".join([*files, "compose/coder.yml"])
+    p.say("  Nightly review (docs/review.md): each night a coding job can read the day's")
+    p.say("  journal, which holds what you asked the assistant, and open a pull request")
+    p.say("  that fixes what made it fail, on YOUR OWN private copy of this repository.")
+    if p.yes("Turn the nightly review on?", False):
+        while "/" not in (
+            repo := p.ask("Your private copy, owner/repo (the token above must push)")
+        ):
+            p.say("  Type it as owner/repo.")
+        env["REVIEW_REPO"] = repo
+
+
 GROUPS = [
     ("API", ["AGENT_API_TOKEN"]),
     (
@@ -844,6 +886,17 @@ GROUPS = [
     ("File drives", ["DRIVE_PASSWORD", "DRIVES", "DRIVE_OCR"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
     ("Tasks", ["TASKS_STORE", "MORNING_BRIEFING_AT", "EVENING_RECAP_AT"]),
+    (
+        "Coding jobs and the nightly review",
+        [
+            "JOBS_RUNNER",
+            "CODER_TOKEN",
+            "JOBS_GITHUB_TOKEN",
+            "JOBS_GIT_NAME",
+            "JOBS_GIT_EMAIL",
+            "REVIEW_REPO",
+        ],
+    ),
 ]
 
 
@@ -903,6 +956,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
     ask_tasks(p, env)
+    if docker:
+        ask_jobs(p, env)
 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -914,7 +969,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         key
         for key, needed in (
             ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS and "ENGINE" not in env),
-            ("CLAUDE_CODE_OAUTH_TOKEN", "ENGINE" in env),
+            ("CLAUDE_CODE_OAUTH_TOKEN", "ENGINE" in env or "JOBS_RUNNER" in env),
+            ("JOBS_GITHUB_TOKEN", "JOBS_RUNNER" in env),
             ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
             ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),

@@ -54,6 +54,11 @@ spoken morning briefing and evening recap.
   - Connectors: any service that has an MCP server, such as your bank or your hosting
     provider, read freely and changed only on your yes
     ([docs/connectors.md](docs/connectors.md)).
+  - For people who code, off by default: coding jobs handed to Claude Code, which
+    works on one of your GitHub repositories on its own and opens a pull request
+    ([docs/jobs.md](docs/jobs.md)); and a nightly review of the agent's own requests
+    that proposes fixes on your private copy of this repository
+    ([docs/review.md](docs/review.md)).
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - File drives through rclone (Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, an
@@ -179,6 +184,9 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DRIVE_INDEX_HOURS` | `24` | How old the index of file names may get. |
 | `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
 | `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
+| `JOBS_RUNNER`, `CODER_TOKEN`, `JOBS_GITHUB_TOKEN` | `off`, unset, unset | Coding jobs: `claude_code` (the coder container of `compose/coder.yml`, on your Claude subscription) or `managed` (Anthropic Managed Agents, on the API). The other settings are in [docs/jobs.md](docs/jobs.md). They need `NTFY_URL`. |
+| `REVIEW_REPO`, `REVIEW_AT`, `REVIEW_ALLOW_PUBLIC` | unset, `05:30`, `false` | Nightly review: a coding job reads the day's journal and opens a pull request on your own private copy of this repository. Read [docs/review.md](docs/review.md) first. |
+| `REVIEW_LESSONS_REPO`, `REVIEW_LESSONS_PATH` | unset, `knowledge` | Optional: the review's lessons curated into your knowledge base's notes (needs the `curation` extra). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing` and for the tasks the agent runs by itself. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
@@ -335,6 +343,15 @@ The guardrails are enforced in code, not only in the prompt.
   removing a draft and creating a folder always do; filing never runs by itself in a
   scheduled task. Each saved draft is noted under the reply by the code, with a
   warning when it carries files after content written by others was read.
+- **Coding jobs** (off by default): only your own message, in a request that read
+  nothing else, starts a job or writes to one; otherwise it waits for your go. The
+  coder runs in a container of its own with none of the agent's secrets, and can
+  touch what its GitHub token can, so scope that token. Its reports are data for the
+  agent. A permission prompt of Claude Code can only be allowed by your own yes.
+- **Nightly review** (off by default): it hands a day of the journal, your
+  conversations, to the coding job, and so to Anthropic and to the pull request it
+  opens. It only runs on a repository GitHub says is private, unless you say
+  otherwise ([docs/review.md](docs/review.md)).
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
   never prints them. The Siri Shortcut files hold the token: don't share them.
 
@@ -345,6 +362,7 @@ src/intelligent_home_agent/   app, agent loop, prompts, settings, tools/
 scripts/                      setup.py (onboarding), build_shortcuts.py (Siri), mcp_login.py,
                               one login or pairing script per device that needs it
 compose/                      one file per way to reach the agent (Caddy, Tailscale...)
+coder/, agents/, environments/  the coding jobs' container, house rules and sandbox
 docs/                         setup step by step, deployment, integrations, Siri Shortcut
 tests/                        pytest, no network
 ```

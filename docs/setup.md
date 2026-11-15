@@ -250,6 +250,7 @@ Optional data sources, each off until its settings are filled in:
 | Connectors ([connectors.md](connectors.md)) | any service with an MCP server reachable over HTTPS: your bank, your hosting provider, an accounting tool | servers that only run as a local command |
 | File drives ([drives.md](drives.md)) | anything rclone reaches: Google Drive, iCloud Drive, OneDrive, Dropbox, Box, a NAS over WebDAV, SMB or SFTP, S3 and compatibles; only iCloud Drive was run for real | a drive whose login needs a browser at every start |
 | Knowledge base ([knowledge.md](knowledge.md)) | Markdown notes in a GitHub repository, by hand or curated from your coding sessions by [claude-code-kit](https://github.com/robinalexandre/claude-code-kit) | |
+| Coding jobs ([jobs.md](jobs.md)), for people who code | Claude Code in a container of its own on your Claude subscription (`compose/coder.yml`), or Anthropic Managed Agents on the API | Off by default; the [nightly review](review.md) rests on them. |
 
 ## 6. Check, update, back up
 

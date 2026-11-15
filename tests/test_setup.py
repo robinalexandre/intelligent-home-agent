@@ -55,6 +55,7 @@ ANSWERS = [
     "7h",  # the briefing by itself: not a time, asked again
     "7:30",
     "",  # no recap by itself
+    "",  # no coding jobs
 ]
 SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
@@ -263,7 +264,7 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive", "coder"}
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
@@ -395,3 +396,41 @@ def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
     (tmp_path / "later").mkdir()
     env, output = run_with(tmp_path / "later", answers, ["", ""])
     assert "Still empty, add to .env before starting: CLAUDE_CODE_OAUTH_TOKEN." in output
+
+
+def test_coding_jobs_are_offered_with_a_push_and_default_to_no(monkeypatch):
+    quiet = lambda _line: None  # noqa: E731
+    # Without a push nothing is asked: a job's report would have no way to reach the user.
+    env = {"USER_NAME": "Sam"}
+    setup.ask_jobs(setup.Prompter(*scripted([])[:1], *scripted([])[:1], quiet), env)
+    assert env == {"USER_NAME": "Sam"}
+
+    env["NTFY_URL"] = "https://ntfy.example.com/topic"
+    read, queue = scripted([""])
+    setup.ask_jobs(setup.Prompter(read, *scripted([])[:1], quiet), env)
+    assert queue == [] and "JOBS_RUNNER" not in env
+
+    env["COMPOSE_FILE"] = "docker-compose.yml:compose/kb.yml"
+    read, queue = scripted(["y", "", "sam@example.com", "y", "my-agent", "sam/my-agent"])
+    read_secret, secret_queue = scripted(["jobs-token", "claude-login"])
+    setup.ask_jobs(setup.Prompter(read, read_secret, quiet), env)
+    assert queue == [] and secret_queue == []
+    assert env["JOBS_RUNNER"] == "claude_code" and len(env["CODER_TOKEN"]) > 30
+    assert env["JOBS_GITHUB_TOKEN"] == "jobs-token"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "claude-login"
+    assert (env["JOBS_GIT_NAME"], env["JOBS_GIT_EMAIL"]) == ("Sam", "sam@example.com")
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/kb.yml:compose/coder.yml"
+    assert env["REVIEW_REPO"] == "sam/my-agent"
+    assert {"CODER_TOKEN", "JOBS_GITHUB_TOKEN"} <= setup.SECRET_KEYS
+
+    for key in ("NTFY_URL", "COMPOSE_FILE", "COMPOSE_PATH_SEPARATOR", "USER_NAME"):
+        env.pop(key)
+    monkeypatch.setenv("AGENT_API_TOKEN", "test-token")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    from intelligent_home_agent.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.review_repo == "sam/my-agent" and settings.jobs_runner == "claude_code"
+    assert not settings.jobs_enabled  # compose/coder.yml sets CODER_URL
