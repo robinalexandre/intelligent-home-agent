@@ -1,6 +1,6 @@
 """Short-lived public links to a picture, so a reverse image search can fetch it.
 
-Google Lens, Yandex, Bing and TinEye search by an image's address; a photo sent on
+Google Lens, Yandex, Bing and TinEye search by an image's address; a photo sent in
 a chat has none. The agent serves a copy (re-encoded, metadata stripped) at an address
 with an unguessable token, for a few minutes, from memory only: a restart forgets it.
 """
