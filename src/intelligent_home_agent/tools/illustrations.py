@@ -6,7 +6,7 @@ They are kept like the PDFs the agent writes, so create_pdf can show the picture
 (<img src=...>) and a tool that attaches files can take them; the user receives them as
 pictures and videos.
 
-Needs the ``documents`` extra (resvg-py, Pillow); MP4 videos also need the ``video`` extra
+Needs the ``documents`` extra (resvg-py); MP4 videos also need the ``video`` extra
 (PyAV), without which animations are GIFs. The exercise bank is a setting, off by default.
 
 An SVG is the model's own text, but it is rendered on the server: nothing in it may load a
@@ -476,8 +476,9 @@ def build_illustration_tools(
                 "flow, a plan of a room or a garden, a chart, a timeline, a body position "
                 "(stick figure), an annotated photo... Text with accents is fine. "
                 "Links may only point to the drawing's own parts (#id) or to a kept image by "
-                "its file name, which you can draw over. The picture is kept with the "
-                'conversation: show it in a PDF with create_pdf (<img src="its name">) or '
+                "its file name, which you can draw over. The picture is kept with the files "
+                "of the conversation: show it in a PDF with create_pdf "
+                '(<img src="its name">) or '
                 "send it to the user."
             ),
             input_schema={

@@ -454,7 +454,7 @@ def build_generation_tools(
                     "setting, style, framing, light). reference_images (kept images the "
                     "user sent or you made) are edited or followed: 'this photo of my "
                     "living room, with green walls'. The picture is kept with the "
-                    "conversation, for a PDF or to send to the user."
+                    "conversation's files, for a PDF or to send to the user."
                 ),
                 input_schema={
                     "type": "object",

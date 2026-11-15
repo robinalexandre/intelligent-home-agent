@@ -8,7 +8,7 @@ all behind `Authorization: Bearer <AGENT_API_TOKEN>`:
 | `POST /v1/ask` | `{"text": "...", "conversation_id": "...", "context": "...", "display": "voice" \| "notification" \| "chat", "files": [...]}` | A question or command, with a short memory per `conversation_id`. |
 | `POST /v1/briefing` | `{"kind": "morning" \| "evening", "context": "...", "push": false}` | The morning briefing or evening recap, written to be read. `push: true` also sends it through ntfy. Each call starts a fresh conversation. |
 | `GET /v1/files/{name}?conversation_id=...` | | A file of the conversation, e.g. one the agent made. |
-| `POST /v1/reset?conversation_id=...` | | Forget a conversation now. |
+| `POST /v1/reset?conversation_id=...` | | Forget a conversation now, with its saved copy and files. |
 
 Both `ask` and `briefing` return `reply` and `actions` (things the phone should do, such
 as creating a reminder).

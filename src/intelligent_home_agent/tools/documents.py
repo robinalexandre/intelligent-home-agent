@@ -2,8 +2,8 @@
 handed to the user and kept in the conversation so another tool can attach it. Also the two
 tools that list and open the conversation's files.
 
-Writing a PDF needs the ``documents`` extra (fpdf2, Pillow, pypdf); without it only the
-file tools are there. The paper size and the fonts are settings, so nothing here assumes
+Writing a PDF needs the ``documents`` extra (fpdf2); without it only the file tools are
+there. The paper size and the fonts are settings, so nothing here assumes
 a country: the letter's layout and its date format are the model's, told the language and
 the country in the tool's description.
 """
@@ -436,8 +436,9 @@ def build_document_tools(
         Tool(
             name="list_saved_files",
             description=(
-                "The files kept in this conversation: sent by the user, made by you, or "
-                "fetched by a tool. Check here before asking the user for a file again."
+                "The files kept for this conversation (for days in a chat, earlier "
+                "exchanges included): sent by the user, made by you, or fetched by a tool. "
+                "Check here before asking the user for a file again."
             ),
             input_schema={"type": "object", "properties": {}},
             handler=list_saved_files,

@@ -5,7 +5,7 @@ any: their text comes with positions, dotted leaders and check boxes marked, so 
 can say where to write, and the text and check marks are drawn over the pages. The
 filled copy goes back to the model as a document, so it can look at it and fix it.
 
-Needs the ``documents`` extra (fpdf2, pypdf, pdfminer.six): without it there is no tool.
+Needs the ``documents`` extra (fpdf2, pdfminer.six): without it there is no tool.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ try:
     from pypdf.errors import PdfReadError
 
     INSTALLED = True
-except ImportError:  # no documents extra: the factories here and in pdf_pages return []
+except ImportError:  # no documents extra: build_pdf_form_tools returns []
     INSTALLED = False
 
 MAX_PAGES = 20

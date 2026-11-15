@@ -1,7 +1,5 @@
 """New PDFs made from the pages of kept ones: a page taken out of a form, pages dropped or
 put in another order, or several PDFs merged into one. The PDFs they come from never change.
-
-Needs the ``documents`` extra (pypdf): without it there is no tool.
 """
 
 from __future__ import annotations
@@ -9,13 +7,12 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 
+from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PyPdfError
+
 from intelligent_home_agent.conversations import Attachment, safe_filename
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
-from intelligent_home_agent.tools.pdf_forms import INSTALLED, kept_pdf, off_loop
-
-if INSTALLED:
-    from pypdf import PdfReader, PdfWriter
-    from pypdf.errors import PyPdfError
+from intelligent_home_agent.tools.pdf_forms import kept_pdf, off_loop
 
 MAX_PARTS = 20
 MAX_PAGES = 200
@@ -63,9 +60,6 @@ def assemble(parts: list[tuple[str, bytes, Any]]) -> tuple[bytes, int]:
 
 
 def build_pdf_page_tools() -> list[Tool]:
-    if not INSTALLED:
-        return []
-
     async def copy_pdf_pages(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         parts = args.get("parts")
         if not isinstance(parts, list) or not 1 <= len(parts) <= MAX_PARTS:

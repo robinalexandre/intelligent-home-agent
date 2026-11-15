@@ -61,6 +61,17 @@ class MailAccount(BaseModel):
     password: SecretStr
     port: int = 993
     mailbox: str = "INBOX"
+    # Let the agent save drafts, flag emails and file them into the user's own folders in
+    # this account. It never sends and never deletes. Off: the account is only read.
+    write: bool = False
+    # The From address of the drafts, when the login isn't the address (some providers
+    # log in with a user name).
+    address: str | None = None
+    # The special folders, when the server neither marks them (SPECIAL-USE) nor gives them
+    # a usual name: their exact names, e.g. "INBOX.Brouillons". Empty: found by itself.
+    drafts: str | None = None
+    sent: str | None = None
+    trash: str | None = None
 
 
 class McpServer(BaseModel):
@@ -214,14 +225,39 @@ class Settings(BaseSettings):
     web_search_max_uses: int = 3
     web_search_results: int = 5
 
-    # --- Calendar (CalDAV, read-only) --------------------------------------------------
+    # --- Web pages and investigations (docs/web.md) -------------------------------------
+    # Opening public pages and downloading public documents (no logins). Private and
+    # internal addresses are always refused.
+    web_pages_enabled: bool = True
+    # After a request read emails, files or other private content, the only sites it can
+    # still open (a URL can carry data out) are the public services of HOME_COUNTRY
+    # (tools/web_pages.py, PUBLIC_SERVICES) plus these domains, subdomains included.
+    web_trusted_domains: CsvList = []
+    # Investigating a photo, a document, a link or a site from public registries and
+    # archives (RDAP, the Wayback Machine, crt.sh, OpenStreetMap, DNS): no key needed.
+    investigations_enabled: bool = False
+    # The agent's own public address (https://agent.example.com), when it has one: lets
+    # it put a photo the user sent online for a few minutes, for a reverse image search.
+    public_url: str | None = None
+
+    # --- Calendar (CalDAV) -------------------------------------------------------------
     caldav_url: str | None = None
     caldav_username: str | None = None
     caldav_password: SecretStr | None = None
     # Only read these calendars (by name); empty means all of them.
     caldav_calendars: CsvList = []
+    # Let the agent add events (docs/mail-calendar.md). Off: the calendar is only read.
+    caldav_write: bool = False
+    # The calendar new events go to, by name; empty: the one the server gives as default.
+    caldav_default_calendar: str | None = None
 
-    # --- Email (IMAP, read-only) -------------------------------------------------------
+    # --- Contacts' birthdays (CardDAV, read-only) --------------------------------------
+    # Shown as all-day events in the calendar. Username and password default to CalDAV's.
+    carddav_url: str | None = None
+    carddav_username: str | None = None
+    carddav_password: SecretStr | None = None
+
+    # --- Email (IMAP; each account is read-only unless it says "write": true) ----------
     mail_accounts: list[MailAccount] = []
 
     # --- Travel time from home (OpenStreetMap: Nominatim + OSRM, no key) ---------------
@@ -283,6 +319,23 @@ class Settings(BaseSettings):
     # The journal: one line per request (what was asked, the tools called, the reply) in
     # DATA_DIR/journal, one file per day, removed after this many days. 0: no journal.
     journal_keep_days: int = Field(365, ge=0)
+    # Files sent in a chat or made by the agent, kept in DATA_DIR/files for this many
+    # days, so they survive a restart and can be used again later. 0: memory only.
+    files_keep_days: int = Field(30, ge=0)
+
+    # --- Memory: facts about the user and how-tos that worked (docs/memory.md) ---------
+    # local: Markdown files in DATA_DIR. github: paths of a repository (MEMORY_REPO, with
+    # GITHUB_TOKEN allowed to write its contents), editable from any computer. off: none.
+    memory_store: Literal["local", "github", "off"] = "local"
+    # "owner/repo", for MEMORY_STORE=github.
+    memory_repo: str | None = None
+    # Where the two files are. Empty: memory.md and procedures.md, in DATA_DIR (local) or
+    # in a folder named after the assistant (github: "Nova" keeps nova/memory.md).
+    memory_path: str = ""
+    procedures_path: str = ""
+    # Optional, for a repository that encrypts that folder with git-crypt: the key it
+    # exported (git-crypt export-key), as one base64 line.
+    memory_crypt_key: SecretStr | None = None
 
     # --- Knowledge base (the kb container of compose/kb.yml, docs/knowledge.md) --------
     kb_url: str | None = None
@@ -300,6 +353,7 @@ class Settings(BaseSettings):
         "caldav_calendars",
         "brief_sections",
         "outdoor_activities",
+        "web_trusted_domains",
         mode="before",
     )
     @classmethod
@@ -359,6 +413,12 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        return self
+
+    @model_validator(mode="after")
+    def _memory_is_usable(self) -> "Settings":
+        if self.memory_store == "github" and not (self.github_token and self.memory_repo):
+            raise ValueError("MEMORY_STORE=github needs GITHUB_TOKEN and MEMORY_REPO")
         return self
 
     @model_validator(mode="after")

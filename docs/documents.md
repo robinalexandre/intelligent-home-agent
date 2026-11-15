@@ -7,18 +7,19 @@ also ask an image model for a picture or a clip, and run calculations in a sandb
 | What | Tools | On when | Leaves your machine |
 |---|---|---|---|
 | The conversation's files | `list_saved_files`, `read_saved_file` | `DOCUMENTS_ENABLED` (default) | no |
+| PDF pages | `copy_pdf_pages` | same | no |
 | PDFs it writes | `create_pdf` | same, with the `documents` extra | no |
 | PDF forms | `read_pdf_layout`, `fill_pdf` | same | no |
-| PDF pages | `copy_pdf_pages` | same | no |
 | Drawings and animations | `draw_image`, `make_animation` | same | no |
 | Exercise photos | `find_exercise_photos`, `save_exercise_photos` | `EXERCISE_PHOTOS_ENABLED=true` | a download from GitHub |
 | Generated pictures and clips | `generate_image`, `generate_video` | a `GENERATION_*` key | the prompt and the pictures you name, to Google or OpenAI |
 | Calculations and charts | `run_code` | `CODE_EXECUTION_ENABLED=true`, Anthropic only | the task and the files you name, to Anthropic |
 
 A file made by the agent comes back in the `files` list of the `/v1/ask` reply, to download
-from `GET /v1/files/{name}`. Files live as long as the conversation
-(`CONVERSATION_TTL_SECONDS`, `CHAT_CONVERSATION_TTL_SECONDS`): there is no long-term
-storage yet, so download what you want to keep.
+from `GET /v1/files/{name}`. In a chat (`"display": "chat"`) the files you sent and
+those the agent made are kept `FILES_KEEP_DAYS` (30) days and outlive the conversation
+itself, so "the form I sent yesterday" still works; a spoken conversation keeps them in
+memory for its few minutes only. See [memory.md](memory.md).
 
 ## Installing
 
@@ -26,11 +27,12 @@ The Docker image has everything for the first five rows: the `documents` extra a
 DejaVu fonts. Without Docker:
 
 ```bash
-pip install -e ".[documents]"          # fpdf2, pypdf, pdfminer.six, resvg-py
+pip install -e ".[documents]"          # fpdf2, pdfminer.six, resvg-py
 pip install -e ".[documents,video]"    # also MP4 animations (PyAV, some 40 MB)
 ```
 
-Without the extra the agent starts as usual and those tools are simply not there.
+Without the extra the agent starts as usual and those tools are simply not there
+(listing, opening and copying pages need nothing more than the agent itself).
 Without `video`, animations are GIFs. To change what the image holds:
 
 ```bash

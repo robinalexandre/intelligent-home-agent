@@ -159,8 +159,9 @@ async def test_a_pdf_with_form_fields_gets_them_filled(ctx):
 
 def test_without_the_pdf_libraries_there_is_no_pdf_tool(monkeypatch):
     monkeypatch.setattr(pdf_forms, "INSTALLED", False)
-    monkeypatch.setattr(pdf_pages, "INSTALLED", False)
-    assert build_pdf_form_tools(NO_FONTS) == [] and pdf_pages.build_pdf_page_tools() == []
+    assert build_pdf_form_tools(NO_FONTS) == []
+    # Copying pages only needs pypdf, which the agent always has.
+    assert [t.name for t in pdf_pages.build_pdf_page_tools()] == ["copy_pdf_pages"]
 
 
 async def test_fill_refuses_what_it_cant_place(ctx):
