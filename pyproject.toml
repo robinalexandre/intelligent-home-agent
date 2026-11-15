@@ -21,7 +21,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Memory kept in a GitHub repository that encrypts its folder with git-crypt
+# (MEMORY_CRYPT_KEY, docs/memory.md); nothing else needs it.
+crypt = [
+    "cryptography>=42",
+]
 dev = [
+    "cryptography>=42",
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "respx>=0.21",
@@ -53,3 +59,5 @@ extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
+# Runs the installed git-crypt, when there is one, to check the codec against it.
+"tests/test_config_crypt.py" = ["S105", "S106", "S603", "S607"]

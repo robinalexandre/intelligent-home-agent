@@ -11,6 +11,7 @@ spec.loader.exec_module(setup)
 ANSWERS = [
     "",  # with Docker Compose
     "Nova",  # name
+    "Sam",  # what it calls the user
     "fr",  # language
     "Europe/Paris",  # time zone
     "",  # provider: anthropic
@@ -35,6 +36,7 @@ ANSWERS = [
     "y",  # CalDAV
     "https://caldav.example.com",
     "someone",  # username
+    "",  # memory: local files
     "",  # no knowledge base
     "",  # access: this machine only
     "siri,push",  # channels
@@ -72,7 +74,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     env = dict(
         line.split("=", 1) for line in path.read_text().splitlines() if line and line[0] != "#"
     )
-    assert env["ASSISTANT_NAME"] == "Nova"
+    assert env["ASSISTANT_NAME"] == "Nova" and env["USER_NAME"] == "Sam"
+    assert "MEMORY_STORE" not in env  # local files, the default
     assert env["LANGUAGE"] == "fr"
     assert env["HOME_LATITUDE"] == "0.000"
     assert env["BRIEF_SECTIONS"] == "calendar,weather,activities"
@@ -108,15 +111,17 @@ def run_with(tmp_path, answers, secrets_typed):
     return env, "\n".join(printed)
 
 
-# Name, language, time zone; then after the model: no city, no sections, no activities.
-START = ["", "en", "UTC"]
+# Name, no user name, language, time zone; then after the model: no city, no sections, no
+# activities.
+START = ["", "", "en", "UTC"]
 NOTHING_ELSE = ["", "weather", "short", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
-    # No Home Assistant, a knowledge base, access, node name, channel.
-    answers += ["n", "y", "http://192.168.1.20", "y", "someone/notes", "funnel", "agent"]
+    # No Home Assistant, Hue, memory in local files, a knowledge base, access, node name,
+    # channel.
+    answers += ["n", "y", "http://192.168.1.20", "", "y", "someone/notes", "funnel", "agent"]
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
     assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
@@ -140,13 +145,14 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "", "", "caddy", "", "agent.example.com", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "off", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
     assert "Still empty" not in output and "https://agent.example.com" in output
     assert env["WEB_SEARCH_ENABLED"] == "false" and "WEB_SEARCH_BACKEND" not in env
+    assert env["MEMORY_STORE"] == "off" and "USER_NAME" not in env
     answers = [
         "",
         *START,
@@ -156,6 +162,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         *NOTHING_ELSE,
         "n",
         "",
+        "",  # memory: local files
         "",
         "cloudflare",
         "siri",
@@ -167,9 +174,13 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
 
 def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
-    answers += [*NOTHING_ELSE, "n", "", "siri"]
-    env, output = run_with(tmp_path, answers, [""])
+    # No Home Assistant, no Hue, memory in a repository (asked twice: owner/repo), channel.
+    answers += [*NOTHING_ELSE, "n", "", "github", "notes", "someone/config", "siri"]
+    env, output = run_with(tmp_path, answers, ["", "gh-write-secret"])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
+    assert (env["MEMORY_STORE"], env["MEMORY_REPO"]) == ("github", "someone/config")
+    assert env["GITHUB_TOKEN"] == "gh-write-secret" and "gh-write-secret" not in output
+    assert "MEMORY_CRYPT_KEY" in output and "Still empty" not in output
     assert "uvicorn intelligent_home_agent.main:app" in output
 
 

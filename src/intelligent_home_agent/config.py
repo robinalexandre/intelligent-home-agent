@@ -247,6 +247,23 @@ class Settings(BaseSettings):
     # The journal: one line per request (what was asked, the tools called, the reply) in
     # DATA_DIR/journal, one file per day, removed after this many days. 0: no journal.
     journal_keep_days: int = Field(365, ge=0)
+    # Files sent in a chat or made by the agent, kept in DATA_DIR/files for this many
+    # days, so they survive a restart and can be used again later. 0: memory only.
+    files_keep_days: int = Field(30, ge=0)
+
+    # --- Memory: facts about the user and how-tos that worked (docs/memory.md) ---------
+    # local: Markdown files in DATA_DIR. github: paths of a repository (MEMORY_REPO, with
+    # GITHUB_TOKEN allowed to write its contents), editable from any computer. off: none.
+    memory_store: Literal["local", "github", "off"] = "local"
+    # "owner/repo", for MEMORY_STORE=github.
+    memory_repo: str | None = None
+    # Where the two files are. Empty: memory.md and procedures.md, in DATA_DIR (local) or
+    # in a folder named after the assistant (github: "Nova" keeps nova/memory.md).
+    memory_path: str = ""
+    procedures_path: str = ""
+    # Optional, for a repository that encrypts that folder with git-crypt: the key it
+    # exported (git-crypt export-key), as one base64 line.
+    memory_crypt_key: SecretStr | None = None
 
     # --- Knowledge base (the kb container of compose/kb.yml, docs/knowledge.md) --------
     kb_url: str | None = None
@@ -323,6 +340,12 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        return self
+
+    @model_validator(mode="after")
+    def _memory_is_usable(self) -> "Settings":
+        if self.memory_store == "github" and not (self.github_token and self.memory_repo):
+            raise ValueError("MEMORY_STORE=github needs GITHUB_TOKEN and MEMORY_REPO")
         return self
 
     @model_validator(mode="after")

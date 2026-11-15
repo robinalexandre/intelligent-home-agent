@@ -220,6 +220,28 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_assistant_reminders",
         "web_search",
     }
+    # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
+    # down, and the journal's search.
+    kept = {
+        "remember",
+        "forget",
+        "find_procedure",
+        "save_procedure",
+        "turn_down_alert",
+        "list_turned_down_alerts",
+        "bring_back_alert",
+        "read_day_journal",
+        "search_past_conversations",
+    }
+    assert kept <= names
+    monkeypatch.setenv("MEMORY_STORE", "off")
+    monkeypatch.setenv("JOURNAL_KEEP_DAYS", "0")
+    off = main.build_registry(main.Settings(_env_file=None), ha=None, http=None, llm=None)
+    assert off.names() & kept == {
+        "turn_down_alert",
+        "list_turned_down_alerts",
+        "bring_back_alert",
+    }
     # The core's own tools are always there: what waits for a go, and long results.
     assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
     assert "ask_in_poll" not in names
@@ -407,3 +429,220 @@ def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monk
     assert second["reply"] == "Noted." and done == ["milk"]
     # The mail itself never stayed in memory.
     assert "example.com" not in str(client.app.state.store.get("default").messages)
+
+
+# --- What the agent keeps: memory, and chats across restarts --------------------------------
+
+
+def settings_with(monkeypatch, **env):
+    base_env(monkeypatch)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return main.Settings(_env_file=None)
+
+
+async def test_memory_is_local_files_in_the_data_directory_by_default(monkeypatch, data_dir):
+    settings = settings_with(monkeypatch, ASSISTANT_NAME="Nova")
+    assert main.memory_paths(settings) == (
+        str(data_dir / "memory.md"),
+        str(data_dir / "procedures.md"),
+    )
+    kept = main.build_kept(settings, http=None)
+    await kept.memory.remember("My accountant is Jo Martin")
+    kept.turned_down.add("Late parcel from the bookshop")
+    assert (data_dir / "memory.md").read_text().startswith("# Nova — long-term memory")
+    # Both reach every request's prompt, through the agent's memory hook.
+    text = await kept.prompt_text()
+    assert text.startswith("- My accountant is Jo Martin (")
+    assert "Alerts the user turned down" in text and "- Late parcel from the bookshop" in text
+    off = main.build_kept(settings_with(monkeypatch, MEMORY_STORE="off"), http=None)
+    assert off.memory is None and off.procedures is None
+
+
+def test_the_memory_reaches_the_prompt_of_the_real_agent(make_client, monkeypatch):
+    from conftest import FakeLLM, text_response, tool_response
+
+    fake = FakeLLM(
+        [
+            tool_response(("c1", "remember", {"fact": "I take my coffee black"})),
+            text_response("Noted."),
+            text_response("Black."),
+        ]
+    )
+    monkeypatch.setattr(main, "build_llm_client", lambda *args: fake)
+    build_agent = main.build_agent  # the real one: make_client puts a stub in its place
+    client = make_client(WEB_SEARCH_ENABLED="false", USER_NAME="Sam")
+    client.app.state.agent = build_agent(client.app.state.settings, None, None)
+
+    client.post("/v1/ask", json={"text": "remember I take my coffee black"}, headers=AUTH)
+    client.post("/v1/reset", headers=AUTH)
+    reply = client.post("/v1/ask", json={"text": "how do I take my coffee?"}, headers=AUTH)
+
+    assert reply.json()["reply"] == "Black."
+    system = str(fake.requests[-1]["system"])
+    assert "What you remember about the user" in system
+    assert "- I take my coffee black (" in system and "The user is called Sam" in system
+    assert "What you remember" not in str(fake.requests[0]["system"])
+
+
+def test_memory_in_a_repository_lives_in_a_folder_named_after_the_assistant(monkeypatch):
+    with pytest.raises(ValueError, match="MEMORY_REPO"):
+        settings_with(monkeypatch, MEMORY_STORE="github")
+    settings = settings_with(
+        monkeypatch,
+        MEMORY_STORE="github",
+        GITHUB_TOKEN="t",
+        MEMORY_REPO="me/config",
+        ASSISTANT_NAME="Mrs. Hudson",
+    )
+    assert main.memory_paths(settings) == ("mrs-hudson/memory.md", "mrs-hudson/procedures.md")
+    kept = main.build_kept(settings, http=None)
+    assert kept.memory is not None and kept.procedures is not None
+    assert main.build_crypt(settings) is None
+    monkeypatch.setenv("MEMORY_PATH", "/notes/agent.md")
+    assert main.memory_paths(main.Settings(_env_file=None))[0] == "notes/agent.md"
+
+
+@pytest.fixture
+def crypt_settings(monkeypatch):
+    from test_config_crypt import KEY
+
+    def make(**env):
+        main._crypt_for.cache_clear()
+        return settings_with(
+            monkeypatch,
+            **{
+                "MEMORY_STORE": "github",
+                "GITHUB_TOKEN": "t",
+                "MEMORY_REPO": "me/config",
+                "ASSISTANT_NAME": "Nova",
+                "MEMORY_CRYPT_KEY": KEY,
+                **env,
+            },
+        )
+
+    yield make
+    main._crypt_for.cache_clear()
+
+
+ATTRIBUTES_URL = "https://api.github.com/repos/me/config/contents/.gitattributes"
+
+
+async def test_the_encrypted_folders_come_from_the_repository(crypt_settings, respx_mock):
+    settings = crypt_settings()
+    crypt = main.build_crypt(settings)
+    # Before the repository was read, the agent's own folder counts as encrypted.
+    assert crypt.patterns == ["nova/**"] and crypt.encrypts("nova/memory.md")
+    assert main.build_crypt(settings) is crypt  # one codec for the memory and the procedures
+    route = respx_mock.get(ATTRIBUTES_URL).respond(
+        text="secret/** filter=git-crypt diff=git-crypt\n"
+    )
+    async with httpx.AsyncClient() as http:
+        await main.load_crypt_patterns(settings, http)
+    assert route.called and crypt.patterns == ["secret/**"]
+    assert not crypt.encrypts("nova/memory.md")
+
+
+async def test_an_unreadable_gitattributes_keeps_the_agents_files_encrypted(
+    crypt_settings, respx_mock
+):
+    settings = crypt_settings(MEMORY_PATH="memory.md")
+    respx_mock.get(ATTRIBUTES_URL).respond(404)
+    async with httpx.AsyncClient() as http:
+        await main.load_crypt_patterns(settings, http)
+    crypt = main.build_crypt(settings)
+    assert crypt.encrypts("memory.md") and crypt.encrypts("nova/procedures.md")
+
+
+def test_a_key_that_cannot_be_used_turns_the_memory_off_rather_than_write_in_clear(
+    crypt_settings, monkeypatch
+):
+    kept = main.build_kept(crypt_settings(MEMORY_CRYPT_KEY="bm90IGEga2V5"), http=None)
+    assert kept.memory is None and kept.procedures is None
+    # The same without the optional cryptography package.
+    settings = crypt_settings()
+    monkeypatch.setattr(main, "crypt_available", lambda: False)
+    kept = main.build_kept(settings, http=None)
+    assert kept.memory is None and kept.turned_down is not None
+
+
+def chat(client, text, conversation_id="c", **extra):
+    body = {"text": text, "conversation_id": conversation_id, "display": "chat", **extra}
+    return client.post("/v1/ask", json=body, headers=AUTH)
+
+
+def test_a_chat_survives_a_restart_with_its_files_and_what_waits(make_client, data_dir):
+    first = make_client()
+    chat(first, "park it")
+    chat(first, "make a chart")
+    first.app.state.store.get("c").messages.append({"role": "user", "content": "park it"})
+    chat(first, "and then?")
+    first.post("/v1/ask", json={"text": "hi", "conversation_id": "voice"}, headers=AUTH)
+
+    # Nothing on disk is named after what the client sent.
+    (saved,) = (data_dir / "conversations").glob("*.json")
+    assert len(saved.stem) == 32 and saved.stat().st_mode & 0o777 == 0o600
+
+    restarted = make_client()
+    store = restarted.app.state.store
+    assert store.peek("voice") is None  # a spoken exchange is over in minutes: memory only
+    conv = store.peek("c")
+    assert conv is not None and conv.ttl_seconds == 12 * 3600
+    assert conv.messages == [{"role": "user", "content": "park it"}]
+    assert [(p.number, p.tool, p.args, p.shown) for p in conv.proposals] == [
+        (1, "note", {"text": "milk"}, True)
+    ]
+    assert conv.files["chart.png"].data == b"png-bytes"
+    assert conv.files["chart.png"].origin == "agent"
+    download = restarted.get("/v1/files/chart.png?conversation_id=c", headers=AUTH)
+    assert download.content == b"png-bytes"
+    # The next request goes on in the same conversation and is saved, whatever its display.
+    before = saved.read_text()
+    restarted.post("/v1/ask", json={"text": "yes", "conversation_id": "c"}, headers=AUTH)
+    assert saved.read_text() != before and json.loads(saved.read_text())["id"] == "c"
+
+
+def test_a_kept_file_is_stored_under_a_hash_never_under_its_name(make_client, data_dir):
+    client = make_client()
+    chat(client, "make a chart")
+    (directory,) = (data_dir / "files").iterdir()
+    names = {p.name for p in directory.iterdir()}
+    assert "index.json" in names and "chart.png" not in names
+    assert json.loads((directory / "index.json").read_text())["chart.png"]["origin"] == "agent"
+
+
+def test_reset_forgets_the_saved_conversation_and_its_files(make_client, data_dir):
+    client = make_client()
+    chat(client, "make a chart")
+    assert client.post("/v1/reset?conversation_id=c", headers=AUTH).status_code == 204
+    assert list((data_dir / "conversations").glob("*.json")) == []
+    assert list((data_dir / "files").iterdir()) == []
+    assert make_client().app.state.store.peek("c") is None
+
+
+def test_expired_or_damaged_saved_conversations_are_removed_at_startup(make_client, data_dir):
+    client = make_client(CHAT_CONVERSATION_TTL_SECONDS="60")
+    chat(client, "make a chart", "old")
+    chat(client, "hi", "bad")
+    old = main.conversation_file(client.app.state.settings, "old")
+    data = json.loads(old.read_text())
+    old.write_text(json.dumps({**data, "saved_at": data["saved_at"] - 3600}))
+    main.conversation_file(client.app.state.settings, "bad").write_text('{"id": "bad"}')
+
+    restarted = make_client(CHAT_CONVERSATION_TTL_SECONDS="60")
+
+    assert restarted.app.state.store.peek("old") is None
+    assert restarted.app.state.store.peek("bad") is None
+    assert list((data_dir / "conversations").glob("*.json")) == []
+    # The files outlive their conversation, for their days: the same chat finds them again.
+    chat(restarted, "hi", "old")
+    assert "chart.png" in restarted.app.state.store.peek("old").files
+
+
+def test_files_can_stay_in_memory_only(make_client, data_dir):
+    client = make_client()
+    chat(client, "make a chart")
+    restarted = make_client(FILES_KEEP_DAYS="0")
+    conv = restarted.app.state.store.peek("c")
+    assert conv is not None and "chart.png" not in conv.files
+    assert list((data_dir / "files").iterdir()) == []

@@ -14,6 +14,13 @@ ALL_TOOLS = {
     "get_outdoor_forecast",
     "create_reminder",
     "web_search",
+    "remember",
+    "forget",
+    "find_procedure",
+    "save_procedure",
+    "turn_down_alert",
+    "read_day_journal",
+    "search_past_conversations",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 
@@ -104,6 +111,25 @@ def test_chat_display_memory_and_user_name():
     assert "The user is called Alex" in text
     assert "What you remember about the user" in text and "- Likes tea." in text
     assert "What you remember" not in build_system_prompt(cfg)
+
+
+def test_memory_tools_get_their_lines_only_when_registered():
+    bare = prompt(tools={"get_weather"})
+    for word in ("remember", "find_procedure", "turn_down_alert", "search_past_conversations"):
+        assert word not in bare
+    text = prompt(
+        language="fr",
+        tools={
+            "remember",
+            "find_procedure",
+            "turn_down_alert",
+            "search_past_conversations",
+        },
+    )
+    assert 'when the user says "retiens que"' in text and "forget removes" in text
+    assert "find_procedure first" in text and "save_procedure with its steps" in text
+    assert "call turn_down_alert" in text
+    assert "search_past_conversations before saying you don't remember" in text
 
 
 def test_core_tools_get_their_paragraphs_only_when_registered():

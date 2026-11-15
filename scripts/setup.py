@@ -196,6 +196,8 @@ def geocode(city: str, language: str) -> dict | None:
 def ask_identity(p: Prompter, env: dict[str, str]) -> None:
     p.say("\n# Assistant")
     env["ASSISTANT_NAME"] = p.ask("Assistant name (what you call it)", "Assistant")
+    if user := p.ask("Your first name, as it should call you (empty: no name)"):
+        env["USER_NAME"] = user
     while (language := p.ask("Language: en or fr", "en").casefold()) not in {"en", "fr"}:
         p.say("  en and fr are supported; see src/intelligent_home_agent/i18n.py to add one.")
     env["LANGUAGE"] = language
@@ -448,6 +450,32 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
                     env["ASSISTANT_REMINDERS_REPO"] = repo
 
 
+MEMORY = {
+    "local": "files on this machine (the agent's data folder); nothing to set up",
+    "github": "files in a GitHub repository of yours, readable and editable from anywhere",
+    "off": "it remembers nothing between conversations",
+}
+
+
+def ask_memory(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# Memory: facts you tell the assistant to remember (docs/memory.md)")
+    store = p.pick("Where to keep them", MEMORY, "local")
+    if store != "local":
+        env["MEMORY_STORE"] = store
+    if store != "github":
+        return
+    p.say("  Any repository works, e.g. the private one claude-code-kit syncs your")
+    p.say("  coding-assistant configuration to. The token must be allowed to write to it.")
+    while "/" not in (repo := p.ask("Repository, owner/repo")):
+        p.say("  Type it as owner/repo.")
+    env["MEMORY_REPO"] = repo
+    if "GITHUB_TOKEN" not in env:
+        if token := p.secret("GitHub token that can write to it (fine-grained, Contents)"):
+            env["GITHUB_TOKEN"] = token
+    p.say("  If that repository encrypts the folder with git-crypt, add MEMORY_CRYPT_KEY")
+    p.say("  to .env afterwards (docs/memory.md).")
+
+
 def ask_knowledge(p: Prompter, env: dict[str, str]) -> None:
     p.say("\n# Knowledge base: your own notes, searched by the assistant (docs/knowledge.md)")
     p.say("  Markdown notes in a GitHub repository, e.g. the one claude-code-kit keeps.")
@@ -501,7 +529,7 @@ GROUPS = [
             "SEARXNG_SECRET",
         ],
     ),
-    ("Assistant", ["ASSISTANT_NAME", "LANGUAGE", "TIMEZONE"]),
+    ("Assistant", ["ASSISTANT_NAME", "USER_NAME", "LANGUAGE", "TIMEZONE"]),
     ("Home", ["HOME_CITY", "HOME_COUNTRY", "HOME_LATITUDE", "HOME_LONGITUDE"]),
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
     ("Outdoor activities", ["OUTDOOR_ACTIVITIES", "WIND_SPOTS", "SURF_SPOTS"]),
@@ -510,6 +538,7 @@ GROUPS = [
     ("Calendar", ["CALDAV_URL", "CALDAV_USERNAME", "CALDAV_PASSWORD"]),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
+    ("Memory", ["MEMORY_STORE", "MEMORY_REPO"]),
     ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
 ]
@@ -557,6 +586,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     sections = ask_brief(p, env)
     ask_activities(p, env)
     ask_sources(p, env, sections)
+    ask_memory(p, env)
     if docker:
         ask_knowledge(p, env)
     address = ask_access(p, env) if docker else None
@@ -579,6 +609,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
             ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),
             ("KB_GITHUB_TOKEN", "KB_REPO" in env),
+            ("GITHUB_TOKEN", env.get("MEMORY_STORE") == "github"),
         )
         if needed and key not in env
     ]

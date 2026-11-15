@@ -43,6 +43,14 @@ STATES = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def data_dir(monkeypatch, tmp_path):
+    """What the agent keeps on disk (memory, conversations, files) never leaves the test."""
+    path = tmp_path / "agent-data"
+    monkeypatch.setenv("DATA_DIR", str(path))
+    return path
+
+
 @pytest.fixture
 def ha_mock():
     with respx.mock(base_url=HA_URL, assert_all_called=False) as mock:

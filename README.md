@@ -41,6 +41,10 @@ spoken morning briefing and evening recap.
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - Web search with any model, in a separate model request that only sees the query.
+  - Memory: facts you tell it to remember and the steps of jobs that worked, in Markdown
+    files you can edit (on the agent's disk, or in a GitHub repository of yours); the
+    alerts you turned down; a search of your past conversations
+    ([docs/memory.md](docs/memory.md)).
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
@@ -120,7 +124,12 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
-| `JOURNAL_KEEP_DAYS` | `365` | Days the journal of requests is kept in `DATA_DIR/journal`; `0` turns it off. |
+| `JOURNAL_KEEP_DAYS` | `365` | Days the journal of requests is kept in `DATA_DIR/journal`; `0` turns it off (and the search of past conversations with it). |
+| `FILES_KEEP_DAYS` | `30` | Days the files of a chat are kept in `DATA_DIR/files`, so they survive a restart; `0`: memory only. |
+| `MEMORY_STORE` | `local` | Where the memory is kept: `local` (files in `DATA_DIR`), `github` (a repository) or `off`. See [docs/memory.md](docs/memory.md). |
+| `MEMORY_REPO` | unset | `owner/repo` for `MEMORY_STORE=github`; `GITHUB_TOKEN` must be allowed to write to it. |
+| `MEMORY_PATH`, `PROCEDURES_PATH` | `memory.md`, `procedures.md` | The two files; in a repository they default to a folder named after the assistant. |
+| `MEMORY_CRYPT_KEY` | unset | Optional: the git-crypt key of a repository that encrypts that folder. |
 
 ### Outdoor activities
 
@@ -205,6 +214,12 @@ The guardrails are enforced in code, not only in the prompt.
   names of the tools used stay in conversation memory; the private content is dropped, so
   it can't steer later requests. A request that fails is rolled back entirely. The
   journal keeps neither the reply nor the tool arguments of a tainted request.
+- **Memory**: a remembered fact comes back in every later request, so nothing is
+  remembered, forgotten or saved as a procedure after a read or in a reply quoting a
+  message without your go, shown with every word; passwords, keys and tokens are refused.
+  Facts are given to the model as data, not instructions, and are among what a web search
+  query may not repeat. Saved chats and files are written readable by the agent's user
+  only.
 - **Connectors**: reading from a connected service taints the request like an email. A
   write never runs when asked, even in a clean request: it waits for your go as above,
   shown with its exact arguments; with `writes: off` the write tools don't exist.

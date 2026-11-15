@@ -36,6 +36,12 @@ class Strings:
     written_line: str
     # Example of offering details in a chat, for the prompt.
     chat_detail_offer: str
+    # Memory (tools/memory.py, tools/procedures.py): how its writes read in that list,
+    # and the words that ask to remember, for the prompt.
+    remember_summary: str
+    forget_summary: str
+    procedure_summary: str
+    remember_phrases: str
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -60,6 +66,10 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (may delete or overwrite)",
         written_line="Written: {summary}",
         chat_detail_offer='"Want the details?"',
+        remember_summary="Remember “{fact}”",
+        forget_summary="Forget what I remember about “{words}”",
+        procedure_summary="Keep the steps",
+        remember_phrases='"remember that", "keep in mind", "note that I"',
     ),
     "fr": Strings(
         name="French",
@@ -82,6 +92,10 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (peut supprimer ou écraser)",
         written_line="Écrit : {summary}",
         chat_detail_offer='"Tu veux le détail ?"',
+        remember_summary="Retenir « {fact} »",
+        forget_summary="Oublier ce que je retiens sur « {words} »",
+        procedure_summary="Retenir la démarche",
+        remember_phrases='"retiens que", "souviens-toi", "note que je"',
     ),
 }
 

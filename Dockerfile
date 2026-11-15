@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install . && useradd --create-home --uid 10001 agent \
+RUN pip install ".[crypt]" && useradd --create-home --uid 10001 agent \
     && mkdir /app/data && chown agent /app/data
 
 USER agent

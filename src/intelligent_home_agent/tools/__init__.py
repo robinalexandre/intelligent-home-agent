@@ -10,10 +10,14 @@ from intelligent_home_agent.tools.home_assistant import EntityPolicy, build_home
 from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledge_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mail import ImapMailbox, build_email_tools
+from intelligent_home_agent.tools.memory import GitHubFile, LocalFile, Memory, build_memory_tools
 from intelligent_home_agent.tools.outdoor import build_outdoor_tools
+from intelligent_home_agent.tools.past_conversations import build_past_conversation_tools
+from intelligent_home_agent.tools.procedures import build_procedure_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.surf import build_surf_tools
 from intelligent_home_agent.tools.travel import Router, build_travel_tools
+from intelligent_home_agent.tools.turned_down import TurnedDown, build_turned_down_tools
 from intelligent_home_agent.tools.weather import OpenMeteo, build_weather_tools, build_wind_tools
 from intelligent_home_agent.tools.web import (
     build_engine_web_tools,
@@ -25,8 +29,11 @@ __all__ = [
     "CalDavCalendar",
     "EntityPolicy",
     "GitHub",
+    "GitHubFile",
     "ImapMailbox",
     "KnowledgeBase",
+    "LocalFile",
+    "Memory",
     "OpenMeteo",
     "ReminderRepo",
     "Router",
@@ -34,6 +41,7 @@ __all__ = [
     "ToolContext",
     "ToolError",
     "ToolRegistry",
+    "TurnedDown",
     "build_assistant_reminder_tools",
     "build_calendar_tools",
     "build_email_tools",
@@ -43,11 +51,15 @@ __all__ = [
     "build_home_assistant_tools",
     "build_knowledge_tools",
     "build_long_result_tools",
+    "build_memory_tools",
     "build_outdoor_tools",
+    "build_past_conversation_tools",
+    "build_procedure_tools",
     "build_proposal_tools",
     "build_search_engine",
     "build_surf_tools",
     "build_travel_tools",
+    "build_turned_down_tools",
     "build_weather_tools",
     "build_web_tools",
     "build_wind_tools",
