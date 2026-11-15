@@ -329,6 +329,22 @@ class Settings(BaseSettings):
     # it put a photo the user sent online for a few minutes, for a reverse image search.
     public_url: str | None = None
 
+    # --- Remote browser the user logs into (compose/browser.yml, docs/browser.md) ------
+    # Chrome's control port, on an internal network only (the browser-cdp relay); set by
+    # compose/browser.yml. Empty: no remote browser tools.
+    browser_cdp_host: str | None = None
+    browser_cdp_port: int = 9223
+    # The page, behind a login, where the user logs into sites: sent to them as a link.
+    browser_public_url: str | None = None
+    # Chrome's downloads, shared read-only with the agent (set by compose/browser.yml).
+    browser_downloads_dir: str = "browser-downloads"
+    # Pages seen from another country (compose/vpn.yml sets the three): the filtering
+    # proxy's port that leaves through the VPN container, and that container's control
+    # server with its key. Without a key: no country on browser_open.
+    browser_abroad_proxy: str | None = None
+    vpn_control_url: str = "http://vpn:8000"
+    vpn_control_key: SecretStr | None = None
+
     # --- Calendar (CalDAV) -------------------------------------------------------------
     caldav_url: str | None = None
     caldav_username: str | None = None

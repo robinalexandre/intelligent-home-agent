@@ -262,6 +262,11 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "read_apple_note",
         "find_my_devices",
         "play_sound_on_device",
+        "request_login",
+        "browser_open",
+        "browser_click",
+        "browser_type",
+        "browser_screenshot",
     }
     assert registry.jobs == []
     # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
@@ -1111,3 +1116,30 @@ def test_an_apple_id_moves_reminders_to_icloud_with_notes_and_find_my(monkeypatc
     monkeypatch.setattr(main, "icloud_available", lambda: False)
     names = main.build_registry(settings, ha=None, http=None, llm=None).names()
     assert "get_reminders" not in names and "create_reminder" in names
+
+
+def test_the_remote_browser_needs_its_address_and_its_page_and_a_vpn_key_for_abroad(
+    monkeypatch, tmp_path
+):
+    base_env(monkeypatch)
+    monkeypatch.setenv("BROWSER_CDP_HOST", "browser")
+    settings = main.Settings(_env_file=None)
+    assert "browser_open" not in main.build_registry(settings, None, None, None).names()
+
+    monkeypatch.setenv("BROWSER_PUBLIC_URL", "https://browser.example.com")
+    monkeypatch.setenv("WEB_TRUSTED_DOMAINS", "example.org")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, None, None, None)
+    assert {"request_login", "browser_open", "browser_click", "browser_type"} <= registry.names()
+    assert "country" not in registry.get("browser_open").input_schema["properties"]
+    assert registry.jobs == [] and not main.prompt_config(settings).browser_abroad
+
+    monkeypatch.setenv("VPN_CONTROL_KEY", "k" * 32)
+    monkeypatch.setenv("BROWSER_ABROAD_PROXY", "http://10.89.42.30:3129")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, None, None, None)
+    assert "country" in registry.get("browser_open").input_schema["properties"]
+    assert len(registry.jobs) == 1 and main.prompt_config(settings).browser_abroad
+
+    monkeypatch.setattr(main, "browser_available", lambda: False)
+    assert "browser_open" not in main.build_registry(settings, None, None, None).names()

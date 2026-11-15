@@ -82,12 +82,14 @@ from intelligent_home_agent.tools import (
     MergedCalendar,
     OpenMeteo,
     ReminderRepo,
+    RemoteBrowser,
     Router,
     Tool,
     ToolRegistry,
     TurnedDown,
     WebPages,
     build_assistant_reminder_tools,
+    build_browser_tools,
     build_calendar_tools,
     build_calendar_write_tools,
     build_draft_tools,
@@ -124,6 +126,7 @@ from intelligent_home_agent.tools.assistant_notes import (
     RepoFolder,
     build_assistant_note_tools,
 )
+from intelligent_home_agent.tools.browser import available as browser_available
 from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
@@ -151,6 +154,7 @@ from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.repos import Repositories, build_repository_tools
 from intelligent_home_agent.tools.scheduled_tasks import build_task_tools
+from intelligent_home_agent.tools.vpn import Vpn
 from intelligent_home_agent.tools.vulnerabilities import (
     Vulnerabilities,
     build_vulnerability_tools,
@@ -435,6 +439,11 @@ def build_registry(
     if settings.web_pages_enabled:
         trusted = trusted_domains(settings.home_country, settings.web_trusted_domains)
         registry.extend(build_web_page_tools(WebPages(trusted), language=settings.language))
+    browser = build_browser(settings, http)
+    registry.extend(build_browser_tools(browser))
+    if browser is not None and browser.vpn is not None:
+        # gluetun connects as it starts: the VPN is stopped whenever nothing browses abroad.
+        registry.jobs.append(browser.keep_vpn_off)
     if settings.investigations_enabled:
         investigator = Investigator(http, nominatim_url=settings.nominatim_url)
         registry.extend(build_osint_tools(investigator, settings.public_url))
@@ -552,6 +561,27 @@ def add_drives(
             )
 
 
+def build_browser(settings: Settings, http: httpx.AsyncClient) -> RemoteBrowser | None:
+    """The remote Chrome the user logs into (docs/browser.md), with its VPN exit when
+    compose/vpn.yml is there."""
+    if not (settings.browser_cdp_host and settings.browser_public_url):
+        return None
+    if not browser_available():
+        log.error('BROWSER_CDP_HOST needs the playwright package: pip install ".[browser]"')
+        return None
+    key = settings.vpn_control_key
+    return RemoteBrowser(
+        settings.browser_cdp_host,
+        settings.browser_cdp_port,
+        settings.browser_public_url,
+        Path(settings.browser_downloads_dir),
+        Path(settings.data_dir) / "browser-sites.json",
+        trusted_domains(settings.home_country, settings.web_trusted_domains),
+        vpn=Vpn(http, settings.vpn_control_url, key.get_secret_value()) if key else None,
+        abroad_proxy=settings.browser_abroad_proxy or "",
+    )
+
+
 def build_icloud(settings: Settings) -> ICloudWeb | None:
     """The iCloud web session behind Reminders, Notes and Find My (docs/apple.md)."""
     if not settings.icloud_apple_id:
@@ -606,6 +636,7 @@ def prompt_config(settings: Settings) -> PromptConfig:
         weather_detail=settings.weather_detail,
         spot_example=spots[0].name if spots else None,
         user_name=settings.user_name,
+        browser_abroad=bool(settings.vpn_control_key and settings.browser_abroad_proxy),
     )
 
 

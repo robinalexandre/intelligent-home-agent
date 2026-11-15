@@ -39,6 +39,7 @@ ALL_TOOLS = {
     "get_reminders",
     "search_apple_notes",
     "find_my_devices",
+    "browser_open",
     "web_search",
     "list_saved_files",
     "read_saved_file",
@@ -288,3 +289,11 @@ def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
     # Without phone reminders, a task is how the user is reminded of something.
     alone = prompt(tools={"schedule_task"})
     assert "how you remind the user" in alone and "create_reminder" not in alone
+
+
+def test_the_remote_browser_is_explained_when_it_is_there_and_abroad_only_with_a_vpn():
+    text = prompt()
+    assert "call request_login at once" in text and "Never ask for or type a password" in text
+    assert "browser_open with country" not in text
+    assert "browser_open with country" in prompt(browser_abroad=True)
+    assert "browser_open" not in prompt(tools=ALL_TOOLS - {"browser_open"})
