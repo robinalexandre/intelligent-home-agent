@@ -30,6 +30,9 @@ ANSWERS = [
     "w, sw",
     "",  # min knots: default
     "n",  # no more spots
+    "letter",  # paper
+    "gemini",  # generated pictures
+    "y",  # code sandbox
     "n",  # no Home Assistant
     "",  # no Hue
     "y",  # CalDAV
@@ -40,7 +43,7 @@ ANSWERS = [
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
 ]
-SECRETS = ["sk-very-secret", "caldav-pass", ""]
+SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
 
 def scripted(answers):
@@ -83,13 +86,15 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
          "directions": ["W", "SW"], "min_knots": 12.0}
     ]  # fmt: skip
     assert env["CALDAV_PASSWORD"] == "caldav-pass"
+    assert env["PAPER_SIZE"] == "letter" and env["CODE_EXECUTION_ENABLED"] == "true"
+    assert env["GENERATION_GEMINI_API_KEY"] == "gen-secret"
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
     assert "HA_TOKEN" not in env and "NTFY_TOKEN" not in env
     assert len(env["AGENT_API_TOKEN"]) >= 40
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
     output = "\n".join(printed)
-    for secret in ("sk-very-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
+    for secret in ("sk-very-secret", "gen-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
         assert secret not in output
     assert "LLM_API_KEY = (set)" in output
     assert "COMPOSE_FILE" not in env and "http://127.0.0.1:8000" in output
@@ -108,9 +113,10 @@ def run_with(tmp_path, answers, secrets_typed):
     return env, "\n".join(printed)
 
 
-# Name, language, time zone; then after the model: no city, no sections, no activities.
+# Name, language, time zone; then after the model: no city, no sections, no activities,
+# the usual paper and no generated pictures.
 START = ["", "en", "UTC"]
-NOTHING_ELSE = ["", "weather", "short", ""]
+NOTHING_ELSE = ["", "weather", "short", "", "", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
@@ -170,6 +176,8 @@ def test_without_docker_no_compose_question(tmp_path):
     answers += [*NOTHING_ELSE, "n", "", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
+    # Not Anthropic: the code sandbox is not offered. No country: A4.
+    assert env["PAPER_SIZE"] == "a4" and "CODE_EXECUTION_ENABLED" not in env
     assert "uvicorn intelligent_home_agent.main:app" in output
 
 
@@ -183,6 +191,13 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
+    from intelligent_home_agent.tools.documents import LETTER_COUNTRIES, PAPER_SIZES, paper_for
+
+    assert set(setup.PAPERS) == set(PAPER_SIZES)
+    assert {c.casefold() for c in setup.LETTER_COUNTRIES} == {
+        c for c in LETTER_COUNTRIES if len(c) == 2
+    }
+    assert all(paper_for("auto", c) == "letter" for c in setup.LETTER_COUNTRIES)
 
 
 def test_existing_env_is_kept_unless_confirmed(tmp_path):

@@ -41,6 +41,10 @@ spoken morning briefing and evening recap.
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - Web search with any model, in a separate model request that only sees the query.
+  - Documents and pictures ([docs/documents.md](docs/documents.md)): PDFs it writes
+    (a letter, a statement, a summary) on A4 or US Letter, PDF forms filled, pages
+    extracted and merged, diagrams drawn, animations; and, with a key of your own,
+    pictures and clips from an image model, and calculations in a sandbox.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
@@ -115,6 +119,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
 | `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
+| `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR` | `true`, `auto`, DejaVu | PDFs, forms and drawings ([docs/documents.md](docs/documents.md)); paper `a4`, `letter` or by country; a folder of fonts. |
+| `EXERCISE_PHOTOS_ENABLED` | `false` | Exercise photos from a public-domain bank. |
+| `CODE_EXECUTION_ENABLED`, `CODE_EXECUTION_MODEL` | `false`, `LLM_MODEL` | Calculations and charts in the provider's sandbox (Anthropic only). |
+| `GENERATION_GEMINI_API_KEY`, `GENERATION_OPENAI_API_KEY` | unset | Pictures and clips from Google's or OpenAI's models, billed there; models, an OpenAI-compatible address and limits in `.env.example`. |
 | `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
@@ -211,6 +219,12 @@ The guardrails are enforced in code, not only in the prompt.
 - **Files**: a file you send is read as data written by someone else (it taints the
   request), its name is reduced to a safe character set, and an office file that would
   expand like a zip bomb is not opened.
+- **Documents and pictures**: a PDF or a drawing the agent writes is rendered on the
+  server from an allowlist: only layout tags, and only images already kept in the
+  conversation, so nothing in it can load a file or an address. Opening a kept file or
+  a form taints the request. A prompt for an image model is checked like a search
+  query, only pictures you sent or the agent made go along, and each request makes a
+  few at most. Code runs in the model provider's sandbox, never on your machine.
 - **Read-only sources**: IMAP mailboxes are opened read-only and never marked as read;
   CalDAV is only queried.
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script

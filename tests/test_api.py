@@ -219,10 +219,54 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_github_pull_requests",
         "get_assistant_reminders",
         "web_search",
+        "find_exercise_photos",
+        "generate_image",
+        "generate_video",
+        "run_code",
     }
+    # Documents need no account: on with what the documents extra brings.
+    assert {"list_saved_files", "read_saved_file", "create_pdf", "fill_pdf"} <= names
+    assert {"read_pdf_layout", "copy_pdf_pages", "draw_image", "make_animation"} <= names
     # The core's own tools are always there: what waits for a go, and long results.
     assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
     assert "ask_in_poll" not in names
+
+
+def test_documents_pictures_and_the_sandbox_follow_their_settings(monkeypatch):
+    class Sandboxed:
+        files = object()
+
+    base_env(monkeypatch)
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("HOME_COUNTRY", "US")
+    monkeypatch.setenv("EXERCISE_PHOTOS_ENABLED", "true")
+    monkeypatch.setenv("CODE_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("GENERATION_OPENAI_BASE_URL", "http://192.168.1.50:8080/v1")
+    monkeypatch.setenv("GENERATION_OPENAI_VIDEO_MODEL", "off")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, ha=None, http=object(), llm=Sandboxed())
+    names = registry.names()
+    assert {"find_exercise_photos", "save_exercise_photos", "generate_image", "run_code"} <= names
+    assert "generate_video" not in names  # that server makes no video
+    described = {d["name"]: d["description"] for d in registry.definitions()}
+    assert "US Letter paper" in described["create_pdf"]  # PAPER_SIZE=auto, from the country
+
+    # The sandbox is Anthropic's: with another provider, or an SDK without files, no tool.
+    assert "run_code" not in main.build_registry(settings, ha=None, http=None, llm=None).names()
+    monkeypatch.setenv("LLM_PROVIDER", "mistral")
+    monkeypatch.setenv("LLM_MODEL", "some-model")
+    monkeypatch.setenv("GENERATION_GEMINI_API_KEY", "gkey")
+    monkeypatch.setenv("GENERATION_DEFAULT_PROVIDER", "gemini")
+    monkeypatch.setenv("DOCUMENTS_ENABLED", "false")
+    monkeypatch.setenv("PAPER_SIZE", "a4")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, ha=None, http=None, llm=Sandboxed())
+    names = registry.names()
+    assert "run_code" not in names and {"generate_image", "generate_video"} <= names
+    assert not names & {"create_pdf", "list_saved_files", "draw_image", "find_exercise_photos"}
+    schema = {d["name"]: d["input_schema"] for d in registry.definitions()}
+    assert schema["generate_image"]["properties"]["provider"]["enum"] == ["gemini", "openai"]
+    assert schema["generate_video"]["properties"]["provider"]["enum"] == ["gemini"]
 
 
 def test_settings_reject_unknown_sections_and_activities(monkeypatch):

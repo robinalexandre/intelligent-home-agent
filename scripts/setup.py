@@ -81,6 +81,17 @@ SECTIONS = {
     "weather": "the weather",
     "activities": "outdoor sessions worth planning",
 }
+PAPERS = {
+    "a4": "A4, the paper of most of the world",
+    "letter": "US Letter",
+}
+# Kept in step with tools/documents.py (not imported: it needs the app installed).
+LETTER_COUNTRIES = {"US", "CA", "MX", "PH", "CO", "CL", "VE", "CR", "GT", "PA", "DO", "PR"}
+GENERATORS = {
+    "none": "no generated pictures",
+    "gemini": "Google: Gemini's image model and Veo clips, with an AI Studio key",
+    "openai": "OpenAI: gpt-image and Sora clips, with an API key",
+}
 CHANNELS = {
     "siri": "Siri Shortcuts on iPhone, HomePod, Mac",
     "home_assistant": "Home Assistant Assist (voice satellites, phone app), and through it "
@@ -104,6 +115,8 @@ SECRET_KEYS = {
     "MAIL_ACCOUNTS",
     "GITHUB_TOKEN",
     "NTFY_TOKEN",
+    "GENERATION_GEMINI_API_KEY",
+    "GENERATION_OPENAI_API_KEY",
 }
 
 
@@ -410,6 +423,23 @@ def ask_activities(p: Prompter, env: dict[str, str]) -> None:
             env[key] = json.dumps(spots, ensure_ascii=False)
 
 
+def ask_documents(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# Documents and pictures (docs/documents.md)")
+    p.say("  The assistant can write PDFs (letters, statements), fill forms and draw.")
+    usual = "letter" if env.get("HOME_COUNTRY", "").upper() in LETTER_COUNTRIES else "a4"
+    env["PAPER_SIZE"] = p.pick("Paper for the PDFs", PAPERS, usual)
+    p.say("  A language model writes no photo-like pictures: an image model can, billed")
+    p.say("  per picture on an account of yours.")
+    provider = p.pick("Generated pictures", GENERATORS, "none")
+    if provider != "none" and (key := p.secret(f"API key for {provider}")):
+        env[f"GENERATION_{provider.upper()}_API_KEY"] = key
+    if env.get("LLM_PROVIDER") == "anthropic" and p.yes(
+        "Exact calculations and charts in Anthropic's code sandbox (billed with the model)?",
+        False,
+    ):
+        env["CODE_EXECUTION_ENABLED"] = "true"
+
+
 def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
     p.say("\n# Data sources (each one is optional)")
     if p.yes("Control the home through Home Assistant?", True):
@@ -510,6 +540,15 @@ GROUPS = [
     ("Calendar", ["CALDAV_URL", "CALDAV_USERNAME", "CALDAV_PASSWORD"]),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
+    (
+        "Documents and pictures",
+        [
+            "PAPER_SIZE",
+            "GENERATION_GEMINI_API_KEY",
+            "GENERATION_OPENAI_API_KEY",
+            "CODE_EXECUTION_ENABLED",
+        ],
+    ),
     ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
 ]
@@ -556,6 +595,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     ask_home(p, env, lookup)
     sections = ask_brief(p, env)
     ask_activities(p, env)
+    ask_documents(p, env)
     ask_sources(p, env, sections)
     if docker:
         ask_knowledge(p, env)

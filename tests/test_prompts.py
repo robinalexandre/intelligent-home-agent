@@ -14,6 +14,19 @@ ALL_TOOLS = {
     "get_outdoor_forecast",
     "create_reminder",
     "web_search",
+    "list_saved_files",
+    "read_saved_file",
+    "create_pdf",
+    "read_pdf_layout",
+    "fill_pdf",
+    "copy_pdf_pages",
+    "draw_image",
+    "make_animation",
+    "find_exercise_photos",
+    "save_exercise_photos",
+    "generate_image",
+    "generate_video",
+    "run_code",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 
@@ -113,3 +126,27 @@ def test_core_tools_get_their_paragraphs_only_when_registered():
     assert "Actions waiting for the user's go" in text
     assert '"yes", "oui"' in text and "drop_proposals" in text
     assert "read_result_part reads the next ones" in text
+
+
+def test_documents_and_pictures_are_mentioned_only_when_their_tools_exist():
+    text = prompt()
+    for line in (
+        "create_pdf writes a PDF",
+        "draw it with draw_image",
+        "find_exercise_photos has",
+        "Generated pictures (generate_image / generate_video)",
+        "read_pdf_layout, then fill_pdf",
+        "copy_pdf_pages makes a new PDF",
+        "run_code computes exactly",
+        "look at list_saved_files",
+    ):
+        assert line in text
+    # Files are others' words: named once among what closes the request to writes.
+    assert text.count("kept files were read") == 1
+
+    bare = prompt(tools={"get_weather", "draw_image", "generate_image"})
+    assert "draw it with draw_image" in bare and "find_exercise_photos" not in bare
+    assert "Generated pictures (generate_image)" in bare
+    for absent in ("create_pdf", "fill_pdf", "copy_pdf_pages", "run_code", "list_saved_files"):
+        assert absent not in bare
+    assert "kept files were read" not in bare
