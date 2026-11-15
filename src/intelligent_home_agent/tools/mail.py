@@ -528,7 +528,7 @@ class ImapMailbox:
     def _searched(
         self, imap: imaplib.IMAP4, received: bool = True, sent: bool = False
     ) -> list[Folder]:
-        """Where received emails may be: the user deletes or files them during the day. The
+        """Where received emails may be: the user may have deleted or filed them since. The
         inbox first, then the user's folders (Gmail: All Mail, which holds every label),
         then the trash. With sent, the sent emails' folder too."""
         folders = self._list(imap)
@@ -1512,7 +1512,7 @@ def build_email_tools(sources: list[MailSource], timezone: str) -> list[Tool]:
             description=(
                 "Recent emails (sender, subject, start of the text) from the user's mailboxes, "
                 "read-only, from every folder: the inbox, the user's folders and the trash "
-                "(the user deletes and files emails during the day; deleted ones say so). Use "
+                "(the user may have deleted or filed some since; deleted ones say so). Use "
                 "it to spot what is important or needs an answer. Only unread ones unless "
                 "unread_only is false: the emails the user already deleted or filed are "
                 "usually read, so a look that must include them sets it false from the first "

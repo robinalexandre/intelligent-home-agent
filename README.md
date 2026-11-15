@@ -32,7 +32,10 @@ spoken morning briefing and evening recap.
   - Outdoor activities: wind sports per spot (strength, gusts, direction), surf per beach
     (waves, period, wind effect, tides), and weather windows for everything else
     (cycling, running, hiking, skiing, climbing, golf, or just "I go out a lot").
-  - Calendar (CalDAV) and mailboxes (IMAP), both read-only.
+  - Mailboxes (IMAP), calendars (CalDAV) and contacts' birthdays (CardDAV), with any
+    provider that offers them: read-only by default; when you allow it, email
+    drafts, flags and filing into your folders, and new calendar events. It never
+    sends or deletes an email ([docs/mail-calendar.md](docs/mail-calendar.md)).
   - When to leave for an appointment (driving time from home, OpenStreetMap).
   - GitHub pull requests waiting for you, and reminders left with a coding assistant.
   - Connectors: any service that has an MCP server, such as your bank or your hosting
@@ -110,7 +113,9 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
 | `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
-| `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only. |
+| `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
+| `CARDDAV_URL`, `CARDDAV_USERNAME`, `CARDDAV_PASSWORD` | unset | Contacts' birthdays in the agenda; the login defaults to CalDAV's. |
+| `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only; `"write": true` on an account allows drafts, flags and filing there. |
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
 | `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
 | `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
@@ -211,8 +216,15 @@ The guardrails are enforced in code, not only in the prompt.
 - **Files**: a file you send is read as data written by someone else (it taints the
   request), its name is reduced to a safe character set, and an office file that would
   expand like a zip bomb is not opened.
-- **Read-only sources**: IMAP mailboxes are opened read-only and never marked as read;
-  CalDAV is only queried.
+- **Mail and calendar**: reading opens IMAP folders read-only and never marks an email
+  as read; CalDAV and CardDAV are only queried. Writing is off until you turn it on
+  (per mail account, and for the calendar). Even then no email is ever sent or
+  deleted: a draft waits in your mail app for you to send, filing only goes to
+  folders of your own, and a replaced draft goes to the trash. Flagging, filing and
+  adding an event wait for your go once the request read anything; changing or
+  removing a draft and creating a folder always do; filing never runs by itself in a
+  scheduled task. Each saved draft is noted under the reply by the code, with a
+  warning when it carries files after content written by others was read.
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
   never prints them. The Siri Shortcut files hold the token: don't share them.
 

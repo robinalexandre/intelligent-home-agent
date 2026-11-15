@@ -226,8 +226,9 @@ Optional data sources, each off until its settings are filled in:
 
 | Source | Works with | Doesn't |
 |---|---|---|
-| Calendar (CalDAV, read-only) | iCloud (`https://caldav.icloud.com`, an app-specific password), Fastmail (`https://caldav.fastmail.com/dav/`), Nextcloud (`https://<host>/remote.php/dav`), any CalDAV server with a password | Google Calendar and Microsoft 365, whose CalDAV or equivalent needs OAuth |
-| Mail (IMAP, read-only) | Gmail (`imap.gmail.com`, an app password, 2-step verification on), iCloud (`imap.mail.me.com`, an app-specific password), Fastmail, most hosting providers | Outlook.com and Microsoft 365, which need OAuth |
+| Calendar (CalDAV; read, and adding events when you allow it: [mail-calendar.md](mail-calendar.md)) | iCloud (`https://caldav.icloud.com`, an app-specific password), Fastmail (`https://caldav.fastmail.com/dav/`), Nextcloud (`https://<host>/remote.php/dav`), any CalDAV server with a password | Google Calendar and Microsoft 365, whose CalDAV or equivalent needs OAuth |
+| Contacts' birthdays (CardDAV, read-only), shown in the agenda | iCloud (`https://contacts.icloud.com`), Fastmail (`https://carddav.fastmail.com/dav/`), Nextcloud (same address as its calendar), any CardDAV server with a password; the calendar's login is reused | Google Contacts, which needs OAuth |
+| Mail (IMAP; read and search, and per account when you allow it: drafts, flags, filing into your folders; never sends, never deletes) | Gmail (`imap.gmail.com`, an app password, 2-step verification on), iCloud (`imap.mail.me.com`, an app-specific password), Fastmail (`imap.fastmail.com`, an app password), most hosting providers and your own server on port 993 | Outlook.com and Microsoft 365, which need OAuth; servers that only offer STARTTLS on port 143 |
 | Weather, outdoor activities, travel time | no account: Open-Meteo and OpenStreetMap, once the home location is set | |
 | GitHub pull requests | a classic token with the `repo` scope | |
 | Connectors ([connectors.md](connectors.md)) | any service with an MCP server reachable over HTTPS: your bank, your hosting provider, an accounting tool | servers that only run as a local command |

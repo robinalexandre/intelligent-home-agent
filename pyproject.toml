@@ -12,6 +12,9 @@ dependencies = [
     "httpx>=0.27",
     "pydantic-settings>=2.4",
     "caldav>=3.0",
+    # Calendar events written and read (tools/calendar.py), CardDAV answers (tools/contacts.py).
+    "icalendar>=6.0",
+    "lxml>=5.0",
     # Office files the user sends, read as text; defusedxml keeps the XML parsing safe
     # from entity tricks.
     "openpyxl>=3.1",
