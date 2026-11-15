@@ -6,7 +6,7 @@
 | **What you need** | The server's HTTPS address and a login: an API token, OAuth client credentials, or a browser login done once with `scripts/mcp_login.py`. |
 | **Settings** | `MCP_SERVERS` (one line of JSON). The wizard does not ask for it. |
 | **Check it works** | `<name>_help` and `<name>_read` are in the startup log's tools; ask a question the service can answer. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+| **Verified** | Not run against the real service yet: the test suite only, against simulated services. |
 
 Many services now publish an [MCP](https://modelcontextprotocol.io) server: banks and
 accounting tools, hosting and cloud providers, rental or project management, CRMs. The
@@ -52,24 +52,27 @@ Use what the service offers, in this order of simplicity:
    client instead of letting the agent register. If the service renews the login at each
    use, the agent keeps the latest one in its data volume (`agent_data`).
 
-Example, a business bank account at Qonto, read-only:
+One worked example among others, here a business bank account at Qonto, read-only
+(the address and the scope names are that service's; yours are in your service's
+documentation):
 
 ```bash
 python scripts/mcp_login.py bank https://mcp.qonto.com/mcp --label Qonto \
   --scope "offline_access organization.read client.read client_invoices.read supplier_invoice.read"
 ```
 
-Another bank, a hosting provider or an accounting tool works the same way with its own
-address. A service whose MCP server only runs on your own computer (started by a command
+Any other bank, a hosting provider or an accounting tool works the same way with its own
+address and scopes. A service whose MCP server only runs on your own computer (started by a command
 rather than reached at an address) is not supported yet.
 
 ## What the agent may do
 
 The rules are enforced by the code, whatever the model or a message says:
 
-- **Reading taints the request.** An account holds text other people wrote (a payment's
-  label, a customer's message, a log line). Once the agent has read from a connector,
-  nothing acts on the home, writes or searches the web for the rest of that request
+- **Reading taints the request, and so does `<name>_help`.** An account holds text
+  other people wrote (a payment's label, a customer's message, a log line), and the
+  tool descriptions `<name>_help` returns are written by the remote server. Once the
+  agent has called either on a connector, nothing acts on the home, writes or searches the web for the rest of that request
   without your go, and what was read is dropped from memory after the reply.
 - **A write never runs when asked.** With `"writes": "confirm"`, the call is parked, as
   every action that waits for you is (see "Security model" in the README); the reply ends
@@ -77,7 +80,7 @@ The rules are enforced by the code, whatever the model or a message says:
 
   ```
   Waiting for your go ("yes", or "yes except 2"):
-  1. My Bank: create_client {"name": "Acme"}
+  1. My Bank: add_customer {"name": "Acme"}
   ```
 
   It runs only if your next message agrees ("yes", "yes except 2", "no"), and only if

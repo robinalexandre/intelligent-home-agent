@@ -148,8 +148,10 @@ def test_voice_messages_need_a_model_and_the_extra(monkeypatch, tmp_path, caplog
 
     settings = settings_with(monkeypatch, WHISPER_MODEL="tiny", LANGUAGE="fr")
     monkeypatch.setattr(main, "voice_available", lambda: False)
-    assert main.build_transcriber(settings) is None
-    assert 'pip install ".[voice]"' in caplog.text
+    main.log_error_once.cache_clear()
+    # Asked for twice at startup (the chat, the tool that reads other chats): said once.
+    assert main.build_transcriber(settings) is None and main.build_transcriber(settings) is None
+    assert caplog.text.count('pip install ".[voice]"') == 1
 
     monkeypatch.setattr(main, "voice_available", lambda: True)
     transcriber = main.build_transcriber(settings)

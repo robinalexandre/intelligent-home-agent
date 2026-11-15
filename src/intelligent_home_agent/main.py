@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
@@ -901,6 +902,13 @@ def build_crypt(settings: Settings, repo: str | None = None) -> ConfigCrypt | No
 
 
 @lru_cache
+def log_error_once(message: str) -> None:
+    """A startup line about a setting that cannot work, said once however many parts of
+    the agent ask for the same thing."""
+    log.error(message)
+
+
+@lru_cache
 def _crypt_for(key: str, own: tuple[str, ...]) -> ConfigCrypt | None:
     if not crypt_available():
         log.error('A git-crypt key needs the cryptography package: pip install ".[crypt]"')
@@ -1357,7 +1365,7 @@ def build_task_folder(settings: Settings, http: httpx.AsyncClient) -> NoteFolder
         return None
     crypt = build_crypt(settings, settings.notes_repo)
     if crypt is None and settings.notes_repo in _crypt_repos(settings):
-        log.error("tasks are off: the notes repository's git-crypt key cannot be used")
+        log_error_once("tasks are off: the notes repository's git-crypt key cannot be used")
         return None
     reader = ReminderRepo(
         http,
@@ -1728,7 +1736,7 @@ def build_transcriber(settings: Settings) -> Transcriber | None:
     if not settings.whisper_model:
         return None
     if not voice_available():
-        log.error('WHISPER_MODEL needs the faster-whisper package: pip install ".[voice]"')
+        log_error_once('WHISPER_MODEL needs the faster-whisper package: pip install ".[voice]"')
         return None
     return shared_transcriber(
         settings.whisper_model,
@@ -2036,8 +2044,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await http.aclose()
 
 
-app = FastAPI(title="intelligent-home-agent", version=__version__, lifespan=lifespan)
+# FastAPI would serve /docs, /redoc and /openapi.json to anyone, without the token: they
+# are off, and the three routes below answer only with API_DOCS=true.
+app = FastAPI(
+    title="intelligent-home-agent",
+    version=__version__,
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 _bearer = HTTPBearer(auto_error=False)
+
+
+def require_api_docs(request: Request) -> None:
+    if not request.app.state.settings.api_docs:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+
+@app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(require_api_docs)])
+async def openapi_schema(request: Request) -> JSONResponse:
+    return JSONResponse(request.app.openapi())
+
+
+@app.get("/docs", include_in_schema=False, dependencies=[Depends(require_api_docs)])
+async def swagger_page(request: Request) -> Response:
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=request.app.title)
+
+
+@app.get("/redoc", include_in_schema=False, dependencies=[Depends(require_api_docs)])
+async def redoc_page(request: Request) -> Response:
+    return get_redoc_html(openapi_url="/openapi.json", title=request.app.title)
 
 
 @app.exception_handler(LLMError)

@@ -151,7 +151,8 @@ code (`tools/base.py`), not only in the prompt, and hold whatever the model is t
 
 - **Authentication.** Every endpoint needs the bearer token, compared in constant time,
   except `/health`, a picture's short-lived link (below) and the coder's permission
-  endpoint, which takes the coder's own token.
+  endpoint, which takes the coder's own token. The API's description (`/docs`, `/redoc`,
+  `/openapi.json`) is not served unless `API_DOCS=true`.
 - **What the agent sees of the home.** Only Home Assistant entities in
   `HA_EXPOSED_DOMAINS`, never a denylisted one. A service can only target entities of its
   own domain, and targets can't be smuggled in through `data`.
@@ -167,7 +168,7 @@ code (`tools/base.py`), not only in the prompt, and hold whatever the model is t
   ```
   Waiting for your go ("yes", or "yes except 2"):
   1. Search the web for "bakery opening hours" and carry on
-  2. My Bank: create_client {"name": "Acme"}
+  2. My Bank: add_customer {"name": "Acme"}
   ```
 
   It runs only when your next message agrees, in a request that has read nothing else.
@@ -288,10 +289,8 @@ tests/                        pytest, no network
 
 ## Not verified yet
 
-Most of the code was ported from a private installation where it runs daily, then made
-general (any provider, any language, any country). The test suite covers it without the
-network; no real service was reachable while porting. What was **never run against the
-real thing** from this repository, collected from the feature pages:
+The test suite covers the code without the network, against simulated services. What
+was **not run against the real service** yet, collected from the feature pages:
 
 - **Telegram**: written from the Bot API's documentation, tested against a fake only.
 - **WhatsApp**: this version ran only against a fake WAHA; `compose/waha.yml` was not started.
@@ -308,8 +307,8 @@ real thing** from this repository, collected from the feature pages:
   service.
 - **The TV navigator**: used on one Google TV projector with Claude; other models were
   not tried on a real screen.
-- **The car**: ported from a setup with one Audi and one account; nothing was run
-  against other models or markets, and no other make exists yet.
+- **The car**: run on one Audi and one account; nothing was run against other models or
+  markets, and no other make exists yet.
 - **Not recorded**: runs against real services of the model providers other than
   Anthropic, of the search engines (DuckDuckGo, SearXNG, Brave, Tavily), of an
   OpenAI-compatible image server, of the Home Assistant, Google Home and Alexa recipes,

@@ -6,7 +6,7 @@
 | **What you need** | Nothing with Docker (the `documents` extra is in the image). A Google or OpenAI key for generated pictures; Anthropic's API for the code sandbox. |
 | **Settings** | `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR`, `GENERATION_*`, `CODE_EXECUTION_ENABLED`; the wizard's `documents` item. All of them: [settings.md](settings.md#files-and-documents). |
 | **Check it works** | `create_pdf` is in the startup log's tools; ask "write me a one-line test letter as a PDF" and download it from the reply's `files`. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. An OpenAI-compatible image server (`GENERATION_OPENAI_BASE_URL`) is new here and was not run against a real one. |
+| **Verified** | Not run against the real service yet, an OpenAI-compatible image server (`GENERATION_OPENAI_BASE_URL`) included: the test suite only, against simulated services. |
 
 The agent can make files and hand them to you: a letter as a PDF, a form filled in, a few
 pages taken out of a long PDF, a diagram, a short animation. With a key of your own it can

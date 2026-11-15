@@ -6,7 +6,7 @@
 | **What you need** | Your home location; spots for wind sports and surf. No account: Open-Meteo. A free id for Météo-France's stations; a chat channel or `NTFY_URL` for alerts. |
 | **Settings** | `OUTDOOR_ACTIVITIES`, `WIND_SPOTS`, `SURF_SPOTS`, `LIVE_WIND_SOURCES`, `ACTIVITY_ALERTS`; the wizard's `outdoor` item. All of them: [settings.md](settings.md#outdoor). |
 | **Check it works** | `get_outdoor_forecast` (or `get_wind_forecast`, `get_surf_forecast`) is in the startup log's tools; ask "is it a good day for a ride?". |
-| **Verified** | Forecasts, beacons and Météo-France stations come from code written against the real services; the airport-report reader is new and has not met the real service ([below](#what-could-not-be-checked)). |
+| **Verified** | Run against the real service: forecasts (Open-Meteo), beacons (OpenWindMap) and Météo-France stations, in an earlier form of this code. Not run: the airport-report reader, which is new ([below](#what-could-not-be-checked)). |
 
 The agent knows what you do outside and looks at the forecast the way that activity
 needs: wind per spot for a wind sport, waves per beach for surf, a dry and mild window
@@ -161,6 +161,6 @@ live.
 
 The tests replay recorded shapes of each service's answers; none of them was reachable
 from where this was written. Open-Meteo is used as before. The OpenWindMap and
-Météo-France readers were ported from code written against the real services; the
+Météo-France readers ran against the real services in an earlier form of this code; the
 airport-report reader is new, written from what is known of the service's interface, and
 has not met the real service yet: check it on your first `get_live_wind`.

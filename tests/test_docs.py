@@ -52,6 +52,20 @@ def test_every_setting_is_in_the_settings_reference():
     assert not stale, f"docs/settings.md names settings nothing reads: {stale}"
 
 
+def test_every_variable_of_the_compose_files_is_in_env_example():
+    lines = (ROOT / ".env.example").read_text()
+    listed = set(re.findall(r"^(?:# ?)?([A-Z][A-Z0-9_]*)=", lines, flags=re.M))
+    files = [ROOT / "docker-compose.yml", *sorted(ROOT.glob("compose/*.yml"))]
+    used = {
+        (name, file.name)
+        for file in files
+        for name in re.findall(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)", file.read_text())
+    }
+    assert len(used) > 40  # the pattern still finds them
+    missing = sorted((name, file) for name, file in used if name not in listed)
+    assert not missing, f"read by a Compose file, not in .env.example: {missing}"
+
+
 def test_every_feature_page_is_reachable_from_the_setup_guide_and_starts_the_same_way():
     guide = (DOCS / "setup.md").read_text()
     for page in sorted(DOCS.glob("*.md")):

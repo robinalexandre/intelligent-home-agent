@@ -6,7 +6,7 @@
 | **What you need** | Telegram: a bot you create with @BotFather, nothing else. WhatsApp: a WAHA gateway you run (`compose/waha.yml`), an unofficial client that WhatsApp's terms don't allow. |
 | **Settings** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`; `WAHA_API_KEY`, `WHATSAPP_CHAT_ID`; `WHISPER_MODEL` for voice messages; the wizard's question on how you talk to it. All of them: [below](#settings). |
 | **Check it works** | Write "hello" in the chat; the agent answers within a few seconds. The startup log says why a channel is off. |
-| **Verified** | WhatsApp: the code it comes from runs daily; this version only against a simulated WAHA, and `compose/waha.yml` was not started from this repository. Telegram: written from the Bot API's documentation, never run against Telegram ([below](#not-run-against-telegram)). |
+| **Verified** | Run against the real service: WhatsApp, in an earlier form of this code (WAHA, `GOWS` engine). Not run: this version of the WhatsApp code (a simulated WAHA only), `compose/waha.yml`, and Telegram, written from the Bot API's documentation ([below](#not-run-against-telegram)). |
 
 Talk to the assistant in writing from a messaging app: ask it things, send it files and
 voice messages, approve what it proposes with a tap, and get its briefings and the tasks
@@ -24,7 +24,7 @@ run at once:
 | Files in and out | yes, 10 MB in | yes, 20 MB in (the Bot API's limit) |
 | Voice messages | transcribed on the server, when set up | the same |
 | Reading your other chats | groups you list, on request | no |
-| Run against the real service | the code it comes from, daily; this version of it, not yet (below) | **no** (below) |
+| Run against the real service | an earlier form of this code, yes; this version, not yet (below) | **no** (below) |
 
 `python3 scripts/setup.py` asks which one you want ("how will you talk to it?") and writes
 the settings.
@@ -123,10 +123,10 @@ yourself, and `WAHA_SESSION` when the session is not `default`. WAHA must keep t
 of incoming messages for the API (`WHATSAPP_DOWNLOAD_MEDIA=True`, as `compose/waha.yml`
 sets it), and its engine must bring poll votes: the code was run with the `GOWS` engine.
 
-The WhatsApp code comes from a setup in daily use (WAHA, `GOWS` engine), reworked here
-to fit any installation; this version has only run against a fake WAHA
-(`tests/test_whatsapp.py`). `compose/waha.yml` was written from WAHA's documentation
-and that setup's settings, and has not been started from this repository. If the
+Run against the real service: an earlier form of the WhatsApp code (WAHA, `GOWS`
+engine), since reworked to fit any installation. Not run: this version, which has only
+met a fake WAHA (`tests/test_whatsapp.py`), and `compose/waha.yml`, written from WAHA's
+documentation and never started. If the
 dashboard or a variable differs in your WAHA version, its own documentation wins.
 
 ### What the agent reads

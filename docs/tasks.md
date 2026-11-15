@@ -6,7 +6,7 @@
 | **What you need** | A chat channel or `NTFY_URL`, so it can reach you. For the notes: a GitHub token and a repository. |
 | **Settings** | `TASKS_STORE`, `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT`; `GITHUB_TOKEN`, `NOTES_REPO`, `NOTES_WRITE`; the wizard's `briefing` and `github` items. All of them: [settings.md](settings.md#tasks-and-alerts). |
 | **Check it works** | The task tools are in the startup log's tools; ask "remind me in two minutes to stretch" and wait for the message. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+| **Verified** | Not run against the real service yet: the test suite only, against simulated services. |
 
 Two things that go together but work apart:
 

@@ -197,8 +197,6 @@ SECRET_KEYS = {
     "JOBS_GITHUB_TOKEN",
     "HUE_APP_KEY",
     "NUKI_API_TOKEN",
-    "CAR_REFRESH_TOKEN",
-    "CAR_PIN",
     "PETKIT_PASSWORD",
     "HOSTING_API_TOKEN",
     "LLM_API_KEY",
@@ -385,7 +383,7 @@ def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     choices = {"anthropic": MODELS["anthropic"], SUBSCRIPTION: SUBSCRIPTION_HELP, **MODELS}
     provider = p.pick("Provider", choices, "anthropic")
     if provider == SUBSCRIPTION:
-        ask_subscription(p, env, docker=docker)
+        ask_subscription(p, env)
         return
     env["LLM_PROVIDER"] = provider
     if provider == "openai-compatible":
@@ -408,7 +406,7 @@ def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     env["LLM_MODEL"] = model
 
 
-def ask_subscription(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
+def ask_subscription(p: Prompter, env: dict[str, str]) -> None:
     env["LLM_PROVIDER"] = "anthropic"
     env["ENGINE"] = "subscription"
     p.say("  Claude Code answers, signed in to your own Claude plan. On a computer with a")

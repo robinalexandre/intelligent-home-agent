@@ -6,7 +6,7 @@
 | **What you need** | Nothing: search and pages are on by default. Optional: your own SearXNG, a Brave or Tavily key; a public address for reverse image search. |
 | **Settings** | `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND`, `WEB_PAGES_ENABLED`, `WEB_TRUSTED_DOMAINS`, `INVESTIGATIONS_ENABLED`; the wizard's `web` item. All of them: [below](#settings). |
 | **Check it works** | `web_search` and `open_web_page` are in the startup log's tools; ask for something recent, e.g. "what is new in the latest Home Assistant release?". |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. No run against the real DuckDuckGo, SearXNG, Brave or Tavily is recorded. |
+| **Verified** | Not run against the real service yet (DuckDuckGo, SearXNG, Brave, Tavily): the test suite only, against simulated services. |
 
 Three things, each with its own switch:
 

@@ -6,7 +6,7 @@
 | **What you need** | An iCloud account with Advanced Data Protection off, the `icloud` extra, and a login you type once in the agent's container (Apple ID password and 2FA code) and renew when Apple ends it. |
 | **Settings** | `ICLOUD_APPLE_ID`; optional `ICLOUD_REMINDER_LISTS`, `ICLOUD_REMINDERS_DEFAULT_LIST`, `ICLOUD_NOTES`, `ICLOUD_FIND_MY`; the wizard's `apple` item. |
 | **Check it works** | The login command prints `Logged in: N Reminders lists`; then ask "what are my reminders?". |
-| **Verified** | The code is the one that runs in the author's own installation. Nothing was tried against a real iCloud account from this repository ([below](#when-the-login-expires)). |
+| **Verified** | Not run against the real service yet: the test suite only, against a simulated iCloud ([below](#when-the-login-expires)). |
 
 Optional, and only useful with an iCloud account. Without it the agent still makes
 reminders on an iPhone: the Siri Shortcut creates them from the agent's `actions`
@@ -107,7 +107,6 @@ early when you change the Apple ID's password or sign devices out.
   login"; the same step 3 brings it back for a while. If you mostly want reminders, set
   `ICLOUD_FIND_MY=false` and ignore this.
 
-Nothing here could be tried against a real iCloud account while this was written for the
-public repository: the code is the one that runs in the author's own installation, with its
-tests, but your account may differ (a managed Apple ID, a region where iCloud on the web is
+Nothing here was run against a real iCloud account yet: the test suite runs it against a
+simulated one, and your account may differ (a managed Apple ID, a region where iCloud on the web is
 served differently). If the login itself fails, check the pyicloud project's issues first.

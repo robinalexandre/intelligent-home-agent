@@ -6,7 +6,7 @@
 | **What you need** | The agent reachable from the phone ([setup.md, step 4](setup.md#4-reaching-the-agent)); a Mac to build the Shortcuts in one command, or ten minutes in the Shortcuts app. |
 | **Settings** | None on the agent's side beyond `AGENT_API_TOKEN` and `ASSISTANT_NAME`. |
 | **Check it works** | "Hey Siri, <assistant name>" → "Yes?" → your request → a spoken reply. |
-| **Verified** | Not recorded on this page. `scripts/build_shortcuts.py` needs macOS and could not be run where the other features were ported. |
+| **Verified** | Not run against the real service yet: `scripts/build_shortcuts.py` needs macOS, which was not at hand. |
 
 Siri can't pass free text in its trigger phrase, so the exchange is two steps:
 "Hey Siri, <assistant name>" → "Yes?" → your request → spoken reply.
@@ -16,8 +16,8 @@ Siri can't pass free text in its trigger phrase, so the exchange is two steps:
 ```bash
 python scripts/build_shortcuts.py --url https://agent.example.com --token "$AGENT_API_TOKEN" \
   --name "$ASSISTANT_NAME" --language en \
-  --quick "Surf check=Is there surf today or tomorrow?" \
-  --quick "Wind check=Is there wind for a session?"
+  --quick "My day=What's on my calendar today?" \
+  --quick "Weather=Do I need an umbrella today?"
 open shortcuts/*.shortcut
 ```
 
@@ -65,8 +65,9 @@ tonight").
 
 ## Morning briefing
 
-A second Shortcut, **Briefing**, sends open reminders along with the request, since the
-agent has no direct access to Apple Reminders:
+A second Shortcut, **Briefing**, sends open reminders along with the request. That is
+the way that needs nothing but the iPhone; with an iCloud login the agent can also read
+and change Apple Reminders by itself, from any client ([apple.md](apple.md)). By hand:
 
 1. **Find Reminders** where *Is Not Completed*, sorted by due date.
 2. **Repeat with Each**: **Text**: *Repeat Item* (title) `·` *Due Date*.

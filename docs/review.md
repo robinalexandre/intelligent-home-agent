@@ -6,7 +6,7 @@
 | **What you need** | The [coding jobs](jobs.md), the journal (`JOURNAL_KEEP_DAYS`), and your own **private** copy of this repository. Read the next section before turning it on: your conversations leave the agent. |
 | **Settings** | `REVIEW_REPO`, `REVIEW_AT`, `REVIEW_ALLOW_PUBLIC`; optional `REVIEW_LESSONS_REPO`, `REVIEW_LESSONS_PATH`; asked with the wizard's `jobs` item. |
 | **Check it works** | The startup log says `nightly review: on <repo>, after 05:30`; the morning after a day with requests: a pull request, or nothing. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+| **Verified** | Not run against the real service yet: the test suite only, against simulated services. |
 
 Every night, a coding job can read what you asked the agent the day before, fix in the
 code what made it fail or take the long way round, and open a pull request for you to read

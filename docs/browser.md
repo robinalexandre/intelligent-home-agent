@@ -6,7 +6,7 @@
 | **What you need** | Docker, some 700 MB of memory, and a way to reach the browser's page: Caddy or Traefik on your own domain (behind a login page), or Tailscale. A VPN subscription for the other-country part. |
 | **Settings** | `BROWSER_PUBLIC_URL`, `BROWSER_GATE`, `BROWSER_DOMAIN`, the `AUTH_` settings, `VPN_SERVICE_PROVIDER`; the wizard's `browser` item. All of them: [settings.md](settings.md#remote-browser). |
 | **Check it works** | `browser_open` is in the startup log's tools (the log says why not otherwise); ask it to open a page that needs JavaScript, then to log you into a site. |
-| **Verified** | The agent's code runs daily behind Traefik in the installation it comes from. None of the Compose files of this page was started from this repository ([below](#if-it-doesnt-start)). |
+| **Verified** | Run against the real service: the agent's code, behind Traefik on the host network. Not run: the Compose files of this page, none of which was started ([below](#if-it-doesnt-start)). |
 
 Optional, Docker only. A real Chrome runs next to the agent. You log into a site in it from
 a link (your password never goes through the agent), the session stays in Chrome's profile,
@@ -23,9 +23,8 @@ Chrome ──►  browser-proxy (refuses private addresses)  ──►  websites
 ```
 
 **None of the Compose files of this page could be started while they were written**: no
-Docker was available. The agent's code and its tests are the ones of an installation that
-runs daily behind Traefik on the host network; the files here were reshaped for this
-repository's `compose/` overlays (a gate container, Caddy, a tailnet-only variant, a VPN
+Docker was available. The agent's code ran behind Traefik on the host network; the
+Compose files were then reshaped into this repository's `compose/` overlays (a gate container, Caddy, a tailnet-only variant, a VPN
 provider as a setting) and only checked as valid YAML. Expect to adjust something on first
 start, and see "If it doesn't start" at the end.
 

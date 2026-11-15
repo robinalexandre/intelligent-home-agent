@@ -6,7 +6,7 @@
 | **What you need** | An API token at Hostinger or Hetzner Cloud. Another provider: a [connector](connectors.md) if it has an MCP server. |
 | **Settings** | `HOSTING_PROVIDER`, `HOSTING_API_TOKEN`; the wizard's `hosting` item. |
 | **Check it works** | `list_servers` is in the startup log's tools; ask "how are my servers?". |
-| **Verified** | Hostinger: used against the real API in the installation it was ported from. Hetzner: written from its documentation, never run against the real API ([below](#which-provider)). |
+| **Verified** | Run against the real service: Hostinger. Not run: Hetzner, written from its documentation ([below](#which-provider)). |
 
 "Is my server short on disk?", "why is the site down?", "restart the shop", "take a
 snapshot before I upgrade": with a provider and an API token, the agent reads your
@@ -40,7 +40,7 @@ The tools are the same whatever the provider (`list_servers`, `get_server_metric
 | Restart the server (`restart_server`) | yes | yes (a soft reboot) |
 | Snapshot (`take_server_snapshot`) | yes, it replaces the previous one | yes, each one is kept and billed until you delete it |
 | Where the token is made | hPanel > API | Cloud Console > the project > Security > API tokens |
-| Tested | used against the real API, in the private setup it was ported from | **written from Hetzner's documentation, never run against the real API** |
+| Tested | run against the real API | **written from Hetzner's documentation, never run against the real API** |
 
 Read the last row: the Hetzner provider's calls are checked by tests against what the
 documentation describes, not against Hetzner. Expect to fix a detail the first time you

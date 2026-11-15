@@ -6,7 +6,7 @@
 | **What you need** | The agent reachable from the client ([setup.md, step 4](setup.md#4-reaching-the-agent)) and `AGENT_API_TOKEN`. |
 | **Settings** | `AGENT_API_TOKEN`; `NTFY_URL`, `NTFY_TOKEN` for push. A chat in WhatsApp or Telegram is in [chat.md](chat.md). |
 | **Check it works** | The `curl` lines of [setup.md, step 6](setup.md#6-check-update-back-up). |
-| **Verified** | Not recorded: this page does not say which of the recipes below (Home Assistant Assist, Google Home, Alexa, ntfy, schedulers) were run. Treat them as written from each product's documentation. |
+| **Verified** | Not run against the real service yet: treat the recipes below (Home Assistant Assist, Google Home, Alexa, ntfy, schedulers) as written from each product's documentation. |
 
 The agent is an HTTP API. Every integration below is a client of one of these endpoints,
 all behind `Authorization: Bearer <AGENT_API_TOKEN>`:

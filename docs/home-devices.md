@@ -6,7 +6,7 @@
 | **What you need** | Per device: its address on the home network or its cloud account. Three rest on an optional library (`EXTRAS=documents,devices`). No Home Assistant needed. |
 | **Settings** | The table below, per device; the wizard's `devices` item. All of them: [settings.md](settings.md#home-devices). |
 | **Check it works** | The startup log lists the device's tools (`list_hue_lights`, `get_lock_state`...); ask "which lights are on?". A device whose library is missing is named in the log. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. `navigate_tv` was used on one Google TV projector with Claude; other models were not tried on a real screen. The car's code ran on one Audi and one account ([below](#audi-myaudi-an-unofficial-api)). |
+| **Verified** | Run against the real service: `navigate_tv` on one Google TV projector with Claude; the car's code on one Audi and one account ([below](#audi-myaudi-an-unofficial-api)). Not run: the other devices (the test suite only, against simulated ones), `navigate_tv` with other models, other cars and markets. |
 
 The agent can drive some devices directly, each one on when its settings are filled in.
 Home Assistant stays the way to reach everything else, and the two work side by side: a
@@ -275,8 +275,8 @@ private one the myAudi app talks to (CARIAD's), as community projects such as th
   app, and the car's tools then stop working until the code follows;
 - using it may not be allowed by the terms of your myAudi account: read them, and turn
   this on only if you accept that. It is off by default;
-- it was ported from a setup where it runs on one car and one account; nothing here was
-  run against other models or markets.
+- it ran on one car and one account; nothing here was run against other models or
+  markets.
 
 To connect, on a computer with a browser (not the server):
 

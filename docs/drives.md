@@ -6,7 +6,7 @@
 | **What you need** | Docker, the rclone sidecar (`compose/drive.yml`), and a login per drive: Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, S3 and whatever else rclone reaches. |
 | **Settings** | `DRIVES`, `DRIVE_PASSWORD` (`DRIVE_URL` is set by the Compose file); the wizard's `drives` item. All of them: [below](#settings). |
 | **Check it works** | `docker compose ps` shows `drive` running and the startup log lists the drive tools; ask "what is in my Documents folder?". |
-| **Verified** | Run against the real service: iCloud Drive only. Every other service, several drives at once and copies between drives: a simulated rclone only ([below](#what-was-tested)). |
+| **Verified** | Run against the real service: iCloud Drive only. Not run: every other service, several drives at once and copies between drives (a simulated rclone only) ([below](#what-was-tested)). |
 
 The agent can work with the files you keep in a drive: Google Drive, iCloud Drive,
 OneDrive, Dropbox, a NAS, a bucket. It goes through [rclone](https://rclone.org), which
@@ -110,8 +110,8 @@ on, so the agent's own copy matters most there.
 
 Be aware of what "works" means here.
 
-- **Tested against the real service: iCloud Drive only.** The code this module comes from
-  ran daily against iCloud Drive (folder walk, search, reading, creating folders, copies,
+- **Run against the real service: iCloud Drive only.** An earlier form of this code ran
+  daily against iCloud Drive (folder walk, search, reading, creating folders, copies,
   moves, deletions with the local copy, renewal every 30 days).
 - **Everything else should work, and has not been run against the real service.** The
   reason to expect it to work: the agent calls the same rclone API whatever the backend,

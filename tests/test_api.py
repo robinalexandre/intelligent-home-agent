@@ -85,6 +85,15 @@ def test_health_is_public(client):
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_the_api_description_is_served_only_when_asked_for(make_client):
+    paths = ["/docs", "/redoc", "/openapi.json"]
+    off = make_client()
+    assert [off.get(path, headers=AUTH).status_code for path in paths] == [404, 404, 404]
+    on = make_client(API_DOCS="true")
+    assert [on.get(path).status_code for path in paths] == [200, 200, 200]
+    assert "/v1/ask" in on.get("/openapi.json").json()["paths"]
+
+
 @pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
 def test_ask_requires_token(client, headers):
     assert client.post("/v1/ask", json={"text": "hi"}, headers=headers).status_code == 401

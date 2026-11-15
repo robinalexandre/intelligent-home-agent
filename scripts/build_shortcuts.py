@@ -4,7 +4,7 @@ macOS only (signing uses the `shortcuts` command):
 
     python scripts/build_shortcuts.py --url https://agent.example.com --token "$TOKEN" \
         --name "$ASSISTANT_NAME" --language en \
-        --quick "Surf check=Is there surf today or tomorrow?"
+        --quick "My day=What's on my calendar today?"
 
 Then open the files on the Mac (they sync to the iPhone through iCloud) or AirDrop them.
 The token is written into the files: don't share them.
@@ -210,7 +210,7 @@ def main_shortcut(url: str, token: str, name: str, prompt: str) -> list[dict[str
 
 
 def quick_question(url: str, token: str, name: str, question: str) -> list[dict[str, Any]]:
-    """A fixed question in one Siri phrase, e.g. "Hey Siri, surf check"."""
+    """A fixed question in one Siri phrase, e.g. "Hey Siri, my day"."""
     response_id, request = ask_agent(url, token, [("text", text(question))])
     reply_id, get_reply = get_value("reply", output(response_id, "Contents of URL"))
     return [request, get_reply, *reply_or_listen(response_id, reply_id, name, from_main=False)]
@@ -354,7 +354,7 @@ def main() -> None:
         action="append",
         default=[],
         metavar="NAME=QUESTION",
-        help='Extra one-phrase Shortcut, e.g. "Surf check=Is there surf today?" (repeatable)',
+        help='Extra one-phrase Shortcut, e.g. "My day=What is on my calendar today?" (repeatable)',
     )
     parser.add_argument(
         "--departure",

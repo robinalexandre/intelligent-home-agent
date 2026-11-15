@@ -27,7 +27,7 @@ SPECS = [
     },
     {"name": "get_balance", "description": "Balances."},
     {
-        "name": "create_client",
+        "name": "add_customer",
         "description": "Adds a client.",
         "annotations": {"destructiveHint": False},
     },
@@ -105,7 +105,7 @@ def registry_of(http, **kwargs) -> ToolRegistry:
 @respx.mock
 async def test_a_write_waits_for_a_yes_in_a_later_clean_message():
     server = FakeServer(answer="client created")
-    call = {"tool": "create_client", "arguments": {"name": "Acme"}}
+    call = {"tool": "add_customer", "arguments": {"name": "Acme"}}
     async with httpx.AsyncClient() as http:
         registry = registry_of(http)
         conv = Conversation(id="test")
@@ -114,7 +114,7 @@ async def test_a_write_waits_for_a_yes_in_a_later_clean_message():
         parked = await registry.run("bank_write", call, ctx)
         assert parked["status"] == "waiting_for_the_user" and server.calls == []
         assert ctx.actions == [
-            {"type": "proposal", "number": 1, "summary": 'My Bank: create_client {"name": "Acme"}'}
+            {"type": "proposal", "number": 1, "summary": 'My Bank: add_customer {"name": "Acme"}'}
         ]
         # Not shown to the user yet: nothing can run it.
         with pytest.raises(ToolError, match="Nothing is waiting"):
@@ -127,7 +127,7 @@ async def test_a_write_waits_for_a_yes_in_a_later_clean_message():
         # Their next message, having read nothing: the write runs exactly as shown.
         done = await registry.run("run_proposals", {}, context(2, conv))
         assert done == {"done": [{"number": 1, "result": "client created"}], "failed": []}
-        assert server.calls == [("create_client", {"name": "Acme"})]
+        assert server.calls == [("add_customer", {"name": "Acme"})]
         with pytest.raises(ToolError, match="Nothing is waiting"):
             await registry.run("run_proposals", {}, context(3, conv))
         # After a read in the same request, the go itself is refused.
@@ -154,7 +154,7 @@ async def test_a_destructive_write_says_so_and_unshowable_arguments_are_refused(
         for arguments in ({"note": "x" * 700}, {"note": "a‮b"}):
             with pytest.raises(ToolError, match="too long, or hold hidden"):
                 await registry.run(
-                    "bank_write", {"tool": "create_client", "arguments": arguments}, ctx
+                    "bank_write", {"tool": "add_customer", "arguments": arguments}, ctx
                 )
         with pytest.raises(ToolError, match="is a read: use bank_read"):
             await registry.run("bank_write", {"tool": "get_balance"}, ctx)
@@ -185,7 +185,7 @@ async def test_reads_and_writes_cannot_be_swapped_and_read_only_has_no_write_too
         assert set(read_only) == {"bank_help", "bank_read"}
         assert "delete_client" not in await read_only["bank_help"].handler({}, context())
         with pytest.raises(ToolError, match="read-only here"):
-            await read_only["bank_read"].handler({"tool": "create_client"}, context())
+            await read_only["bank_read"].handler({"tool": "add_customer"}, context())
     assert server.calls == []
 
 
@@ -198,7 +198,7 @@ async def test_the_reply_ends_with_the_exact_call_written_by_the_code(monkeypatc
             [
                 tool_response(("c1", "bank_read", {"tool": "get_balance"})),
                 tool_response(
-                    ("c2", "bank_write", {"tool": "create_client", "arguments": {"name": "Acme"}})
+                    ("c2", "bank_write", {"tool": "add_customer", "arguments": {"name": "Acme"}})
                 ),
                 text_response("Shall I add Acme?"),
                 tool_response(("c3", "run_proposals", {})),
@@ -219,13 +219,13 @@ async def test_the_reply_ends_with_the_exact_call_written_by_the_code(monkeypatc
         text = main.with_waiting(reply.text, reply.actions, conv, "fr")
         assert text == (
             "Shall I add Acme?\n\nEn attente de ton accord (« oui », ou « oui sauf 2 ») :\n"
-            '1. My Bank : create_client {"name": "Acme"}'
+            '1. My Bank : add_customer {"name": "Acme"}'
         )
         assert server.calls == [("get_balance", {})]
         # The account was read: only the question and the model's words stay in memory.
         assert len(conv.messages) == 2 and "En attente" not in str(conv.messages)
         assert (await agent.ask(conv, "oui")).text == "Done."
-        assert server.calls[-1] == ("create_client", {"name": "Acme"})
+        assert server.calls[-1] == ("add_customer", {"name": "Acme"})
 
 
 @respx.mock

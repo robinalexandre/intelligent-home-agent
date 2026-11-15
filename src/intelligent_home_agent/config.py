@@ -181,6 +181,8 @@ class Settings(BaseSettings):
 
     # --- API exposed to clients (Siri Shortcut, Home Assistant, scheduled tasks...) ----
     agent_api_token: SecretStr = Field(description="Bearer token every client must send.")
+    # FastAPI's /docs, /redoc and /openapi.json, which it serves without the token.
+    api_docs: bool = False
 
     # --- Language model ----------------------------------------------------------------
     # anthropic, one of the Chat Completions endpoints known by name (openai, mistral, groq,

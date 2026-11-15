@@ -6,7 +6,7 @@
 | **What you need** | A chat channel or `NTFY_URL`; a GitHub token limited to the repositories it may touch; a Claude plan (the coder container, `compose/coder.yml`) or Anthropic's API (Managed Agents). |
 | **Settings** | `JOBS_RUNNER`, `JOBS_GITHUB_TOKEN`, `CODER_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; the wizard's `jobs` item. All of them: [below](#setup). |
 | **Check it works** | The startup log says `coding jobs: on, run by claude_code`; ask for a small job on a test repository. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. No start of `compose/coder.yml` and no Managed Agents session from this repository is recorded. |
+| **Verified** | Not run against the real service yet: the test suite only, against simulated services. `compose/coder.yml` was not started and no Managed Agents session was run. |
 
 For people who code. Ask the agent for a change on one of your GitHub repositories, and a
 coding subagent does it on its own while the agent keeps answering you:
@@ -283,7 +283,7 @@ such, and a cut Remote Control session is named in the chat (above).
 
 ## Not included
 
-Compared with the setup this feature comes from, two things are left out: a proxy
+Two things you might expect are left out: a proxy
 publishing the coder's dev servers under a domain (it rested on one particular
 reverse-proxy and login setup), and secrets managers inside the coder. The coder's Dockerfile is
 the place for what your own projects need.

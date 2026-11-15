@@ -30,6 +30,7 @@ Two kinds of settings share `.env`:
 | Setting | Default | What it does |
 |---|---|---|
 | `AGENT_API_TOKEN` | required | Bearer token every client sends. `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `API_DOCS` | `false` | `true` serves the API's description at `/docs`, `/redoc` and `/openapi.json`. Those pages take no token: anyone who reaches the agent can read them. |
 
 ### Docker Compose
 

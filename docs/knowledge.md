@@ -6,7 +6,7 @@
 | **What you need** | Docker, a GitHub repository with a `knowledge/` folder of notes, a token that reads it, `compose/kb.yml`. |
 | **Settings** | `KB_REPO`, `KB_GITHUB_TOKEN`, `KB_TOKEN` (`KB_URL` is set by the Compose file); the wizard's `knowledge` item. |
 | **Check it works** | `docker compose logs -f kb` shows `index ready` and `recall` is in the startup log's tools; ask what it knows about something you wrote down. |
-| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. No start of `compose/kb.yml` from this repository is recorded. |
+| **Verified** | Not run against the real service yet: the test suite only, against simulated services. `compose/kb.yml` was not started. |
 
 The agent can search your own notes before it says it doesn't know: what you decided, how
 your projects, servers and tools are set up, people and companies, lessons from your coding
