@@ -197,6 +197,7 @@ def test_registry_only_has_configured_tools(monkeypatch):
     )
     monkeypatch.setenv("OUTDOOR_ACTIVITIES", "wing, vélo")
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("WEB_PAGES_ENABLED", "false")
     monkeypatch.setenv("HOME_LATITUDE", "0.0")
     monkeypatch.setenv("HOME_LONGITUDE", "0.0")
     settings = main.Settings(_env_file=None)
@@ -216,9 +217,25 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_surf_forecast",
         "get_calendar_events",
         "get_recent_emails",
+        "create_calendar_event",
+        "search_emails",
+        "read_email",
+        "save_email_draft",
+        "flag_email",
+        "move_email",
+        "list_email_folders",
+        "create_email_folder",
+        "list_email_drafts",
+        "update_email_draft",
+        "delete_email_draft",
         "get_github_pull_requests",
         "get_assistant_reminders",
         "web_search",
+        "open_web_page",
+        "inspect_file",
+        "domain_lookup",
+        "osm_lookup",
+        "reverse_image_search",
     }
     # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
     # down, and the journal's search.
@@ -245,6 +262,93 @@ def test_registry_only_has_configured_tools(monkeypatch):
     # The core's own tools are always there: what waits for a go, and long results.
     assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
     assert "ask_in_poll" not in names
+
+
+MAIL_WRITES = {
+    "save_email_draft",
+    "flag_email",
+    "move_email",
+    "list_email_folders",
+    "create_email_folder",
+    "list_email_drafts",
+    "update_email_draft",
+    "delete_email_draft",
+}
+
+
+def test_mail_and_calendar_are_only_read_until_writing_is_turned_on(monkeypatch):
+    base_env(monkeypatch)
+    account = {"name": "Home", "host": "imap.example.com", "username": "sam", "password": "p"}
+    monkeypatch.setenv("MAIL_ACCOUNTS", json.dumps([account]))
+    monkeypatch.setenv("CALDAV_URL", "https://dav.example.com")
+    monkeypatch.setenv("CALDAV_USERNAME", "sam")
+    monkeypatch.setenv("CALDAV_PASSWORD", "p")
+
+    def registry():
+        settings = main.Settings(_env_file=None)
+        return main.build_registry(settings, ha=None, http=None, llm=None)
+
+    read_only = registry().names()
+    both = [account, {**account, "name": "Work", "write": True}]
+    monkeypatch.setenv("MAIL_ACCOUNTS", json.dumps(both))
+    monkeypatch.setenv("CALDAV_WRITE", "true")
+    writing = registry()
+
+    reads = {"get_calendar_events", "get_recent_emails", "search_emails", "read_email"}
+    assert reads <= read_only and not read_only & (MAIL_WRITES | {"create_calendar_event"})
+    assert MAIL_WRITES | {"create_calendar_event"} <= writing.names()
+    # Only the account opened to writes is offered for drafts and filing.
+    assert "Accounts: Work (" in writing.get("save_email_draft").description
+    assert "Accounts: Home, Work" in writing.get("get_recent_emails").description
+
+
+def test_contacts_birthdays_alone_give_the_calendar_tool(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.setenv("CARDDAV_URL", "https://dav.example.com")
+    settings = main.Settings(_env_file=None)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "get_calendar_events" not in names  # no login
+    monkeypatch.setenv("CARDDAV_USERNAME", "sam")
+    monkeypatch.setenv("CARDDAV_PASSWORD", "p")
+    settings = main.Settings(_env_file=None)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "get_calendar_events" in names and "create_calendar_event" not in names
+
+
+def test_pages_and_investigations_follow_their_settings(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    monkeypatch.setenv("HOME_COUNTRY", "gb")
+    monkeypatch.setenv("WEB_TRUSTED_DOMAINS", "tides.example, weather.example")
+    settings = main.Settings(_env_file=None)
+    assert settings.web_trusted_domains == ["tides.example", "weather.example"]
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    # Reading public pages needs no account: on unless turned off. Investigations ask
+    # third-party registries: off until asked for.
+    assert "open_web_page" in names and "inspect_file" not in names
+
+    monkeypatch.setenv("INVESTIGATIONS_ENABLED", "true")
+    settings = main.Settings(_env_file=None)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert {"inspect_file", "domain_lookup", "osm_lookup"} <= names
+    assert "reverse_image_search" not in names  # the agent has no public address
+
+    monkeypatch.setenv("PUBLIC_URL", "https://agent.example.com")
+    settings = main.Settings(_env_file=None)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "reverse_image_search" in names
+
+
+def test_a_shared_picture_is_served_only_while_its_link_lasts(client):
+    from intelligent_home_agent.shared_links import LINKS
+
+    token = LINKS.share(b"\xff\xd8jpeg", "image/jpeg")
+    # No bearer token: an image search engine fetches it; the address is the secret.
+    resp = client.get(f"/s/{token}/image.jpg")
+    assert resp.status_code == 200 and resp.content == b"\xff\xd8jpeg"
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert "noindex" in resp.headers["x-robots-tag"]
+    assert client.get("/s/not-a-token/image.jpg").status_code == 404
 
 
 def test_settings_reject_unknown_sections_and_activities(monkeypatch):

@@ -3,14 +3,20 @@ from intelligent_home_agent.tools.assistant_reminders import (
     build_assistant_reminder_tools,
 )
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError, ToolRegistry
-from intelligent_home_agent.tools.calendar import CalDavCalendar, build_calendar_tools
+from intelligent_home_agent.tools.calendar import (
+    CalDavCalendar,
+    build_calendar_tools,
+    build_calendar_write_tools,
+)
+from intelligent_home_agent.tools.contacts import CardDavBirthdays, MergedCalendar
 from intelligent_home_agent.tools.general import build_general_tools
 from intelligent_home_agent.tools.github import GitHub, build_github_tools
 from intelligent_home_agent.tools.home_assistant import EntityPolicy, build_home_assistant_tools
 from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledge_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
-from intelligent_home_agent.tools.mail import ImapMailbox, build_email_tools
+from intelligent_home_agent.tools.mail import ImapMailbox, build_draft_tools, build_email_tools
 from intelligent_home_agent.tools.memory import GitHubFile, LocalFile, Memory, build_memory_tools
+from intelligent_home_agent.tools.osint import Investigator, build_osint_tools
 from intelligent_home_agent.tools.outdoor import build_outdoor_tools
 from intelligent_home_agent.tools.past_conversations import build_past_conversation_tools
 from intelligent_home_agent.tools.procedures import build_procedure_tools
@@ -24,16 +30,24 @@ from intelligent_home_agent.tools.web import (
     build_search_engine,
     build_web_tools,
 )
+from intelligent_home_agent.tools.web_pages import (
+    WebPages,
+    build_web_page_tools,
+    trusted_domains,
+)
 
 __all__ = [
     "CalDavCalendar",
+    "CardDavBirthdays",
     "EntityPolicy",
     "GitHub",
     "GitHubFile",
     "ImapMailbox",
+    "Investigator",
     "KnowledgeBase",
     "LocalFile",
     "Memory",
+    "MergedCalendar",
     "OpenMeteo",
     "ReminderRepo",
     "Router",
@@ -42,8 +56,11 @@ __all__ = [
     "ToolError",
     "ToolRegistry",
     "TurnedDown",
+    "WebPages",
     "build_assistant_reminder_tools",
     "build_calendar_tools",
+    "build_calendar_write_tools",
+    "build_draft_tools",
     "build_email_tools",
     "build_engine_web_tools",
     "build_general_tools",
@@ -52,6 +69,7 @@ __all__ = [
     "build_knowledge_tools",
     "build_long_result_tools",
     "build_memory_tools",
+    "build_osint_tools",
     "build_outdoor_tools",
     "build_past_conversation_tools",
     "build_procedure_tools",
@@ -61,6 +79,8 @@ __all__ = [
     "build_travel_tools",
     "build_turned_down_tools",
     "build_weather_tools",
+    "build_web_page_tools",
     "build_web_tools",
     "build_wind_tools",
+    "trusted_domains",
 ]

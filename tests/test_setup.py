@@ -16,6 +16,8 @@ ANSWERS = [
     "Europe/Paris",  # time zone
     "",  # provider: anthropic
     "claude-test",  # model
+    "",  # open public web pages
+    "",  # no investigations
     "Springfield",  # city
     "y",  # look it up
     "y",  # use it
@@ -34,8 +36,12 @@ ANSWERS = [
     "n",  # no Home Assistant
     "",  # no Hue
     "y",  # CalDAV
-    "https://caldav.example.com",
+    "nextcloud",  # provider
+    "https://cloud.example.com/",
     "someone",  # username
+    "y",  # the agent may add events
+    "",  # to the server's default calendar
+    "y",  # contacts' birthdays
     "",  # memory: local files
     "",  # no knowledge base
     "",  # access: this machine only
@@ -86,6 +92,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
          "directions": ["W", "SW"], "min_knots": 12.0}
     ]  # fmt: skip
     assert env["CALDAV_PASSWORD"] == "caldav-pass"
+    assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
+    assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
     assert "HA_TOKEN" not in env and "NTFY_TOKEN" not in env
     assert len(env["AGENT_API_TOKEN"]) >= 40
@@ -96,6 +104,7 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
         assert secret not in output
     assert "LLM_API_KEY = (set)" in output
     assert "COMPOSE_FILE" not in env and "http://127.0.0.1:8000" in output
+    assert "WEB_PAGES_ENABLED" not in env and "INVESTIGATIONS_ENABLED" not in env
 
 
 def run_with(tmp_path, answers, secrets_typed):
@@ -111,10 +120,10 @@ def run_with(tmp_path, answers, secrets_typed):
     return env, "\n".join(printed)
 
 
-# Name, no user name, language, time zone; then after the model: no city, no sections, no
-# activities.
+# Name, no user name, language, time zone; then after the model and the search: web pages,
+# no investigations, no city, no sections, no activities.
 START = ["", "", "en", "UTC"]
-NOTHING_ELSE = ["", "weather", "short", ""]
+NOTHING_ELSE = ["", "", "", "weather", "short", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
@@ -145,8 +154,13 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "", "off", "", "caddy", "", "agent.example.com", "siri"]
+    # No web pages, investigations: with a domain, the agent knows its public address.
+    # Then no Home Assistant, no Hue, no memory.
+    answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "off"]
+    answers += ["", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
+    assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
+    assert env["PUBLIC_URL"] == "https://agent.example.com"
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
@@ -218,3 +232,38 @@ def test_written_env_loads_into_settings(tmp_path, monkeypatch):
     settings = Settings(_env_file=path)
     assert settings.outdoor_activities == ["surf", "outdoors"]
     assert settings.surf_spots[0].facing == "W"
+
+
+def test_a_mailbox_is_asked_for_by_provider_and_only_read_unless_agreed():
+    from intelligent_home_agent.config import MailAccount
+
+    answers = ["gmail", "", "sam@example.com", "n"]
+    answers += ["other", "Work", "mail.example.com", "sam", "y"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["app-pass", "other-pass"])
+    p = setup.Prompter(read, read_secret, lambda _: None)
+
+    first, second = setup.ask_mailbox(p, 1), setup.ask_mailbox(p, 2)
+
+    assert queue == []
+    assert first == {
+        "name": "Gmail",
+        "host": "imap.gmail.com",
+        "username": "sam@example.com",
+        "password": "app-pass",
+    }
+    assert (second["name"], second["host"], second["write"]) == ("Work", "mail.example.com", True)
+    assert not MailAccount(**first).write and MailAccount(**second).write
+
+
+def test_a_calendar_on_another_server_asks_for_both_addresses():
+    answers = ["other", "https://dav.example.com/", "sam", "n", "y", "https://dav.example.com/c/"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["dav-pass"])
+    env: dict[str, str] = {}
+
+    setup.ask_calendar(setup.Prompter(read, read_secret, lambda _: None), env)
+
+    assert queue == [] and "CALDAV_WRITE" not in env
+    assert env["CALDAV_URL"] == "https://dav.example.com/"
+    assert env["CARDDAV_URL"] == "https://dav.example.com/c/"

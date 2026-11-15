@@ -44,6 +44,7 @@ src/intelligent_home_agent/
   journal.py        one line per request, per day, in DATA_DIR/journal
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
   notify.py         ntfy push
+  shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet)
   tools/base.py     Tool and its flags, ToolContext, ToolRegistry (the rules live here)
   tools/proposals.py     run_proposals, propose_action, propose_plan...: the user's go

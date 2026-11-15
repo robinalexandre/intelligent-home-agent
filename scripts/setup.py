@@ -73,13 +73,36 @@ COMPOSE_FILES = {
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 COMPASS = "N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW".split()
 SECTIONS = {
-    "calendar": "first appointment of the day (CalDAV calendar)",
+    "calendar": "first appointment of the day (CalDAV calendar: iCloud, Fastmail, Nextcloud...)",
     "travel": "when to leave for it (driving time from home)",
-    "mail": "emails that need an answer (IMAP)",
+    "mail": "emails that need an answer (IMAP: Gmail, iCloud, Fastmail, your host...)",
     "pull_requests": "GitHub pull requests waiting for you",
     "reminders": "open reminders (from the phone, or left with a coding assistant)",
     "weather": "the weather",
     "activities": "outdoor sessions worth planning",
+}
+# Calendar and contacts servers that take a password made for one app
+# (docs/mail-calendar.md): the CalDAV address, then the CardDAV one.
+DAV = {
+    "icloud": "iCloud (app-specific password from account.apple.com)",
+    "fastmail": "Fastmail (app password with access to calendars and contacts)",
+    "nextcloud": "Nextcloud (app password from Settings > Security)",
+    "other": "another CalDAV server: you give its address",
+}
+DAV_URLS = {
+    "icloud": ("https://caldav.icloud.com", "https://contacts.icloud.com"),
+    "fastmail": ("https://caldav.fastmail.com/dav/", "https://carddav.fastmail.com/dav/"),
+}
+MAIL = {
+    "gmail": "Gmail (app password; 2-Step Verification must be on)",
+    "icloud": "iCloud Mail (app-specific password from account.apple.com)",
+    "fastmail": "Fastmail (app password with IMAP access)",
+    "other": "another IMAP server: you give its host",
+}
+MAIL_HOSTS = {
+    "gmail": "imap.gmail.com",
+    "icloud": "imap.mail.me.com",
+    "fastmail": "imap.fastmail.com",
 }
 CHANNELS = {
     "siri": "Siri Shortcuts on iPhone, HomePod, Mac",
@@ -284,6 +307,16 @@ def ask_search(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
             env["WEB_SEARCH_API_KEY"] = key
 
 
+def ask_web(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# Web pages and investigations (docs/web.md)")
+    if not p.yes("Let the assistant open public web pages (no logins, no account)?", True):
+        env["WEB_PAGES_ENABLED"] = "false"
+    if p.yes(
+        "Let it investigate a photo, a link or a site (public registries and archives)?", False
+    ):
+        env["INVESTIGATIONS_ENABLED"] = "true"
+
+
 def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
     """How clients reach the agent; returns the address they will use, when known."""
     p.say("\n# Where will clients (phone, speaker, Home Assistant) reach the agent from?")
@@ -311,6 +344,9 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
             p.say("  A domain name is needed.")
         env["AGENT_DOMAIN"] = domain
         address = f"https://{domain}"
+        if "INVESTIGATIONS_ENABLED" in env:
+            # Its public address: lets it put a photo online for a reverse image search.
+            env["PUBLIC_URL"] = address
         if access == "traefik":
             env["TRAEFIK_NETWORK"] = p.ask("Docker network Traefik shares with services", "proxy")
             env["TRAEFIK_CERTRESOLVER"] = p.ask("Traefik certificate resolver", "letsencrypt")
@@ -412,6 +448,48 @@ def ask_activities(p: Prompter, env: dict[str, str]) -> None:
             env[key] = json.dumps(spots, ensure_ascii=False)
 
 
+def ask_calendar(p: Prompter, env: dict[str, str]) -> None:
+    provider = p.pick("Calendar at", DAV, "icloud")
+    if provider == "nextcloud":
+        host = p.ask("  Nextcloud address, e.g. https://cloud.example.com").rstrip("/")
+        caldav = carddav = f"{host}/remote.php/dav"
+    elif provider == "other":
+        caldav = p.ask("  CalDAV URL, e.g. https://dav.example.com/")
+        carddav = ""
+    else:
+        caldav, carddav = DAV_URLS[provider]
+    env["CALDAV_URL"] = caldav
+    env["CALDAV_USERNAME"] = p.ask("  Username (usually your email address)")
+    if password := p.secret("  App password (not your account's own password)"):
+        env["CALDAV_PASSWORD"] = password
+    if p.yes("  Let the agent add events? After it read an email it asks you first.", False):
+        env["CALDAV_WRITE"] = "true"
+        if name := p.ask("  Calendar for new events (empty: the server's default)"):
+            env["CALDAV_DEFAULT_CALENDAR"] = name
+    if p.yes("  Show your contacts' birthdays in the agenda (CardDAV, same login)?", False):
+        env["CARDDAV_URL"] = carddav or p.ask("  CardDAV URL, e.g. https://dav.example.com/")
+
+
+def ask_mailbox(p: Prompter, number: int) -> dict[str, object]:
+    provider = p.pick("  Mailbox at", MAIL, "other")
+    account: dict[str, object] = {
+        "name": p.ask(
+            "  Short name", provider.capitalize() if provider != "other" else f"Mail{number}"
+        ),
+        "host": MAIL_HOSTS.get(provider) or p.ask("  IMAP host, e.g. imap.example.com"),
+        "username": p.ask("  Username (usually the email address)"),
+    }
+    account["password"] = p.secret("  App password (not your account's own password)")
+    # Reading never marks, moves or deletes anything. Writing is a choice per account.
+    if p.yes(
+        "  Let the agent save drafts, flag emails and file them into your folders there? "
+        "It never sends and never deletes.",
+        False,
+    ):
+        account["write"] = True
+    return account
+
+
 def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
     p.say("\n# Data sources (each one is optional)")
     if p.yes("Control the home through Home Assistant?", True):
@@ -422,23 +500,12 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
         env["HUE_BRIDGE_URL"] = p.ask("Bridge address, e.g. http://192.168.1.20")
         if key := p.secret("App key (docs/home-devices.md shows how to get one)"):
             env["HUE_APP_KEY"] = key
-    if "calendar" in sections and p.yes(
-        "Read a CalDAV calendar (iCloud, Fastmail, Nextcloud...)?", True
-    ):
-        env["CALDAV_URL"] = p.ask("CalDAV URL, e.g. https://caldav.example.com/dav/")
-        env["CALDAV_USERNAME"] = p.ask("Username")
-        if password := p.secret("App-specific password"):
-            env["CALDAV_PASSWORD"] = password
+    if "calendar" in sections and p.yes("Read a calendar over CalDAV?", True):
+        ask_calendar(p, env)
     if "mail" in sections:
         accounts = []
-        while p.yes("Add a mailbox (IMAP, read-only)?", not accounts):
-            account = {
-                "name": p.ask("  Short name", f"Mail{len(accounts) + 1}"),
-                "host": p.ask("  IMAP host, e.g. imap.gmail.com"),
-                "username": p.ask("  Username"),
-            }
-            account["password"] = p.secret("  App password")
-            accounts.append(account)
+        while p.yes("Add a mailbox (IMAP)?", not accounts):
+            accounts.append(ask_mailbox(p, len(accounts) + 1))
         if accounts:
             env["MAIL_ACCOUNTS"] = json.dumps(accounts)
     if "pull_requests" in sections or "reminders" in sections:
@@ -529,13 +596,24 @@ GROUPS = [
             "SEARXNG_SECRET",
         ],
     ),
+    ("Web pages and investigations", ["WEB_PAGES_ENABLED", "INVESTIGATIONS_ENABLED", "PUBLIC_URL"]),
     ("Assistant", ["ASSISTANT_NAME", "USER_NAME", "LANGUAGE", "TIMEZONE"]),
     ("Home", ["HOME_CITY", "HOME_COUNTRY", "HOME_LATITUDE", "HOME_LONGITUDE"]),
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
     ("Outdoor activities", ["OUTDOOR_ACTIVITIES", "WIND_SPOTS", "SURF_SPOTS"]),
     ("Home Assistant", ["HA_URL", "HA_TOKEN"]),
     ("Home devices", ["HUE_BRIDGE_URL", "HUE_APP_KEY"]),
-    ("Calendar", ["CALDAV_URL", "CALDAV_USERNAME", "CALDAV_PASSWORD"]),
+    (
+        "Calendar",
+        [
+            "CALDAV_URL",
+            "CALDAV_USERNAME",
+            "CALDAV_PASSWORD",
+            "CALDAV_WRITE",
+            "CALDAV_DEFAULT_CALENDAR",
+            "CARDDAV_URL",
+        ],
+    ),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
     ("Memory", ["MEMORY_STORE", "MEMORY_REPO"]),
@@ -582,6 +660,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     ask_identity(p, env)
     ask_model(p, env, docker=docker)
     ask_search(p, env, docker=docker)
+    ask_web(p, env)
     ask_home(p, env, lookup)
     sections = ask_brief(p, env)
     ask_activities(p, env)

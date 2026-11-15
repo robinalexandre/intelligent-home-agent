@@ -43,22 +43,29 @@ from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
+from intelligent_home_agent.shared_links import LINKS
 from intelligent_home_agent.tools import (
     CalDavCalendar,
+    CardDavBirthdays,
     EntityPolicy,
     GitHub,
     GitHubFile,
     ImapMailbox,
+    Investigator,
     KnowledgeBase,
     LocalFile,
     Memory,
+    MergedCalendar,
     OpenMeteo,
     ReminderRepo,
     Router,
     ToolRegistry,
     TurnedDown,
+    WebPages,
     build_assistant_reminder_tools,
     build_calendar_tools,
+    build_calendar_write_tools,
+    build_draft_tools,
     build_email_tools,
     build_engine_web_tools,
     build_general_tools,
@@ -66,6 +73,7 @@ from intelligent_home_agent.tools import (
     build_home_assistant_tools,
     build_knowledge_tools,
     build_memory_tools,
+    build_osint_tools,
     build_outdoor_tools,
     build_past_conversation_tools,
     build_procedure_tools,
@@ -74,8 +82,10 @@ from intelligent_home_agent.tools import (
     build_travel_tools,
     build_turned_down_tools,
     build_weather_tools,
+    build_web_page_tools,
     build_web_tools,
     build_wind_tools,
+    trusted_domains,
 )
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.github import API_URL
@@ -201,16 +211,40 @@ def build_registry(
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
     activities = [CATALOG[key] for key in settings.outdoor_activities]
     registry.extend(build_outdoor_tools(meteo, activities, home=home, language=settings.language))
+    calendars: list = []
     if settings.caldav_url and settings.caldav_username and settings.caldav_password:
         calendar = CalDavCalendar(
             settings.caldav_url,
             settings.caldav_username,
             settings.caldav_password.get_secret_value(),
             settings.caldav_calendars,
+            settings.caldav_default_calendar,
         )
-        registry.extend(build_calendar_tools(calendar, settings.timezone))
+        calendars.append(calendar)
+        if settings.caldav_write:
+            registry.extend(
+                build_calendar_write_tools(calendar, settings.timezone, settings.language)
+            )
+    # Contacts' birthdays show as all-day events; the CalDAV login is used when CardDAV
+    # has none of its own (same account at most providers).
+    dav_user = settings.carddav_username or settings.caldav_username
+    dav_password = settings.carddav_password or settings.caldav_password
+    if settings.carddav_url and dav_user and dav_password:
+        calendars.append(
+            CardDavBirthdays(
+                http,
+                settings.carddav_url,
+                dav_user,
+                dav_password.get_secret_value(),
+                settings.timezone,
+            )
+        )
+    if calendars:
+        merged = calendars[0] if len(calendars) == 1 else MergedCalendar(calendars)
+        registry.extend(build_calendar_tools(merged, settings.timezone))
     mailboxes = [ImapMailbox(account) for account in settings.mail_accounts]
     registry.extend(build_email_tools(mailboxes, settings.timezone))
+    registry.extend(build_draft_tools([m for m in mailboxes if m.writable], settings.language))
     if settings.travel_enabled:
         router = Router(
             http,
@@ -279,6 +313,12 @@ def build_registry(
     )
     registry.extend(build_turned_down_tools(kept.turned_down))
     registry.extend(build_past_conversation_tools(kept.journal))
+    if settings.web_pages_enabled:
+        trusted = trusted_domains(settings.home_country, settings.web_trusted_domains)
+        registry.extend(build_web_page_tools(WebPages(trusted), language=settings.language))
+    if settings.investigations_enabled:
+        investigator = Investigator(http, nominatim_url=settings.nominatim_url)
+        registry.extend(build_osint_tools(investigator, settings.public_url))
     # The core's own tools, last: the writes waiting for the user's go (the registry parks
     # them whatever is configured) and the long results read part by part.
     registry.extend(build_proposal_tools(registry, language=settings.language))
@@ -544,6 +584,14 @@ def with_waiting(text: str, actions: list[dict], conv: Conversation, language: s
     lines = [
         s.written_line.format(summary=a["summary"]) for a in actions if a.get("type") == "written"
     ]
+    for draft in (a for a in actions if a.get("type") == "draft"):
+        names = ", ".join(draft["attachments"])
+        files = s.draft_files.format(files=names) if names else ""
+        lines.append(
+            s.draft_line.format(to=", ".join(draft["to"]), subject=draft["subject"], files=files)
+        )
+        if draft.get("check"):
+            lines.append(s.draft_check.format(files=", ".join(draft["check"])))
     proposals = [a for a in actions if a.get("type") == "proposal"]
     if proposals:
         lines += ["", s.waiting_header] if lines else [s.waiting_header]
@@ -638,6 +686,20 @@ def require_token(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
+
+
+@app.get("/s/{token}/{name}", include_in_schema=False)
+async def shared_image(token: str, name: str) -> Response:
+    """A picture put online for a reverse image search, while its link lasts: no bearer
+    token, as the search engines fetch it; the address itself is the secret."""
+    shared = LINKS.get(token)
+    if shared is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return Response(
+        shared.data,
+        media_type=shared.mimetype,
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, noarchive"},
+    )
 
 
 @app.get("/health/ha", dependencies=[Depends(require_token)])
