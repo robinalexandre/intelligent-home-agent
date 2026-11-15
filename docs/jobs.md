@@ -158,6 +158,8 @@ The wizard (`scripts/setup.py`) asks about it once a push channel is chosen. By 
 | `JOBS_MODEL_SIMPLE`, `JOBS_MODEL_NORMAL`, `JOBS_MODEL_COMPLEX` | Claude Sonnet, Opus, the strongest | `claude_code`: the coder's model by complexity. |
 | `CODER_MAX_BUDGET_USD` | `15` | `claude_code`: runaway guard per turn. |
 | `CODER_RC_NAME`, `CODER_SYNC_REPOS` | `Home agent code`, `false` | Remote Control, below. |
+| `CODER_SESSIONS_WATCH`, `CODER_SESSIONS_POLL_SECONDS` | `true`, `60` | `claude_code`: the news of the coder's sessions, below; `false` keeps the tools only. |
+| `CODER_RELAY_MODEL` | Claude Sonnet | `claude_code`: the model of the short turn that passes your answer to a session. |
 | `JOBS_AGENT_ID`, `JOBS_ENVIRONMENT_ID`, `JOBS_VAULT_ID` | unset | `managed`: written by `scripts/jobs_setup.py`. |
 | `JOBS_BUDGET_USD`, `JOBS_MAX_ITERATIONS` | `10`, `5` | `managed`: the spend cap per job and the grader's rounds. |
 
@@ -200,12 +202,60 @@ the agent, with the coder's token:
 What a prompt shows (a command, a path) is written by the coder's model, which may have
 read anything: it is shown to you as a question and never acted on by the agent.
 
+## Every session of the coder, followed and answered through the agent
+
+With `claude_code`, the jobs are not the only Claude Code sessions in the coder: Remote
+Control opens one for each conversation you start from claude.ai/code or the Claude app.
+The agent follows them all, whichever way you talk to it.
+
+- **Where each stands.** The coder reads the transcript of every session it holds
+  (`coder/sessions.py`, under `CLAUDE_CONFIG_DIR`) and serves them on `GET /sessions`:
+  title, folder, state, last activity, your last prompt and Claude's last words. The
+  agent's `list_coder_sessions` lists them ("where is the shop session at?") and reads
+  one's last exchanges. The state comes from the transcript: `waiting` when Claude's last
+  message closed the turn, `running` mid-turn and written to in the last five minutes,
+  `silent` mid-turn and quiet longer (a long command, or a permission prompt waiting),
+  `cut` mid-turn when the container last started.
+- **Told only what needs you.** A watcher polls every minute
+  (`CODER_SESSIONS_POLL_SECONDS`) and tells you when a session finished its work or asks
+  something (with what it said), when a restart of the container cut sessions mid-turn
+  (naming them), and when the coder stopped answering. A quick exchange (a turn under
+  five minutes) is left to the Claude app, where you follow it, and a finished turn waits
+  two minutes for you to answer there first; the answer to a message you sent through the
+  agent comes at once. Jobs are left to their own reports. The news leave the way a job's
+  report does: in your chat (WhatsApp, Telegram, any channel of [docs/chat.md](chat.md)),
+  or as a push notification without one. `CODER_SESSIONS_WATCH=false` keeps the two tools
+  and turns the news off.
+- **Answering a session.** `ask_coder_session` ("tell the shop session: go ahead") posts
+  to the coder's `POST /sessions/{id}/messages`. The coder finds the session's inbox in
+  Claude Code's own record of its running sessions (`CLAUDE_CONFIG_DIR/sessions/<pid>.json`)
+  and a short relay turn (Claude Code with only `SendMessage`, on `CODER_RELAY_MODEL`)
+  hands the message over through
+  [cross-session messaging](https://code.claude.com/docs/en/cross-session-messaging). It
+  counts as delivered only when `SendMessage` itself ran with that address and that exact
+  text and said it succeeded, whatever the relay's model claims. The session gets it as a
+  message from another session, saying it comes from you through the agent, and acts on
+  it within its own permissions (its prompts still come to you, below); its answer stays
+  in the same conversation, in the Claude app, and reaches you with the turn-ended news.
+  A session that is closed or was cut by a restart has no inbox: only the Claude app
+  reopens it. A session set to bypass permissions holds such messages for approval in
+  the app.
+
+Only your own message writes to a session, as with `ask_job`: after the agent read
+anything, and in a scheduled task, `ask_coder_session` waits for your go. What a session
+says was written by a model that may have read anything: it comes to the agent as data,
+and `list_coder_sessions` taints the request.
+
+Both rest on how Claude Code keeps its transcripts and its record of running sessions on
+disk, which is not a documented interface, and on cross-session messaging: an update of
+Claude Code may break the list or the relay (the jobs don't depend on them). They are on
+with the coder's jobs and off without them; there is nothing to set up.
+
 ## Not included
 
-Compared with the setup this feature comes from, three things are left out: a proxy
+Compared with the setup this feature comes from, two things are left out: a proxy
 publishing the coder's dev servers under a domain (it rested on one particular
-reverse-proxy and login setup), a list of every Claude Code session of the coder with
-messages relayed to them, and secrets managers inside the coder. The coder's Dockerfile is
+reverse-proxy and login setup), and secrets managers inside the coder. The coder's Dockerfile is
 the place for what your own projects need.
 
 ## Cost

@@ -63,6 +63,8 @@ src/intelligent_home_agent/
                     the Backend protocol; jobs_claude_code.py (the coder container) and
                     jobs_managed.py (Anthropic Managed Agents) are its two runners
   coder_approvals.py  Claude Code's permission prompts in the coder, asked to the user
+  coder_sessions.py   every Claude Code session of the coder (coder/sessions.py reads
+                    their transcripts): listed, answered, their news told to the user
   review.py         the nightly review: a quiet coding job over the day's journal
                     (docs/review.md); curation.py turns its lessons into notes
   leaks.py          keeps what a request holds out of text the model writes for the outside
@@ -223,6 +225,7 @@ Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/`
 `task-outbox.json` (which tasks ran, their last reports, what was sent).
 `jobs.json`, `progress-durations.json` and `review-done.json` (coding jobs, how long
 they took, the last night reviewed).
+`coder-sessions.json` (what was already told of the coder's sessions).
 A feature that keeps a file follows the same pattern: written through a temporary file,
 mode 600, named by the code and never by what a client or a model sent. What must reach
 every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is

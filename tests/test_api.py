@@ -218,6 +218,8 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "list_jobs",
         "stop_job",
         "allow_coder_permission",
+        "list_coder_sessions",
+        "ask_coder_session",
         "list_entities",
         "call_service",
         "get_surf_forecast",

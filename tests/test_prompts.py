@@ -8,6 +8,8 @@ ALL_TOOLS = {
     "stop_job",
     "allow_coder_permission",
     "refuse_coder_permission",
+    "list_coder_sessions",
+    "ask_coder_session",
     "call_service",
     "get_weather",
     "get_calendar_events",
@@ -381,5 +383,7 @@ def test_coding_jobs_are_only_named_when_their_tools_exist():
     text = prompt()
     assert "start_job hands work" in text and "refuse_coder_permission" in text
     assert "the coding jobs' reports" in text
-    without = prompt(tools=ALL_TOOLS - {"start_job", "list_jobs", "allow_coder_permission"})
+    assert "ask_coder_session passes" in text and "the coder's sessions" in text
+    gone = {"start_job", "list_jobs", "allow_coder_permission", "list_coder_sessions"}
+    without = prompt(tools=ALL_TOOLS - gone)
     assert "start_job" not in without and "coder" not in without

@@ -261,6 +261,16 @@ class Strings:
     coder_permission_summary: str
     coder_permission_in_app: str
     coder_permission_timeout: str
+    # News of the coder's Claude Code sessions (coder_sessions.py).
+    coder_session_name: str
+    coder_session_ended_head: str
+    coder_session_answer_here: str
+    coder_session_answer_in_app: str
+    coder_session_ask_summary: str
+    coder_restarted_head: str
+    coder_restarted_cut: str
+    coder_sessions_down_head: str
+    coder_sessions_down: str
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -535,6 +545,16 @@ LANGUAGES: dict[str, Strings] = {
         coder_permission_in_app="🔐 Claude (code{where}) waits for your go in the Claude "
         "app: {tool}.",
         coder_permission_timeout="⏱️ No answer: the request stays open in the Claude app.",
+        coder_session_name='"{title}"',
+        coder_session_ended_head="💬 Session {session} finished its turn",
+        coder_session_answer_here="(Answer it here or in the Claude app.)",
+        coder_session_answer_in_app="(Answer it in the Claude app.)",
+        coder_session_ask_summary='Tell the coder\'s session "{session}": {message}',
+        coder_restarted_head="🔄 The coder container restarted around {time}",
+        coder_restarted_cut="It cut:\n{sessions}\nStart them again from the Claude app: "
+        "one message is enough for them to go on.",
+        coder_sessions_down_head="⚠️ The coder container stopped answering",
+        coder_sessions_down="I no longer see its sessions.",
     ),
     "fr": Strings(
         name="French",
@@ -824,6 +844,16 @@ LANGUAGES: dict[str, Strings] = {
         coder_permission_in_app="🔐 Claude (code{where}) attend ton accord dans l'app "
         "Claude : {tool}.",
         coder_permission_timeout="⏱️ Pas de réponse : la demande reste ouverte dans l'app Claude.",
+        coder_session_name="« {title} »",
+        coder_session_ended_head="💬 La session {session} a fini son tour",
+        coder_session_answer_here="(Réponds-lui ici ou dans l'app Claude.)",
+        coder_session_answer_in_app="(Réponds-lui dans l'app Claude.)",
+        coder_session_ask_summary="Dire à la session « {session} » du coder : {message}",
+        coder_restarted_head="🔄 Le container coder a redémarré vers {time}",
+        coder_restarted_cut="Il a coupé :\n{sessions}\nRelance-les depuis l'app Claude : "
+        "un message suffit pour qu'elles reprennent.",
+        coder_sessions_down_head="⚠️ Le container coder ne répond plus",
+        coder_sessions_down="Je ne vois plus ses sessions.",
     ),
 }
 

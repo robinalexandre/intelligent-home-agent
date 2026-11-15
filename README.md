@@ -66,7 +66,10 @@ spoken morning briefing and evening recap.
     ([docs/connectors.md](docs/connectors.md)).
   - For people who code, off by default: coding jobs handed to Claude Code, which
     works on one of your GitHub repositories on its own and opens a pull request
-    ([docs/jobs.md](docs/jobs.md)); and a nightly review of the agent's own requests
+    ([docs/jobs.md](docs/jobs.md)); every Claude Code session of that container
+    followed too, the ones you open through Remote Control included (where each
+    stands, a word when one finished or asks something, your answer passed to it);
+    and a nightly review of the agent's own requests
     that proposes fixes on your private copy of this repository
     ([docs/review.md](docs/review.md)).
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
@@ -399,6 +402,8 @@ The guardrails are enforced in code, not only in the prompt.
   coder runs in a container of its own with none of the agent's secrets, and can
   touch what its GitHub token can, so scope that token. Its reports are data for the
   agent. A permission prompt of Claude Code can only be allowed by your own yes.
+  The same holds for the coder's other Claude Code sessions: what they say is data,
+  and only your own message is passed to one.
 - **Nightly review** (off by default): it hands a day of the journal, your
   conversations, to the coding job, and so to Anthropic and to the pull request it
   opens. It only runs on a repository GitHub says is private, unless you say

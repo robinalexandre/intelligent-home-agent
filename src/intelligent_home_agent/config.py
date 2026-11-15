@@ -626,6 +626,12 @@ class Settings(BaseSettings):
     jobs_model_simple: str = "claude-sonnet-5-5"
     jobs_model_normal: str = "claude-opus-5-5"
     jobs_model_complex: str = "claude-fable-5-1"
+    # claude_code: every Claude Code session of the coder is listed and can be answered
+    # through the agent (the ones you open through Remote Control too). With the watch
+    # on, you are told when one finished its work or asks something, and when a restart
+    # of the container cut sessions; false keeps the tools and turns the news off.
+    coder_sessions_watch: bool = True
+    coder_sessions_poll_seconds: int = Field(60, ge=10)
 
     # --- Nightly review of the agent's own requests (docs/review.md) --------------------
     # Off by default. Your OWN copy of this repository ("owner/repo", one the jobs' token

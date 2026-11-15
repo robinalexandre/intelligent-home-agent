@@ -25,6 +25,7 @@ import os
 import re
 import secrets
 import shutil
+import time
 from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -35,10 +36,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
+from coder import sessions as claude_sessions
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("coder")
 
 RUNNING, IDLE, FAILED, STOPPED = "running", "idle", "failed", "stopped"
+# When this service started: a session mid-turn before it was cut by the restart.
+BOOTED = time.time()
 WORK = Path(os.environ.get("CODER_WORK", "/work"))
 TOKEN = os.environ.get("CODER_TOKEN", "")
 # The house rules appended to Claude Code's own system prompt: the body of agents/coder.md.
@@ -51,6 +56,19 @@ MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 # Tools the coder may use without asking; nobody is there to answer a prompt, and in
 # "dontAsk" mode anything else is denied rather than asked.
 ALLOWED_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "TodoWrite"]
+# The relay: a short Claude Code turn that hands the user's message to another session of
+# this container through cross-session messaging (SendMessage, to the session's inbox).
+RELAY_MODEL = os.environ.get("CODER_RELAY_MODEL", "claude-sonnet-5-5")
+RELAY_TOOLS = ["SendMessage", "ToolSearch"]
+RELAY_SECONDS = 120
+RELAY_PROMPT = """Your only job: deliver a message to another Claude Code session, unchanged.
+Call SendMessage once, with "to" set to exactly {address!r} and "message" set to exactly the
+text between the markers below, character for character: no summary, no translation, nothing
+added. Do nothing else, then answer with one word: SENT, or FAILED and why.
+
+<<<MESSAGE
+{text}
+MESSAGE>>>"""
 # The few words this service adds to the coder's own, in the user's language.
 TEXTS = {
     "en": {
@@ -269,6 +287,66 @@ async def run_turn(
                 }
 
 
+def _succeeded(content: Any) -> bool:
+    """SendMessage's result, a JSON object as text (alone or in text blocks), says success."""
+    texts = [content] if isinstance(content, str) else []
+    if isinstance(content, list):
+        texts = [str(b.get("text") or "") for b in content if isinstance(b, dict)]
+    for text in texts:
+        try:
+            data = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("success") is True:
+            return True
+    return False
+
+
+async def run_relay(address: str, text: str) -> tuple[bool, str]:
+    """Hands ``text`` to the session whose inbox is ``address``; (delivered, detail). It
+    counts as delivered only when SendMessage itself was called with that address and that
+    exact text and said it succeeded, whatever the relay's model claims."""
+    from claude_agent_sdk import (
+        AssistantMessage,
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        ToolResultBlock,
+        ToolUseBlock,
+        UserMessage,
+    )
+
+    folder = WORK / "relay"
+    await asyncio.to_thread(folder.mkdir, parents=True, exist_ok=True)
+    options = ClaudeAgentOptions(
+        cwd=str(folder),
+        permission_mode="dontAsk",
+        allowed_tools=RELAY_TOOLS,
+        setting_sources=[],
+        model=RELAY_MODEL or None,
+        max_turns=6,
+    )
+    ours: set[str] = set()
+    detail = "SendMessage was not called."
+    async with ClaudeSDKClient(options) as client:
+        await client.query(RELAY_PROMPT.format(address=address, text=text))
+        async for message in client.receive_response():
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, ToolUseBlock) and block.name == "SendMessage":
+                        given = block.input or {}
+                        if given.get("to") == address and given.get("message") == text:
+                            ours.add(block.id)
+                        else:
+                            detail = "The relay changed the address or the text; not counted."
+            elif isinstance(message, UserMessage) and isinstance(message.content, list):
+                for block in message.content:
+                    if isinstance(block, ToolResultBlock) and block.tool_use_id in ours:
+                        if _succeeded(block.content):
+                            return True, "Delivered to the session's inbox."
+                        detail = f"SendMessage failed: {str(block.content)[:300]}"
+    return False, detail
+
+
 async def clone(repo: str, branch: str, into: Path) -> Path:
     """The repository, cloned through gh's credential helper (GH_TOKEN), on ``branch``."""
     await asyncio.to_thread(into.mkdir, parents=True, exist_ok=True)
@@ -331,6 +409,69 @@ def view(job: JobState, after: int = 0) -> dict[str, Any]:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/sessions", dependencies=[Depends(require_token)])
+async def list_sessions(request: Request, hours: float = 48) -> dict[str, Any]:
+    """Every Claude Code session of the container written to in the last ``hours``: the
+    jobs and the ones the user opened through Remote Control (coder/sessions.py)."""
+    jobs = jobs_of(request)
+    by_session = {j.session_id: j.id for j in jobs._items.values() if j.session_id}
+    found = await asyncio.to_thread(
+        claude_sessions.sessions,
+        BOOTED,
+        time.time(),
+        within_seconds=max(0.0, min(hours, 24 * 30)) * 3600,
+        jobs=by_session,
+    )
+    return {"started_at": claude_sessions.iso(BOOTED), "sessions": found}
+
+
+@app.get("/sessions/{session_id}", dependencies=[Depends(require_token)])
+async def session_history(session_id: str, turns: int = 6) -> dict[str, Any]:
+    if not re.fullmatch(r"[\w-]{1,64}", session_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "bad session id")
+    found = await asyncio.to_thread(
+        claude_sessions.history, session_id, turns=max(1, min(turns, 20))
+    )
+    if found is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such session")
+    return {"session": session_id, "history": found}
+
+
+class SessionMessage(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+
+
+_relaying = asyncio.Lock()
+
+
+@app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_token)])
+async def message_session(session_id: str, body: SessionMessage) -> dict[str, Any]:
+    """Writes to a running session of this container, the user's Remote Control ones too,
+    through the relay. Its answer is in its transcript, which GET /sessions reads."""
+    if not re.fullmatch(r"[\w-]{1,64}", session_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "bad session id")
+    address = (await asyncio.to_thread(claude_sessions.inboxes)).get(session_id)
+    if address is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This session is not running here with an inbox (closed, or cut by a restart): "
+            "it can only be reopened from the Claude app.",
+        )
+    async with _relaying:
+        try:
+            sent, detail = await asyncio.wait_for(
+                run_relay(f"uds:{address}", body.text), RELAY_SECONDS
+            )
+        except TimeoutError:
+            sent, detail = False, "The relay took too long."
+        except Exception as exc:
+            log.exception("Relay to %s failed", session_id)
+            sent, detail = False, f"The relay failed: {exc}"
+    if not sent:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail)
+    return {"session": session_id, "sent": True, "detail": detail}
 
 
 @app.post("/jobs", dependencies=[Depends(require_token)])
