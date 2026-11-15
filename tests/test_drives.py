@@ -1016,3 +1016,42 @@ async def test_decomposed_accents_and_new_subfolders_keep_one_spelling(ctx):
     assert created["created"] is True
     # Under the drive's own spelling of the folder, not a second one spelled the other way.
     assert json.loads(routes["mkdir"].calls[0].request.content)["remote"] == f"{windows}/Volets"
+
+
+class FakeDrafts:
+    name, address = "Home", "home@example.com"
+
+    def __init__(self) -> None:
+        self.saved: list[bytes] = []
+
+    async def save_draft(self, message: bytes) -> None:
+        self.saved.append(message)
+
+
+@respx.mock
+async def test_drive_files_attached_after_reading_an_email_are_flagged(ctx):
+    from intelligent_home_agent.tools import build_draft_tools
+
+    respx.post(f"{URL}/operations/stat").mock(return_value=stat(QUOTE))
+    respx.get(url__regex=rf"{URL}/\[docs:\]/.*").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.7")
+    )
+    drafts = FakeDrafts()
+    save = {t.name: t for t in build_draft_tools([drafts])}["save_email_draft"]
+    ctx.conversation.files["mine.pdf"] = Attachment("mine.pdf", "application/pdf", b"%PDF")
+    args = {"to": ["jo@example.com"], "subject": "Quote", "body": "Hello"}
+    async with httpx.AsyncClient() as http:
+        read = tools(a_drive(http))["read_drive_file"]
+        file = await read.handler({"path": "Documents/Work/Quote Jo 2026.pdf"}, ctx)
+        assert file.origin == "drive"
+
+        ctx.tainted = True  # e.g. an email was read in this request
+        await save.handler({**args, "attachments": [file.filename, "mine.pdf"]}, ctx)
+        ctx.tainted = False
+        await save.handler({**args, "attachments": [file.filename]}, ctx)
+
+    assert len(drafts.saved) == 2 and b"Quote Jo 2026.pdf" in drafts.saved[0]
+    saved = [a for a in ctx.actions if "check" in a]
+    assert [a["check"] for a in saved] == [["Quote Jo 2026.pdf"], []]
+    summary = main.with_waiting("Draft ready.", saved[:1], ctx.conversation)
+    assert "(Quote Jo 2026.pdf): check the recipients before sending." in summary

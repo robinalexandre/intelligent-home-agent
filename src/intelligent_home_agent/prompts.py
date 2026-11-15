@@ -168,7 +168,8 @@ def _daily_help(cfg: PromptConfig) -> str:
     if "save_email_draft" in t:
         lines.append(
             "- To write an email, use save_email_draft: it puts a draft, with files attached "
-            "by name (sent by the user or kept from an email), in their drafts folder and "
+            "by name (sent by the user, kept from an email or read from a drive), in their "
+            "drafts folder and "
             "never sends it. Write it as the user, in their language, then tell them it "
             "waits in their drafts. A draft already there (to finish it, add a file, fix its "
             "text): list_email_drafts finds it, update_email_draft changes it in place (only "
@@ -394,6 +395,24 @@ def _documents(t: set[str]) -> list[str]:
     return lines
 
 
+def _filing(t: set[str]) -> str:
+    """Filing into a drive what came by email, when mail is set up too."""
+    if "read_email" not in t:
+        return ""
+    flag = (
+        ", and flag_email, so the user sees which emails you handled" if "flag_email" in t else ""
+    )
+    made = "; never write one yourself with create_pdf" if "create_pdf" in t else ""
+    return (
+        "\n- Filing from emails (invoices, payslips, tax notices): read_email keeps the "
+        "documents attached. For each one, call create_drive_folder when needed and "
+        f"save_file_to_drive with the exact destination{flag}: they wait for the user's go "
+        "as above, one go for the whole list. Never delete or move an email for filing its "
+        "documents. An invoice that is only behind a link or on the vendor's site: say so"
+        f"{made}."
+    )
+
+
 def _drives(t: set[str]) -> str:
     """The file drives: finding and reading, then what may be written, by what is on (a
     read-only setup has no write tool, a setup without a text index no content search)."""
@@ -420,7 +439,8 @@ def _drives(t: set[str]) -> str:
         "whole folder (move or rename only when explicitly asked), always into a new "
         "folder. None of them replaces a file. Once the request read something (finding "
         "or listing files counts), they don't run: call them anyway with the exact paths, "
-        "they wait for the user's go.\n"
+        "they wait for the user's go. Before proposing a path, list the folder and follow "
+        f"the names already in it; create the folder that is missing.{_filing(t)}\n"
         "- Deleting from a drive: delete_drive_file, one file at a time, or "
         "delete_drive_folder, only when the user's own message clearly asks to delete that "
         "file or folder; for a folder with files, say how many it holds first. When "

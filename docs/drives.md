@@ -26,6 +26,11 @@ to the agent. Several drives can be set up at once; each has a short name the ag
   to another) and saves there a file you sent or one a tool fetched. Gathering files is a
   copy: the originals stay where they are. A file or a folder is moved or renamed only
   when you ask for exactly that.
+- **Work with mail and documents**, when those are set up: a file read from a drive can
+  be attached to an email draft, and documents received by email or made by the agent
+  (`create_pdf`) can be filed into a drive. A drive file attached after the request read
+  an email or a page is flagged under the reply, so you check the recipients before
+  sending ([mail-calendar.md](mail-calendar.md)).
 - **It never replaces a file.** When a name is taken, the copy gets a number
   (`Quote_2.pdf`). rclone itself would overwrite in place, so the agent checks the name
   in the destination's listing right before each write. A folder is always copied or moved

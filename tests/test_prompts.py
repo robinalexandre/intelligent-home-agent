@@ -222,3 +222,15 @@ def test_drives_are_described_by_what_is_on():
     assert "The drives are read-only" in read_only
     assert "search_drive_content" not in read_only and "create_drive_folder" not in read_only
     assert "drive" not in prompt(tools={"get_weather"}).split("Untrusted")[0]
+
+
+def test_filing_from_emails_into_a_drive_needs_both():
+    both = ALL_TOOLS | {"read_email", "flag_email", "save_email_draft"}
+    text = prompt(tools=both)
+    assert "Filing from emails" in text and "and flag_email, so the user sees" in text
+    assert "never write one yourself with create_pdf" in text
+    assert "kept from an email or read from a drive" in text
+    assert "Filing from emails" not in prompt(tools=ALL_TOOLS - {"read_email"})
+    plain = prompt(tools={"list_drive_folder", "create_drive_folder", "read_email"})
+    assert "Filing from emails" in plain and "flag_email" not in plain
+    assert "create_pdf" not in plain

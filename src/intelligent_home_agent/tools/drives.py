@@ -1091,7 +1091,9 @@ def build_drive_tools(drives: list[RcloneDrive], *, language: str = "en") -> lis
         file = ctx.conversation.files.get(file_name)
         if file is None:
             kept = ", ".join(sorted(ctx.conversation.files)) or "none"
-            raise ToolError(f"No kept file named {file_name}. Kept files: {kept}.")
+            raise ToolError(
+                f"No kept file named {file_name}: see list_saved_files. Kept files: {kept}."
+            )
         path = await drive.upload(file, text(args, "to_folder"), args.get("name"))
         return {"drive": drive.name, "saved_to": path}
 
@@ -1289,7 +1291,8 @@ def build_drive_tools(drives: list[RcloneDrive], *, language: str = "en") -> lis
             description=(
                 "Read a file from one of the user's drives (PDF, image, text or office "
                 "document; 100 MB max, PDFs over 20 MB are kept but not read) by its exact "
-                "path. It is then kept by name for the rest of the conversation."
+                "path. It is then kept by name with the conversation's files, and can be "
+                "attached to an email draft by that name."
             ),
             input_schema=schema({"path": path_arg}, ["path"]),
             handler=read_drive_file,
@@ -1484,8 +1487,9 @@ def build_drive_tools(drives: list[RcloneDrive], *, language: str = "en") -> lis
         Tool(
             name="save_file_to_drive",
             description=(
-                "Save a file kept in this conversation (sent by the user, or fetched or "
-                f"made by a tool), by its name, into a folder of a drive. {adds_only}"
+                "Save a kept file (sent by the user, made with create_pdf, kept from an "
+                "email or downloaded; see list_saved_files) into a folder of a drive. "
+                f"{adds_only}"
             ),
             input_schema=schema(
                 {"file_name": {"type": "string"}, "to_folder": to_folder, "name": new_name},
