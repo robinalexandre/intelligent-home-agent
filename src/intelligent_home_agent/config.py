@@ -161,6 +161,24 @@ class Settings(BaseSettings):
     max_chat_tokens: int = 4096
     max_chat_tool_iterations: int = 30
 
+    # --- Claude on a Claude subscription instead of the API (docs/subscription.md) -----
+    # Who answers. "api": the provider's API with the key above. "subscription", only
+    # with LLM_PROVIDER=anthropic: Claude Code through the Agent SDK (the "subscription"
+    # extra), signed in with CLAUDE_CODE_OAUTH_TOKEN, on the user's Claude plan. The API
+    # takes what the subscription can't (a file to read, a usage limit, an error) when
+    # LLM_API_KEY is set; without a key those turns get a reply that says so.
+    engine: Literal["api", "subscription"] = "api"
+    # The token `claude setup-token` prints (valid a year).
+    claude_code_oauth_token: SecretStr | None = None
+    # Empty: LLM_MODEL.
+    subscription_model: str = ""
+    # Where the subscription answers, among voice, notification, chat: it starts a Claude
+    # Code process per turn, a few seconds a chat can wait for and a voice hardly can. The
+    # API answers the others; without LLM_API_KEY the subscription answers everywhere.
+    subscription_displays: CsvList = ["chat"]
+    # Claude Code's own files (its config, its transcripts). Empty: DATA_DIR/claude.
+    claude_config_dir: str = ""
+
     # --- Home Assistant (optional: without a token, the home tools are off) ------------
     ha_url: str = "http://homeassistant.local:8123"
     ha_token: SecretStr | None = None
@@ -460,6 +478,7 @@ class Settings(BaseSettings):
         "brief_sections",
         "outdoor_activities",
         "web_trusted_domains",
+        "subscription_displays",
         mode="before",
     )
     @classmethod
@@ -514,6 +533,10 @@ class Settings(BaseSettings):
         return bool(self.drives and self.drive_url and self.drive_password)
 
     @property
+    def subscription_enabled(self) -> bool:
+        return self.engine == "subscription" and self.claude_code_oauth_token is not None
+
+    @property
     def drive_ocr_enabled(self) -> bool:
         """Scans are only read where the provider takes a PDF as a document; elsewhere
         DRIVE_OCR=model falls back to the text layers alone (main logs it)."""
@@ -529,7 +552,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _model_is_usable(self) -> "Settings":
-        if needs_key(self.llm_provider) and self.llm_api_key is None:
+        if self.engine == "subscription":
+            # Checked first: with it, Claude needs no API key.
+            if self.llm_provider != ANTHROPIC:
+                raise ValueError(
+                    "ENGINE=subscription is Claude on a Claude plan: it needs "
+                    f"LLM_PROVIDER=anthropic, not {self.llm_provider}"
+                )
+            if self.claude_code_oauth_token is None:
+                raise ValueError(
+                    "ENGINE=subscription needs CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token`)"
+                )
+            unknown = set(self.subscription_displays) - {"voice", "notification", "chat"}
+            if unknown:
+                raise ValueError(
+                    f"SUBSCRIPTION_DISPLAYS: unknown {sorted(unknown)}; known: voice, "
+                    "notification, chat"
+                )
+        elif needs_key(self.llm_provider) and self.llm_api_key is None:
             raise ValueError(f"LLM_PROVIDER={self.llm_provider} needs LLM_API_KEY")
         if self.llm_provider == CUSTOM and not self.llm_base_url:
             raise ValueError("LLM_PROVIDER=openai-compatible needs LLM_BASE_URL")

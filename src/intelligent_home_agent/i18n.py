@@ -16,6 +16,11 @@ from dataclasses import dataclass
 class Strings:
     name: str
     fallback_reply: str
+    # A turn on the Claude subscription (engine.py): it ran out of rounds; and, without
+    # an API key to take what the subscription can't, why there is no answer.
+    stopped_reply: str
+    subscription_no_file: str
+    subscription_unavailable: str
     closing_words: frozenset[str]
     briefing_request: str
     recap_request: str
@@ -147,6 +152,12 @@ LANGUAGES: dict[str, Strings] = {
     "en": Strings(
         name="English",
         fallback_reply="Sorry, I couldn't finish that request.",
+        stopped_reply='I stopped there: too many steps for one request. Say "continue" and '
+        "I'll pick up where I left off.",
+        subscription_no_file="I can't read a file sent to me on the Claude subscription "
+        "alone: that takes an Anthropic API key (LLM_API_KEY).",
+        subscription_unavailable="The Claude subscription can't answer right now (a usage "
+        "limit or an error), and there is no API key to take over. Try again later.",
         closing_words=frozenset(
             "no thanks thank you that's all bye goodbye ok okay fine great perfect "
             "cool nothing else stop cheers done good".split()
@@ -282,6 +293,13 @@ LANGUAGES: dict[str, Strings] = {
     "fr": Strings(
         name="French",
         fallback_reply="Désolé, je n'ai pas réussi à terminer cette demande.",
+        stopped_reply="Je m'arrête là : trop d'étapes pour une seule demande. Dis "
+        "« continue » et je reprends où j'en étais.",
+        subscription_no_file="Je ne peux pas lire un fichier envoyé avec l'abonnement "
+        "Claude seul : il faut une clé d'API Anthropic (LLM_API_KEY).",
+        subscription_unavailable="L'abonnement Claude ne peut pas répondre pour l'instant "
+        "(limite d'usage ou erreur), et aucune clé d'API ne prend le relais. Réessaie "
+        "plus tard.",
         closing_words=frozenset(
             "non merci beaucoup c'est tout bon rien d'autre stop ok d'accord ça ira parfait "
             "super nickel top cool au revoir pour moi".split()
