@@ -1,5 +1,13 @@
 # Your servers at a hosting provider
 
+| | |
+|---|---|
+| **What it does** | Reads your servers at a hosting provider (state, metrics, backups, Docker projects and their logs) and, on your yes, restarts, snapshots or deploys. |
+| **What you need** | An API token at Hostinger or Hetzner Cloud. Another provider: a [connector](connectors.md) if it has an MCP server. |
+| **Settings** | `HOSTING_PROVIDER`, `HOSTING_API_TOKEN`; the wizard's `hosting` item. |
+| **Check it works** | `list_servers` is in the startup log's tools; ask "how are my servers?". |
+| **Verified** | Hostinger: used against the real API in the installation it was ported from. Hetzner: written from its documentation, never run against the real API ([below](#which-provider)). |
+
 "Is my server short on disk?", "why is the site down?", "restart the shop", "take a
 snapshot before I upgrade": with a provider and an API token, the agent reads your
 servers through the provider's public API and, on your yes, acts on them.
@@ -10,7 +18,7 @@ HOSTING_API_TOKEN=...
 ```
 
 Both empty (the default): no tool, and nothing in the prompt. `scripts/setup.py` asks for
-them under "more devices and services".
+them when you pick `hosting` in its menu.
 
 ## Which provider
 

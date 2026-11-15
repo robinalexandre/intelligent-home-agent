@@ -1,5 +1,13 @@
 # Remote browser: sites behind your login
 
+| | |
+|---|---|
+| **What it does** | A real Chrome next to the agent: you log into a site in it from a link, the agent then opens pages, clicks and downloads there. Optionally, pages as seen from another country through a VPN subscription. |
+| **What you need** | Docker, some 700 MB of memory, and a way to reach the browser's page: Caddy or Traefik on your own domain (behind a login page), or Tailscale. A VPN subscription for the other-country part. |
+| **Settings** | `BROWSER_PUBLIC_URL`, `BROWSER_GATE`, `BROWSER_DOMAIN`, the `AUTH_` settings, `VPN_SERVICE_PROVIDER`; the wizard's `browser` item. All of them: [settings.md](settings.md#remote-browser). |
+| **Check it works** | `browser_open` is in the startup log's tools (the log says why not otherwise); ask it to open a page that needs JavaScript, then to log you into a site. |
+| **Verified** | The agent's code runs daily behind Traefik in the installation it comes from. None of the Compose files of this page was started from this repository ([below](#if-it-doesnt-start)). |
+
 Optional, Docker only. A real Chrome runs next to the agent. You log into a site in it from
 a link (your password never goes through the agent), the session stays in Chrome's profile,
 and the agent can then open pages, click and download on that site: fetch a certificate from
@@ -82,8 +90,8 @@ start, and see "If it doesn't start" at the end.
 The second is simpler and exposes nothing to the internet. Take the first when you want to
 log in from a device that is not on your tailnet.
 
-`python scripts/setup.py` asks for either when you choose Caddy, Traefik or Tailscale as
-the way to reach the agent, and writes the lines below.
+`python3 scripts/setup.py` offers `browser` in its menu when the agent is reached through
+Caddy, Traefik or Tailscale, and writes the lines below.
 
 ### With Caddy or Traefik, behind a login page
 

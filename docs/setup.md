@@ -51,7 +51,7 @@ line, so the command is always `docker compose up -d --build`.
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[documents]"
+pip install ".[documents]"
 python scripts/setup.py                # answer "n" to the Docker question
 uvicorn intelligent_home_agent.main:app --host 127.0.0.1 --port 8000
 ```
@@ -255,7 +255,7 @@ If something is off:
 | The Tailscale address has no certificate | Enable HTTPS certificates in the tailnet's DNS settings, then restart the sidecar. |
 
 **Update**: `git pull && docker compose up -d --build` (without Docker: `git pull`,
-`pip install -e ".[documents]"` with the extras you use, restart).
+`pip install ".[documents]"` with the extras you use, restart).
 
 **Back up** two things:
 

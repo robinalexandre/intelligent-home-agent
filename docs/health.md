@@ -1,5 +1,13 @@
 # Health: weigh-ins from a Withings scale
 
+| | |
+|---|---|
+| **What it does** | Answers "what do I weigh?" and how it changed, from a Withings scale. Read-only. |
+| **What you need** | A Withings account with a scale, and a free application on developer.withings.com. |
+| **Settings** | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REFRESH_TOKEN`, written by `scripts/withings_login.py`; the wizard's `health` item names the script. |
+| **Check it works** | `get_body_measurements` is in the startup log's tools; ask "what do I weigh?". |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+
 With a Withings scale connected, the agent can answer "what do I weigh?", "how much did I
 lose this month?" or "how is my body fat doing?". It only reads; it never writes to
 Withings.

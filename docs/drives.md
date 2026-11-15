@@ -1,5 +1,13 @@
 # File drives
 
+| | |
+|---|---|
+| **What it does** | Browses, searches (by name and by content), reads and files the documents of your drives, several at once. It never replaces a file and keeps a copy of what it deletes. |
+| **What you need** | Docker, the rclone sidecar (`compose/drive.yml`), and a login per drive: Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, S3 and whatever else rclone reaches. |
+| **Settings** | `DRIVES`, `DRIVE_PASSWORD` (`DRIVE_URL` is set by the Compose file); the wizard's `drives` item. All of them: [below](#settings). |
+| **Check it works** | `docker compose ps` shows `drive` running and the startup log lists the drive tools; ask "what is in my Documents folder?". |
+| **Verified** | Run against the real service: iCloud Drive only. Every other service, several drives at once and copies between drives: a simulated rclone only ([below](#what-was-tested)). |
+
 The agent can work with the files you keep in a drive: Google Drive, iCloud Drive,
 OneDrive, Dropbox, a NAS, a bucket. It goes through [rclone](https://rclone.org), which
 speaks to some seventy storage services with one API, running as a sidecar container next
@@ -120,7 +128,7 @@ is welcome.
 
 ## Setup
 
-1. **Add the sidecar.** Run `python scripts/setup.py` and answer yes to "File drives", or
+1. **Add the sidecar.** Run `python3 scripts/setup.py` and pick `drives` in its menu, or
    by hand in `.env`:
 
    ```

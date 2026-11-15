@@ -1,5 +1,13 @@
 # Claude on your Claude subscription
 
+| | |
+|---|---|
+| **What it does** | Claude answers on your own Claude plan (Pro, Max...) through Claude Code, instead of the API billed by use. |
+| **What you need** | `LLM_PROVIDER=anthropic`, a token from `claude setup-token`, the `subscription` extra (some 400 MB). An API key as well is optional. |
+| **Settings** | `ENGINE=subscription`, `CLAUDE_CODE_OAUTH_TOKEN`, `SUBSCRIPTION_MODEL`, `SUBSCRIPTION_DISPLAYS`; the wizard's "claude-subscription" model choice. |
+| **Check it works** | The startup log says who answers what, e.g. `engine: Claude subscription (...) for chat, the API (...) for the rest`. |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. Here the SDK is replaced by a scripted stand-in. |
+
 Claude can answer in two ways. With an API key (`LLM_PROVIDER=anthropic` and
 `LLM_API_KEY`), every reply is a request to Anthropic's API, billed by use. With
 `ENGINE=subscription`, replies are written by [Claude Code](https://claude.com/claude-code)

@@ -1,5 +1,13 @@
 # Coding jobs
 
+| | |
+|---|---|
+| **What it does** | Hands a fix or a feature on one of your GitHub repositories to a coding subagent, which works on its own, opens a pull request and reports. For people who code; off by default. |
+| **What you need** | A chat channel or `NTFY_URL`; a GitHub token limited to the repositories it may touch; a Claude plan (the coder container, `compose/coder.yml`) or Anthropic's API (Managed Agents). |
+| **Settings** | `JOBS_RUNNER`, `JOBS_GITHUB_TOKEN`, `CODER_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; the wizard's `jobs` item. All of them: [below](#setup). |
+| **Check it works** | The startup log says `coding jobs: on, run by claude_code`; ask for a small job on a test repository. |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. No start of `compose/coder.yml` and no Managed Agents session from this repository is recorded. |
+
 For people who code. Ask the agent for a change on one of your GitHub repositories, and a
 coding subagent does it on its own while the agent keeps answering you:
 
@@ -114,7 +122,8 @@ the report), and the Console shows every session live.
 
 ## Setup
 
-The wizard (`scripts/setup.py`) asks about it once a push channel is chosen. By hand:
+The wizard (`scripts/setup.py`) offers `jobs` in its menu, with Docker and once a chat or a
+push channel is set. By hand:
 
 1. A way for reports to reach you: a chat ([chat.md](chat.md)) or `NTFY_URL`.
 2. A GitHub token on the repositories the coder may work on, with **Contents** and

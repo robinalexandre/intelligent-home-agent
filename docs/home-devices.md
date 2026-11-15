@@ -1,5 +1,13 @@
 # Home devices, without Home Assistant
 
+| | |
+|---|---|
+| **What it does** | Drives a few devices directly: Philips Hue lights, a Devialet speaker, a Google TV / Android TV device, an Apple TV and HomePods, a Nuki lock, Netatmo cameras and sensors, a PetKit feeder and litter box; and says what is still on or unlocked when you leave home. |
+| **What you need** | Per device: its address on the home network or its cloud account. Three rest on an optional library (`EXTRAS=documents,devices`). No Home Assistant needed. |
+| **Settings** | The table below, per device; the wizard's `devices` item. All of them: [settings.md](settings.md#home-devices). |
+| **Check it works** | The startup log lists the device's tools (`list_hue_lights`, `get_lock_state`...); ask "which lights are on?". A device whose library is missing is named in the log. |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. `navigate_tv` was used on one Google TV projector with Claude; other models were not tried on a real screen. |
+
 The agent can drive some devices directly, each one on when its settings are filled in.
 Home Assistant stays the way to reach everything else, and the two work side by side: a
 brand that is not below (another lock, another speaker, a thermostat) goes through Home
@@ -15,8 +23,9 @@ Assistant.
 | Netatmo cameras, weather station, thermostat | Netatmo's cloud | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | `get_home_security_status`, `get_camera_events`, `get_netatmo_measures`, `set_camera_monitoring` |
 | PetKit feeder, litter box | PetKit's cloud | `PETKIT_USERNAME`, `PETKIT_PASSWORD`, `PETKIT_REGION` | `get_pet_devices_status`, `feed_pet_now`, `clean_litter_box_now` |
 
-`python scripts/setup.py` asks about the lock and the pet devices and names the script to
-run for the others.
+`python3 scripts/setup.py` has a `devices` item in its menu: it asks for what it can take
+(the Hue bridge, the lock's token, the PetKit account) and names the script to run for
+the others.
 
 ## Optional libraries
 
@@ -25,9 +34,9 @@ out of the default install:
 
 | Extra | For | Install |
 |---|---|---|
-| `android-tv` | Google TV / Android TV | `pip install -e ".[android-tv]"` |
-| `apple` | Apple TV and HomePods | `pip install -e ".[apple]"` |
-| `petkit` | PetKit | `pip install -e ".[petkit]"` |
+| `android-tv` | Google TV / Android TV | `pip install ".[android-tv]"` |
+| `apple` | Apple TV and HomePods | `pip install ".[apple]"` |
+| `petkit` | PetKit | `pip install ".[petkit]"` |
 
 `devices` is the three together. With Docker, set `EXTRAS=documents,devices` (or
 `EXTRAS=documents,petkit,apple`; `documents` is the image's default, see
@@ -266,8 +275,8 @@ put it in `PETKIT_USERNAME` / `PETKIT_PASSWORD`. `PETKIT_REGION` is the account'
 code (`US`, `DE`, `FR`...; `HOME_COUNTRY` when empty). An account created with an emailed
 code has no password: set one in the app first.
 
-With `NTFY_URL` set, the supplies are looked at in the daytime every
-`PETKIT_CHECK_MINUTES` (180) and a push is sent only when something needs doing: the
+With a chat channel or `NTFY_URL` set, the supplies are looked at in the daytime every
+`PETKIT_CHECK_MINUTES` (180) and a message is sent only when something needs doing: the
 litter under `PETKIT_LITTER_ALERT_PERCENT` (50) and the food under
 `PETKIT_FOOD_ALERT_PERCENT` (45, or the feeder's own low flag when it gives no level),
 once each, again only after the level came back up; the waste bin full at once and then
@@ -294,7 +303,8 @@ Waiting for your go ("yes", or "yes except 2"):
 the check itself: each fix waits, like any other write, for your yes in the same
 conversation (`conversation_id`, `default` unless you send one), kept for
 `CHAT_CONVERSATION_TTL_SECONDS` (12 hours).
-`"push": true` also sends the message through ntfy.
+`"push": true` also sends the message through ntfy, `"deliver": "chat"` in your chat
+([chat.md](chat.md)).
 
 What is checked:
 

@@ -1,5 +1,13 @@
 # Siri Shortcut
 
+| | |
+|---|---|
+| **What it does** | Talk to the assistant with Siri on an iPhone, a HomePod, a Mac or CarPlay; briefings and a "leaving home" check as Shortcuts. |
+| **What you need** | The agent reachable from the phone ([setup.md, step 4](setup.md#4-reaching-the-agent)); a Mac to build the Shortcuts in one command, or ten minutes in the Shortcuts app. |
+| **Settings** | None on the agent's side beyond `AGENT_API_TOKEN` and `ASSISTANT_NAME`. |
+| **Check it works** | "Hey Siri, <assistant name>" → "Yes?" → your request → a spoken reply. |
+| **Verified** | Not recorded on this page. `scripts/build_shortcuts.py` needs macOS and could not be run where the other features were ported. |
+
 Siri can't pass free text in its trigger phrase, so the exchange is two steps:
 "Hey Siri, <assistant name>" → "Yes?" → your request → spoken reply.
 
@@ -52,7 +60,7 @@ build them by hand.
 7. **Show Result**: *Dictionary Value* (Siri reads it aloud).
 
 Plain reminders ("Hey Siri, remind me to...") are faster through Siri itself. The agent's
-reminders help when they come out of a conversation ("remind me to answer Alex's email
+reminders help when they come out of a conversation ("remind me to answer Sam's email
 tonight").
 
 ## Morning briefing
