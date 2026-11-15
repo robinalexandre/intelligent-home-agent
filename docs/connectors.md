@@ -77,7 +77,9 @@ The rules are enforced by the code, whatever the model or a message says:
   harmless is shown with "(may delete or overwrite)". A call that is not one of the
   service's write tools, or whose arguments are too long or hold hidden characters to be
   shown whole, is refused before you are asked. What waits is forgotten with the
-  conversation (`CONVERSATION_TTL_SECONDS`): answer within that time, or ask again.
+  conversation (`CONVERSATION_TTL_SECONDS`, five minutes by default for voice;
+  `CHAT_CONVERSATION_TTL_SECONDS`, twelve hours, with `"display": "chat"`): answer within
+  that time, or ask again.
 - **With `"writes": "off"`**, the write tools don't exist: there is nothing to talk the
   agent into.
 - **What the token can do is the outer limit.** Grant the narrowest scopes the service

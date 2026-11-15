@@ -445,7 +445,10 @@ async def health_ha(request: Request) -> dict[str, bool]:
 )
 async def ask(body: AskRequest, request: Request) -> AskResponse:
     store: ConversationStore = request.app.state.store
-    conv = store.get(body.conversation_id)
+    settings: Settings = request.app.state.settings
+    # A chat can be answered hours later; a voice exchange is over in minutes.
+    ttl = settings.chat_conversation_ttl_seconds if body.display == "chat" else None
+    conv = store.get(body.conversation_id, ttl)
     async with conv.lock:
         text, actions = await answer(request, conv, body)
         store.touch(conv)

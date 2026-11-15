@@ -154,7 +154,9 @@ def _daily_help(cfg: PromptConfig) -> str:
     if "web_search" in t:
         lines.append(
             "- Current events, opening hours, facts you are unsure of: use web_search, then "
-            "answer in one or two sentences without citing sources out loud."
+            "answer in one or two sentences without citing sources out loud. When a request "
+            "needs both a search and a read (emails, the calendar, an account), search "
+            "first: after such a read the search waits for the user's go."
         )
     if "set_hue_lights" in t:
         lines.append(

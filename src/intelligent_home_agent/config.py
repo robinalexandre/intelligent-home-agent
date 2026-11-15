@@ -174,6 +174,9 @@ class Settings(BaseSettings):
     language: str = "en"
     timezone: str = "UTC"
     conversation_ttl_seconds: int = 300
+    # A chat (display "chat") is answered hours later: its conversation, with the files
+    # sent in it and what waits for the user's go, is kept longer.
+    chat_conversation_ttl_seconds: int = 12 * 3600
     max_history_messages: int = 40
 
     # --- Home location (weather, travel time, web search relevance) --------------------

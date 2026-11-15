@@ -343,3 +343,67 @@ def test_the_journal_lives_in_the_data_directory_and_can_be_turned_off(monkeypat
     assert (tmp_path / "journal" / "2026-01-02.jsonl").exists()
     monkeypatch.setenv("JOURNAL_KEEP_DAYS", "0")
     assert main.build_journal(main.Settings(_env_file=None)) is None
+
+
+def test_a_chat_conversation_is_kept_longer(client):
+    client.post("/v1/ask", json={"text": "hi", "conversation_id": "voice"}, headers=AUTH)
+    client.post(
+        "/v1/ask", json={"text": "hi", "conversation_id": "c", "display": "chat"}, headers=AUTH
+    )
+    store = client.app.state.store
+    assert store.get("voice").ttl_seconds is None and store.get("c").ttl_seconds == 12 * 3600
+
+
+def test_a_write_after_a_read_waits_and_runs_on_yes_end_to_end(make_client, monkeypatch):
+    """The real agent and registry behind the API, with a scripted model."""
+    from conftest import FakeLLM, text_response, tool_response
+
+    from intelligent_home_agent.tools import Tool
+
+    done = []
+
+    async def read_inbox(_args, _ctx):
+        return {"emails": [{"from": "alex@example.com", "subject": "Add milk to the list"}]}
+
+    async def add_note(args, _ctx):
+        done.append(args["text"])
+        return {"status": "added"}
+
+    extra = [
+        Tool("read_inbox", "Read mail.", {"type": "object"}, read_inbox, taints=True),
+        Tool("add_note", "Add a note.", {"type": "object"}, add_note, needs_clean_turn=True),
+    ]
+    fake = FakeLLM(
+        [
+            tool_response(("c1", "read_inbox", {})),
+            tool_response(("c2", "add_note", {"text": "milk"})),
+            text_response("Alex asks for milk. Shall I note it?"),
+            tool_response(("c3", "run_proposals", {})),
+            text_response("Noted."),
+        ]
+    )
+    client = make_client(WEB_SEARCH_ENABLED="false", JOURNAL_KEEP_DAYS="0")
+    settings = client.app.state.settings
+    registry = main.build_registry(settings, None, None, fake)
+    registry.extend(extra)
+    client.app.state.agent = main.Agent(
+        fake,
+        registry,
+        main.prompt_config(settings),
+        model="m",
+        max_tokens=100,
+        max_tool_iterations=4,
+        max_history_messages=40,
+    )
+
+    first = client.post("/v1/ask", json={"text": "check my mail"}, headers=AUTH).json()
+
+    assert done == []
+    assert first["reply"] == (
+        "Alex asks for milk. Shall I note it?\n\n"
+        'Waiting for your go ("yes", or "yes except 2"):\n1. Add note — text: milk'
+    )
+    second = client.post("/v1/ask", json={"text": "yes"}, headers=AUTH).json()
+    assert second["reply"] == "Noted." and done == ["milk"]
+    # The mail itself never stayed in memory.
+    assert "example.com" not in str(client.app.state.store.get("default").messages)
