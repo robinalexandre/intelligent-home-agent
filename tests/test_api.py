@@ -1130,6 +1130,7 @@ def test_an_apple_id_moves_reminders_to_icloud_with_notes_and_find_my(monkeypatc
 def test_the_remote_browser_needs_its_address_and_its_page_and_a_vpn_key_for_abroad(
     monkeypatch, tmp_path
 ):
+    pytest.importorskip("playwright", reason="needs the browser extra")
     base_env(monkeypatch)
     monkeypatch.setenv("BROWSER_CDP_HOST", "browser")
     settings = main.Settings(_env_file=None)
