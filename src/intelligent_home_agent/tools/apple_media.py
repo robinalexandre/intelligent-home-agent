@@ -61,8 +61,14 @@ def parse_devices(raw: str, credentials: dict[str, str] | None = None) -> list[A
     except ValueError as exc:
         raise ValueError(f"APPLE_DEVICES is not valid JSON: {exc}") from exc
     devices = []
-    for item in listed:
-        device = AppleDevice(item["name"], item["host"], item["id"], item["services"])
+    for item in listed if isinstance(listed, list) else [None]:
+        try:
+            device = AppleDevice(item["name"], item["host"], item["id"], item["services"])
+        except (KeyError, TypeError):
+            raise ValueError(
+                "APPLE_DEVICES is not a profile: paste what `python scripts/apple_devices.py "
+                "profile <addresses>` prints, a list of devices with name, host, id, services."
+            ) from None
         if device.is_apple_tv and credentials:
             device.credentials = {k: v for k, v in credentials.items() if v}
         devices.append(device)

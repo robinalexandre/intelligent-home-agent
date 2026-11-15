@@ -350,3 +350,8 @@ def test_the_screen_elements_read_over_adb_keep_labels_and_focus():
         "  Settings [0,50][9,59]",
     ]
     assert parse_elements(b"not xml") == []
+
+
+def test_a_certificate_that_is_not_the_pairing_scripts_says_so():
+    with pytest.raises(ValueError, match="ANDROID_TV_CLIENT_CERT and ANDROID_TV_CLIENT_KEY"):
+        AndroidTV("192.168.1.60", "-----BEGIN CERTIFICATE-----", encode_pem(b"K"))

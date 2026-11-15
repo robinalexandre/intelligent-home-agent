@@ -43,6 +43,10 @@ def test_the_pairing_goes_to_the_apple_tv_only():
 def test_a_broken_profile_says_so():
     with pytest.raises(ValueError, match="APPLE_DEVICES"):
         parse_devices("[{")
+    # Valid JSON that is no profile: said too, not a KeyError when the app starts.
+    for wrong in ('{"devices": []}', '["tv"]', '[{"name": "TV"}]'):
+        with pytest.raises(ValueError, match="APPLE_DEVICES is not a profile"):
+            parse_devices(wrong)
 
 
 async def echo_server():

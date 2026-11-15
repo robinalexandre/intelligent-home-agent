@@ -1,4 +1,3 @@
-import json
 from io import BytesIO
 from pathlib import Path
 
@@ -240,4 +239,4 @@ async def test_a_drawing_goes_into_a_pdf(ctx):
         {"title": "Program", "html": '<h1>Program</h1><img src="drawing.png">'}, ctx
     )
     assert b"/Subtype /Image" in ctx.conversation.files["Program.pdf"].data
-    assert json.dumps(ctx.actions)  # the PDF is shared
+    assert {"type": "share_file", "name": "Program.pdf"} in ctx.actions

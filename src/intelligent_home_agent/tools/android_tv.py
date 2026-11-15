@@ -237,7 +237,14 @@ class AndroidTV:
         self._certfile = folder / "cert.pem"
         self._keyfile = folder / "key.pem"
         for path, value in ((self._certfile, cert), (self._keyfile, key)):
-            path.write_bytes(base64.b64decode(value))
+            try:
+                pem = base64.b64decode(value, validate=True)
+            except ValueError:
+                raise ValueError(
+                    "ANDROID_TV_CLIENT_CERT and ANDROID_TV_CLIENT_KEY are the two lines "
+                    "`python scripts/android_tv_pair.py <address>` prints (base64)."
+                ) from None
+            path.write_bytes(pem)
             os.chmod(path, 0o600)
 
     async def _address(self, stack: AsyncExitStack, port: int) -> tuple[str, int]:

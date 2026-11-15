@@ -277,7 +277,7 @@ def test_settings_build_one_connector_per_server(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     servers = [
-        {"name": "bank", "label": "My Bank", "url": URL, "token": "t", "writes": "confirm"},
+        {"name": "bank", "label": "My Bank", "url": URL, "token": "tok-9f2c", "writes": "confirm"},
         {
             "name": "hosting",
             "url": "https://mcp.host.test/mcp",
@@ -291,7 +291,7 @@ def test_settings_build_one_connector_per_server(monkeypatch, tmp_path):
     names = main.build_registry(settings, None, None, None).names()
     assert {"bank_help", "bank_read", "bank_write", "run_proposals"} <= names
     assert {"hosting_help", "hosting_read"} <= names and "hosting_write" not in names
-    assert "t" not in json.dumps(settings.model_dump(mode="json")["mcp_servers"][0]["token"])
+    assert "tok-9f2c" not in json.dumps(settings.model_dump(mode="json"))
 
     for bad, match in (
         ([servers[0], servers[0]], "share a name"),
