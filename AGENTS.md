@@ -37,17 +37,23 @@ src/intelligent_home_agent/
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
   config.py         settings (env / .env)
   conversations.py  conversation state: messages, files (Attachment), writes waiting for
-                    the user's go (Proposal), pending Home Assistant confirmations
+                    the user's go (Proposal), pending Home Assistant confirmations; what
+                    of a chat is saved in DATA_DIR (ConversationStore.save, FileStore)
+  config_crypt.py   git-crypt as a codec, for a memory kept in an encrypted repository
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
                     for search; scanned PDFs read by the model where the provider can
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
   notify.py         ntfy push
+  shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet)
   tools/base.py     Tool and its flags, ToolContext, ToolRegistry (the rules live here)
   tools/proposals.py     run_proposals, propose_action, propose_plan...: the user's go
   tools/long_results.py  read_result_part, for results too long for one read
+  tools/memory.py        facts kept about the user, in a local file or a repository
+                         (TextFile: LocalFile, GitHubFile); procedures.py, turned_down.py
+                         and past_conversations.py sit beside it (docs/memory.md)
   tools/            one module per capability, each with a build_*_tools() factory
 scripts/setup.py         interactive .env writer (stdlib only)
 compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE
@@ -171,6 +177,16 @@ When porting from another codebase: rename the package, replace every example wi
 fictional one, translate comments and fixtures to English, move user-facing words to
 `i18n.py`, and call the model only through `LLMClient` (`response.content` is a list of
 dict blocks, never SDK objects).
+
+## What survives a restart
+
+Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/` and
+`files/` (chats only: `main.save_conversation`, `restore_conversations`, `file_store`),
+`memory.md` and `procedures.md` (unless `MEMORY_STORE=github`), `turned-down-alerts.json`.
+A feature that keeps a file follows the same pattern: written through a temporary file,
+mode 600, named by the code and never by what a client or a model sent. What must reach
+every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is
+the `memory=` hook of `Agent`; that text is also registered with the leak guard.
 
 ## Adding an LLM provider
 

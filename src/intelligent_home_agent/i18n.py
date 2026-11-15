@@ -30,12 +30,52 @@ class Strings:
     # How a parked action reads in that list (tools pass their own values in).
     plan_summary: str
     search_summary: str
+    open_page_summary: str
     connector_write_summary: str
     may_destroy: str
     # A write that ran without a go, noted under the reply so it never goes unseen.
     written_line: str
     # Example of offering details in a chat, for the prompt.
     chat_detail_offer: str
+    # Names of the files the agent makes when the model gives none (tools/documents.py,
+    # pdf_forms.py, illustrations.py, generation.py): the user sees them in the chat.
+    document_title: str
+    filled_suffix: str
+    drawing_name: str
+    animation_name: str
+    image_name: str
+    video_name: str
+    # The two photos of an exercise: its start and end positions.
+    exercise_steps: tuple[str, str]
+    # Memory (tools/memory.py, tools/procedures.py): how its writes read in that list,
+    # and the words that ask to remember, for the prompt.
+    remember_summary: str
+    forget_summary: str
+    procedure_summary: str
+    remember_phrases: str
+    # Mail and calendar writes, as the user reads them before giving their go.
+    mail_headline: str
+    draft_headline: str
+    mail_flag_summary: str
+    mail_create_folder_summary: str
+    mail_move_summary: str
+    draft_update_summary: str
+    draft_delete_summary: str
+    draft_change_recipients: str
+    draft_nobody: str
+    draft_change_subject: str
+    draft_change_body: str
+    draft_change_attach: str
+    draft_change_remove: str
+    draft_no_change: str
+    calendar_add_summary: str
+    calendar_where: str
+    calendar_notes: str
+    # A draft saved in the turn, noted under the reply so none goes unseen; and the
+    # warning when it carries files after the request read content written by others.
+    draft_line: str
+    draft_files: str
+    draft_check: str
     # File drives (tools/drives.py): how a write reads in the list of what waits. A place
     # is a drive's label and a path; an item of the local trash is where it was.
     drive_place: str
@@ -75,10 +115,49 @@ LANGUAGES: dict[str, Strings] = {
         waiting_header='Waiting for your go ("yes", or "yes except 2"):',
         plan_summary="Plan: {plan}",
         search_summary='Search the web for "{query}" and carry on',
+        open_page_summary="Open the page {url} and carry on with what it says",
         connector_write_summary="{label}{warning}: {tool} {arguments}",
         may_destroy=" (may delete or overwrite)",
         written_line="Written: {summary}",
         chat_detail_offer='"Want the details?"',
+        document_title="Document",
+        filled_suffix="filled",
+        drawing_name="drawing",
+        animation_name="animation",
+        image_name="image",
+        video_name="video",
+        exercise_steps=("start", "end"),
+        remember_summary="Remember “{fact}”",
+        forget_summary="Forget what I remember about “{words}”",
+        procedure_summary="Keep the steps",
+        remember_phrases='"remember that", "keep in mind", "note that I"',
+        mail_headline='"{subject}" from {sender}',
+        draft_headline='"{subject}" to {to}',
+        mail_flag_summary="Flag the email {headline} ({account})",
+        mail_create_folder_summary='Create the mail folder "{name}" ({account})',
+        mail_move_summary=(
+            'File into the folder "{folder}" ({target}) the email of {source} {headline}'
+        ),
+        draft_update_summary=(
+            "Change the draft of {account} {headline}: {what} (the old one goes to the trash)"
+        ),
+        draft_delete_summary="Delete the draft of {account} {headline} (it goes to the trash)",
+        draft_change_recipients="{field}: {value}",
+        draft_nobody="nobody",
+        draft_change_subject="subject: {subject}",
+        draft_change_body="new text: {text}",
+        draft_change_attach="attach {files}",
+        draft_change_remove="remove {files}",
+        draft_no_change="nothing changes",
+        calendar_add_summary='Add to the calendar "{title}", from {start} to {end}{where}{notes}',
+        calendar_where=", at {location}",
+        calendar_notes=" (notes: {notes})",
+        draft_line='Draft saved: {to}, "{subject}"{files}',
+        draft_files=", attached: {files}",
+        draft_check=(
+            "Files attached after reading content written by others ({files}): check the "
+            "recipients before sending."
+        ),
         drive_place="{drive}: {path}",
         drive_renamed=' as "{name}"',
         drive_create_folder="Create the folder {place}",
@@ -116,10 +195,53 @@ LANGUAGES: dict[str, Strings] = {
         waiting_header="En attente de ton accord (« oui », ou « oui sauf 2 ») :",
         plan_summary="Plan : {plan}",
         search_summary="Chercher sur le web « {query} » et reprendre",
+        open_page_summary="Ouvrir la page {url} et reprendre avec ce qu'elle dit",
         connector_write_summary="{label}{warning} : {tool} {arguments}",
         may_destroy=" (peut supprimer ou écraser)",
         written_line="Écrit : {summary}",
         chat_detail_offer='"Tu veux le détail ?"',
+        document_title="Document",
+        filled_suffix="rempli",
+        drawing_name="schéma",
+        animation_name="animation",
+        image_name="image",
+        video_name="vidéo",
+        exercise_steps=("départ", "arrivée"),
+        remember_summary="Retenir « {fact} »",
+        forget_summary="Oublier ce que je retiens sur « {words} »",
+        procedure_summary="Retenir la démarche",
+        remember_phrases='"retiens que", "souviens-toi", "note que je"',
+        mail_headline="« {subject} » de {sender}",
+        draft_headline="« {subject} » à {to}",
+        mail_flag_summary="Signaler le mail {headline} ({account})",
+        mail_create_folder_summary="Créer le dossier de mails « {name} » ({account})",
+        mail_move_summary=(
+            "Ranger dans le dossier « {folder} » ({target}) le mail de {source} {headline}"
+        ),
+        draft_update_summary=(
+            "Modifier le brouillon de {account} {headline} : {what} (l'ancien va à la corbeille)"
+        ),
+        draft_delete_summary=(
+            "Supprimer le brouillon de {account} {headline} (il va à la corbeille)"
+        ),
+        draft_change_recipients="{field} : {value}",
+        draft_nobody="personne",
+        draft_change_subject="objet : {subject}",
+        draft_change_body="nouveau texte : {text}",
+        draft_change_attach="joindre {files}",
+        draft_change_remove="retirer {files}",
+        draft_no_change="rien ne change",
+        calendar_add_summary=(
+            "Ajouter au calendrier « {title} », du {start} au {end}{where}{notes}"
+        ),
+        calendar_where=", à {location}",
+        calendar_notes=" (notes : {notes})",
+        draft_line="Brouillon enregistré : {to}, « {subject} »{files}",
+        draft_files=", pièces jointes : {files}",
+        draft_check=(
+            "Fichiers joints après lecture d'un contenu écrit par d'autres ({files}) : "
+            "vérifie les destinataires avant d'envoyer."
+        ),
         drive_place="{drive} : {path}",
         drive_renamed=" sous le nom « {name} »",
         drive_create_folder="Créer le dossier {place}",

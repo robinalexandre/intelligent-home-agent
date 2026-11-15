@@ -6,6 +6,17 @@ ALL_TOOLS = {
     "get_weather",
     "get_calendar_events",
     "get_recent_emails",
+    "create_calendar_event",
+    "search_emails",
+    "read_email",
+    "save_email_draft",
+    "flag_email",
+    "move_email",
+    "list_email_folders",
+    "create_email_folder",
+    "list_email_drafts",
+    "update_email_draft",
+    "delete_email_draft",
     "get_travel_time",
     "get_github_pull_requests",
     "get_assistant_reminders",
@@ -14,6 +25,31 @@ ALL_TOOLS = {
     "get_outdoor_forecast",
     "create_reminder",
     "web_search",
+    "list_saved_files",
+    "read_saved_file",
+    "create_pdf",
+    "read_pdf_layout",
+    "fill_pdf",
+    "copy_pdf_pages",
+    "draw_image",
+    "make_animation",
+    "find_exercise_photos",
+    "save_exercise_photos",
+    "generate_image",
+    "generate_video",
+    "run_code",
+    "remember",
+    "forget",
+    "find_procedure",
+    "save_procedure",
+    "turn_down_alert",
+    "read_day_journal",
+    "search_past_conversations",
+    "open_web_page",
+    "inspect_file",
+    "domain_lookup",
+    "osm_lookup",
+    "reverse_image_search",
     "list_drive_folder",
     "search_drive_files",
     "search_drive_content",
@@ -79,6 +115,18 @@ def test_no_activities_and_no_tools_means_no_activity_paragraph():
     assert "switched off" not in text
 
 
+def test_pages_and_investigations_are_only_mentioned_when_there():
+    text = prompt()
+    assert "open_web_page reads a public page" in text and "web_search or a site" in text
+    assert "work like an investigator" in text and "reverse_image_search puts it" in text
+    assert "putting a name on an unknown private person" in text
+    text = prompt(tools=ALL_TOOLS - {"reverse_image_search", "web_search"})
+    assert "reverse_image_search" not in text and "web_search" not in text
+    assert "open_web_page and the archives" in text
+    text = prompt(tools={"get_weather", "web_search"})
+    assert "open_web_page" not in text and "investigator" not in text
+
+
 def test_french_prompt():
     text = prompt(language="fr")
     assert "Answer in French" in text
@@ -113,6 +161,25 @@ def test_chat_display_memory_and_user_name():
     assert "What you remember" not in build_system_prompt(cfg)
 
 
+def test_memory_tools_get_their_lines_only_when_registered():
+    bare = prompt(tools={"get_weather"})
+    for word in ("remember", "find_procedure", "turn_down_alert", "search_past_conversations"):
+        assert word not in bare
+    text = prompt(
+        language="fr",
+        tools={
+            "remember",
+            "find_procedure",
+            "turn_down_alert",
+            "search_past_conversations",
+        },
+    )
+    assert 'when the user says "retiens que"' in text and "forget removes" in text
+    assert "find_procedure first" in text and "save_procedure with its steps" in text
+    assert "call turn_down_alert" in text
+    assert "search_past_conversations before saying you don't remember" in text
+
+
 def test_core_tools_get_their_paragraphs_only_when_registered():
     bare = prompt(tools={"get_weather"})
     assert "run_proposals" not in bare and "read_result_part" not in bare
@@ -122,11 +189,35 @@ def test_core_tools_get_their_paragraphs_only_when_registered():
     assert "read_result_part reads the next ones" in text
 
 
+def test_documents_and_pictures_are_mentioned_only_when_their_tools_exist():
+    text = prompt()
+    for line in (
+        "create_pdf writes a PDF",
+        "draw it with draw_image",
+        "find_exercise_photos has",
+        "Generated pictures (generate_image / generate_video)",
+        "read_pdf_layout, then fill_pdf",
+        "copy_pdf_pages makes a new PDF",
+        "run_code computes exactly",
+        "look at list_saved_files",
+    ):
+        assert line in text
+    # Files are others' words: named once among what closes the request to writes.
+    assert text.count("kept files were read") == 1
+
+    bare = prompt(tools={"get_weather", "draw_image", "generate_image"})
+    assert "draw it with draw_image" in bare and "find_exercise_photos" not in bare
+    assert "Generated pictures (generate_image)" in bare
+    for absent in ("create_pdf", "fill_pdf", "copy_pdf_pages", "run_code", "list_saved_files"):
+        assert absent not in bare
+    assert "kept files were read" not in bare
+
+
 def test_drives_are_described_by_what_is_on():
     full = prompt()
     assert "search_drive_content finds them by what they say" in full
     assert "Gathering files is always a copy" in full and "delete_drive_without_copy" in full
-    assert "files of a drive were read" in full.replace("emails, the calendar, GitHub, ", "")
+    assert "files of a drive, kept files were read" in full
     read_only = prompt(tools={"list_drive_folder", "search_drive_files", "read_drive_file"})
     assert "The drives are read-only" in read_only
     assert "search_drive_content" not in read_only and "create_drive_folder" not in read_only

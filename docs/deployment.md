@@ -102,6 +102,12 @@ volumes:
 - Connectors: what the agent asks each service you listed in `MCP_SERVERS`.
 - Web search with a search engine: the query goes to the engine you chose, and the results
   to your model.
+- Web pages: the address of each page opened goes to its site, from the server's own
+  address. After private content, only public-service sites ([web.md](web.md)).
+- Investigations, when enabled: a domain name goes to rdap.org, web.archive.org, crt.sh
+  and DNS; a place or a photo's GPS position to Nominatim; a photo you sent, stripped of
+  its metadata, is served at `PUBLIC_URL` for 15 minutes when a reverse image search is
+  asked for.
 
 ## Later: packaging as a Home Assistant add-on
 

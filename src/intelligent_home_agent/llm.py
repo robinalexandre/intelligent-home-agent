@@ -92,7 +92,11 @@ class AnthropicClient:
     def __init__(self, api_key: str) -> None:
         from anthropic import AsyncAnthropic
 
-        self._messages = AsyncAnthropic(api_key=api_key).messages
+        sdk = AsyncAnthropic(api_key=api_key)
+        self._messages = sdk.messages
+        # The Files API, for the code execution sandbox (tools/code_runner.py); None with
+        # an SDK too old to have it, and run_code is then off.
+        self.files = getattr(sdk, "files", None)
 
     async def create(self, **kwargs: Any) -> LLMResponse:
         response = await self._messages.create(**kwargs)
