@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Add "subscription" for Claude on a Claude plan (docs/subscription.md; Claude Code
 # itself, some 400 MB): EXTRAS=documents,subscription.
 # "voice" transcribes the voice messages sent in a chat (docs/chat.md).
+# Add "curation" for the nightly review's lessons curated into notes (docs/review.md).
 # Empty for the smallest image: --build-arg EXTRAS= --build-arg FONT_PACKAGES=
 ARG EXTRAS=documents
 # Fonts for the PDFs and drawings the agent makes: DejaVu covers Latin with accents, Greek,

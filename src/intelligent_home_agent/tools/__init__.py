@@ -168,3 +168,7 @@ __all__ += [
     "build_hosting_provider",
     "build_hosting_tools",
 ]
+
+from intelligent_home_agent.tools.jobs import build_job_tools  # noqa: E402
+
+__all__ += ["build_job_tools"]

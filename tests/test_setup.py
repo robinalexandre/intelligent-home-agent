@@ -56,6 +56,7 @@ ANSWERS = [
     "7h",  # the briefing by itself: not a time, asked again
     "7:30",
     "",  # no recap by itself
+    "",  # no coding jobs
 ]
 SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
@@ -366,6 +367,7 @@ def test_wizard_offers_every_provider_and_every_compose_file():
         "kb",
         "drive",
         "waha",
+        "coder",
         *browser,
     }
     for access, gate in setup.BROWSER_ACCESS.items():
@@ -511,6 +513,8 @@ def chat_run(tmp_path, chat_answers, secrets_typed, *, docker=True, find_chat=No
     answers += ["", "", *(["", ""] if docker else [])]
     # The access with Docker, the channel, and with a chat set up the tasks' two times.
     answers += [*chat_answers, *([""] if docker else []), "siri", *(["", ""] if tasks else [])]
+    # With Docker and a chat for their reports, the coding jobs are offered: no.
+    answers += [""] if docker and tasks else []
     read, queue = scripted(answers)
     typed = ["", *secrets_typed]  # no key for the local model
     output: list[str] = []
@@ -580,3 +584,41 @@ def test_telegram_without_a_chat_found_takes_the_id_typed_or_says_what_is_missin
 
     env, output = chat_run(tmp_path / "c", ["telegram", "n"], [""], tasks=False)
     assert "TELEGRAM_BOT_TOKEN" not in env and "Skipped" in output
+
+
+def test_coding_jobs_are_offered_with_a_chat_or_a_push_and_default_to_no(monkeypatch):
+    quiet = lambda _line: None  # noqa: E731
+    # Without a chat or a push nothing is asked: a job's report could not reach the user.
+    env = {"USER_NAME": "Sam"}
+    setup.ask_jobs(setup.Prompter(*scripted([])[:1], *scripted([])[:1], quiet), env)
+    assert env == {"USER_NAME": "Sam"}
+
+    env["NTFY_URL"] = "https://ntfy.example.com/topic"
+    read, queue = scripted([""])
+    setup.ask_jobs(setup.Prompter(read, *scripted([])[:1], quiet), env)
+    assert queue == [] and "JOBS_RUNNER" not in env
+
+    env["COMPOSE_FILE"] = "docker-compose.yml:compose/kb.yml"
+    read, queue = scripted(["y", "", "sam@example.com", "y", "my-agent", "sam/my-agent"])
+    read_secret, secret_queue = scripted(["jobs-token", "claude-login"])
+    setup.ask_jobs(setup.Prompter(read, read_secret, quiet), env)
+    assert queue == [] and secret_queue == []
+    assert env["JOBS_RUNNER"] == "claude_code" and len(env["CODER_TOKEN"]) > 30
+    assert env["JOBS_GITHUB_TOKEN"] == "jobs-token"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "claude-login"
+    assert (env["JOBS_GIT_NAME"], env["JOBS_GIT_EMAIL"]) == ("Sam", "sam@example.com")
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/kb.yml:compose/coder.yml"
+    assert env["REVIEW_REPO"] == "sam/my-agent"
+    assert {"CODER_TOKEN", "JOBS_GITHUB_TOKEN"} <= setup.SECRET_KEYS
+
+    for key in ("NTFY_URL", "COMPOSE_FILE", "COMPOSE_PATH_SEPARATOR", "USER_NAME"):
+        env.pop(key)
+    monkeypatch.setenv("AGENT_API_TOKEN", "test-token")
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    from intelligent_home_agent.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.review_repo == "sam/my-agent" and settings.jobs_runner == "claude_code"
+    assert not settings.jobs_enabled  # compose/coder.yml sets CODER_URL

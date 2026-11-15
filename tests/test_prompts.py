@@ -2,6 +2,12 @@ from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.prompts import PromptConfig, build_system_prompt
 
 ALL_TOOLS = {
+    "start_job",
+    "ask_job",
+    "list_jobs",
+    "stop_job",
+    "allow_coder_permission",
+    "refuse_coder_permission",
     "call_service",
     "get_weather",
     "get_calendar_events",
@@ -343,3 +349,11 @@ def test_the_remote_browser_is_explained_when_it_is_there_and_abroad_only_with_a
     assert "browser_open with country" not in text
     assert "browser_open with country" in prompt(browser_abroad=True)
     assert "browser_open" not in prompt(tools=ALL_TOOLS - {"browser_open"})
+
+
+def test_coding_jobs_are_only_named_when_their_tools_exist():
+    text = prompt()
+    assert "start_job hands work" in text and "refuse_coder_permission" in text
+    assert "the coding jobs' reports" in text
+    without = prompt(tools=ALL_TOOLS - {"start_job", "list_jobs", "allow_coder_permission"})
+    assert "start_job" not in without and "coder" not in without

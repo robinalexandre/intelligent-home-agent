@@ -12,6 +12,7 @@ import secrets
 from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -21,7 +22,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
-from intelligent_home_agent import __version__
+from intelligent_home_agent import __version__, curation
 from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.agent import REPEATING_TAG, TASK_TAG, Agent
 from intelligent_home_agent.chat import ChatChannel
@@ -31,6 +32,7 @@ from intelligent_home_agent.chat_session import (
     ChatSession,
     too_long_for_option,
 )
+from intelligent_home_agent.coder_approvals import Approvals, build_coder_permission_tools
 from intelligent_home_agent.config import Settings, get_settings
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
 from intelligent_home_agent.config_crypt import available as crypt_available
@@ -59,12 +61,19 @@ from intelligent_home_agent.home_devices import (
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.icloud_web import ICloudWeb, session_dir
 from intelligent_home_agent.icloud_web import available as icloud_available
+from intelligent_home_agent.jobs import DONE as JOB_DONE
+from intelligent_home_agent.jobs import FAILED as JOB_FAILED
+from intelligent_home_agent.jobs import IDLE as JOB_IDLE
+from intelligent_home_agent.jobs import STOPPED as JOB_STOPPED
+from intelligent_home_agent.jobs import Backend, Job, JobRunner, JobStore
+from intelligent_home_agent.jobs_claude_code import ClaudeCodeBackend
 from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.pet_alerts import PetAlerts
 from intelligent_home_agent.progress import Tracker
 from intelligent_home_agent.prompts import PromptConfig
+from intelligent_home_agent.review import NightlyReview, lessons, review_note, reviewed_day
 from intelligent_home_agent.shared_links import LINKS
 from intelligent_home_agent.tasks import (
     TaskReports,
@@ -150,6 +159,7 @@ from intelligent_home_agent.tools.generation import (
 from intelligent_home_agent.tools.github import API_URL
 from intelligent_home_agent.tools.hosting import build_hosting_provider, build_hosting_tools
 from intelligent_home_agent.tools.illustrations import build_illustration_tools
+from intelligent_home_agent.tools.jobs import build_job_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mcp_client import (
     MCPClient,
@@ -479,6 +489,11 @@ def build_registry(
     if settings.investigations_enabled:
         investigator = Investigator(http, nominatim_url=settings.nominatim_url)
         registry.extend(build_osint_tools(investigator, settings.public_url))
+    # Coding jobs (docs/jobs.md): the runner is built here for its tools; lifespan gives
+    # it where its reports go and starts following the sessions still open.
+    registry.llm = llm
+    registry.job_runner = build_job_runner(settings, http)
+    registry.extend(build_job_tools(registry.job_runner, settings.language))
     if settings.whatsapp_enabled and settings.whatsapp_reading_enabled and http is not None:
         # On the user's own account, whichever session the chat itself goes through.
         waha = Waha(
@@ -918,6 +933,276 @@ def build_delivery(
     if ntfy is not None:
         channels.append(NtfyReports(ntfy, settings.assistant_name))
     return Delivery(channels, Outbox(Path(settings.data_dir) / "task-outbox.json"))
+
+
+def jobs_reach(settings: Settings) -> bool:
+    """Whether a coding job's report can reach the user: without a way, there are no jobs.
+    A new channel of build_delivery is named here too."""
+    return bool(settings.chat_enabled or settings.ntfy_url)
+
+
+def build_job_runner(settings: Settings, http: httpx.AsyncClient) -> JobRunner | None:
+    """The coding jobs' runner (docs/jobs.md), None unless a runner is set up and its
+    reports can reach the user."""
+    if not settings.jobs_enabled:
+        return None
+    if not jobs_reach(settings):
+        log.warning(
+            "coding jobs: off, nothing reaches the user for their reports (a chat, NTFY_URL)"
+        )
+        return None
+    s = strings(settings.language)
+    backend: Backend
+    if settings.jobs_runner == "claude_code":
+        backend = ClaudeCodeBackend(
+            http, settings.coder_url, settings.coder_token.get_secret_value()
+        )
+        repo_path = "/work/{job}/{name}"
+    else:
+        # Anthropic's own API (Managed Agents), not a model call: no other provider has it.
+        from anthropic import AsyncAnthropic
+
+        from intelligent_home_agent.jobs_managed import ManagedAgentsBackend
+
+        backend = ManagedAgentsBackend(
+            AsyncAnthropic(api_key=settings.llm_api_key.get_secret_value()).beta.sessions,
+            agent_id=settings.jobs_agent_id,
+            environment_id=settings.jobs_environment_id,
+            github_token=settings.jobs_github_token.get_secret_value(),
+            vault_ids=[settings.jobs_vault_id] if settings.jobs_vault_id else None,
+            budget_usd=settings.jobs_budget_usd,
+            max_iterations=settings.jobs_max_iterations,
+            workspace=settings.jobs_workspace,
+            texts=s,
+        )
+        repo_path = "/workspace/{name}"
+
+    async def unsent(job: Job, text: str) -> None:
+        log.warning("Job %s reported before the app was up", job.id)
+
+    log.info("coding jobs: on, run by %s", settings.jobs_runner)
+    return JobRunner(
+        backend,
+        JobStore(Path(settings.data_dir) / "jobs.json"),
+        report=unsent,
+        repo_path=repo_path,
+        git_name=settings.jobs_git_name or "",
+        git_email=settings.jobs_git_email or "",
+        user_name=settings.user_name or "the user",
+        assistant_name=settings.assistant_name,
+        models={
+            "simple": settings.jobs_model_simple,
+            "normal": settings.jobs_model_normal,
+            "complex": settings.jobs_model_complex,
+        },
+        gone=s.job_gone,
+        label=s.job_label,
+    )
+
+
+def _plain(text: str) -> str:
+    """Text written elsewhere, coming into a conversation: one line, without brackets that
+    could pass for the code's own notes."""
+    return "".join(c for c in " ".join(text.split()) if c.isprintable() and c not in "[]")
+
+
+def _answered_in(app: FastAPI) -> Conversation | None:
+    """The conversation the user answers the agent's own reports in, when the channel they
+    leave through has one (deliver.ReportChannel.conversation_id)."""
+    channel = app.state.delivery.channel
+    if channel is None or channel.conversation_id is None:
+        return None
+    settings: Settings = app.state.settings
+    return app.state.store.get(channel.conversation_id, settings.chat_conversation_ttl_seconds)
+
+
+async def report_job(app: FastAPI, job: Job, text: str) -> None:
+    """A coding job stopped: its words go to the user under a line the code writes, the
+    way the agent's own reports do (deliver.py), and into the conversation they answer in,
+    as data, so they can answer it through the agent. A quiet job (the nightly review) says
+    only that a pull request waits, and nothing without one; its lessons are curated."""
+    settings: Settings = app.state.settings
+    s = strings(settings.language)
+    if job.quiet:
+        await curate_review(app, job, text)
+        if not job.pr_url:
+            log.info("Job %s (%s) is %s, with no pull request", job.id, job.title, job.status)
+            return
+        head = s.review_pull_request.format(title=job.title)
+        body = job.pr_url
+    else:
+        heads = {
+            JOB_IDLE: s.job_idle_head,
+            JOB_DONE: s.job_done_head,
+            JOB_FAILED: s.job_failed_head,
+            JOB_STOPPED: s.job_stopped_head,
+        }
+        head = heads.get(job.status, s.job_head).format(id=job.id, title=job.title)
+        link = job.pr_url if job.pr_url and job.pr_url not in text else ""
+        body = "\n\n".join(part for part in (link, text.strip()) if part) or head
+    await app.state.delivery.deliver(head, body)
+    conv = _answered_in(app)
+    if conv is None:
+        return
+    async with conv.lock:
+        conv.messages += [
+            {
+                "role": "user",
+                "content": (
+                    f"[Job {job.id} ({_plain(job.title)}) is {job.status} and reported, as "
+                    f"data: {_plain(text) or '(nothing)'}]"
+                ),
+            },
+            {"role": "assistant", "content": [{"type": "text", "text": head}]},
+        ]
+        save_conversation(app.state.store, settings, conv)
+
+
+async def curate_review(app: FastAPI, job: Job, text: str) -> None:
+    """The lessons a nightly review ends with become notes of the knowledge base's
+    repository (curation.py), when REVIEW_LESSONS_REPO says where. Never in the way of
+    the report."""
+    settings: Settings = app.state.settings
+    day = reviewed_day(job)
+    repo = settings.review_lessons_repo
+    if not (repo and settings.github_token and day and lessons(text)):
+        return
+    if not curation.available():
+        log.warning('The review\'s lessons are not curated: pip install ".[curation]"')
+        return
+    notes = NotesRepo(
+        app.state.http,
+        settings.github_token.get_secret_value(),
+        repo,
+        crypt=build_crypt(settings, repo),
+        author=folder_name(settings.assistant_name),
+    )
+    model = settings.subscription_model or settings.llm_model
+    # The Claude subscription takes the call first when the agent runs on it.
+    llm = SubscriptionFirst(subscription_engine(settings, model), app.state.agent.tools.llm)
+    runner = curation.LLMRunner(llm, settings.llm_model, asyncio.get_running_loop())
+    try:
+        await curation.curate_lessons(
+            notes,
+            runner,
+            date.fromisoformat(day),
+            review_note(day, text),
+            folder=settings.review_lessons_path,
+        )
+    except Exception:
+        log.exception("Job %s: its lessons were not curated", job.id)
+
+
+async def repo_is_private(http: httpx.AsyncClient, token: str | None, repo: str) -> bool | None:
+    """What GitHub says of a repository's visibility; None when it can't be told."""
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = await http.get(f"{API_URL}/repos/{repo}", headers=headers)
+    except httpx.HTTPError:
+        return None
+    if resp.is_error:
+        return None
+    private = resp.json().get("private")
+    return private if isinstance(private, bool) else None
+
+
+async def ask_coder_permission(app: FastAPI, request_id: str, question: str, summary: str) -> bool:
+    """A permission prompt of the coder's Claude Code (coder_approvals), sent where the
+    user answers the agent's reports, as a write waiting for their go; False when there is
+    no such place. What the request shows was written by the coder's model: it goes to the
+    user as the code laid it out, and into the conversation as data."""
+    conv = _answered_in(app)
+    if conv is None:
+        return False
+    settings: Settings = app.state.settings
+    s = strings(settings.language)
+    async with conv.lock:
+        proposal, _ = conv.propose("allow_coder_permission", {"request": request_id}, summary)
+        waiting = [{"type": "proposal", "number": proposal.number, "summary": summary}]
+        text = with_waiting(question, waiting, conv, settings.language)
+        conv.messages += [
+            {
+                "role": "user",
+                "content": (
+                    f"[Claude Code in the coder asks a permission (request {request_id}), as "
+                    f"data: {_plain(question)}. It waits as number {proposal.number}: the "
+                    "user's yes runs it through run_proposals; on their no, call "
+                    "refuse_coder_permission with that request.]"
+                ),
+            },
+            {"role": "assistant", "content": [{"type": "text", "text": text}]},
+        ]
+        app.state.store.touch(conv)
+        save_conversation(app.state.store, settings, conv)
+    return await app.state.delivery.deliver(s.coder_permission_title, text) is not None
+
+
+def start_jobs(app: FastAPI, http: httpx.AsyncClient, background: list) -> JobRunner | None:
+    """Give the coding jobs' runner where its reports and news go, follow the sessions
+    still open, and start what rests on the jobs: the coder's permission prompts and the
+    nightly review. Appends what runs in the background."""
+    settings: Settings = app.state.settings
+    registry = getattr(app.state.agent, "tools", None)
+    runner: JobRunner | None = getattr(registry, "job_runner", None)
+    if runner is None:
+        return None
+    s = strings(settings.language)
+    delivery: Delivery = app.state.delivery
+    chat = next(iter(getattr(app.state, "chats", {}).values()), None)
+    if chat is not None and chat.tracker is not None:
+        # The chat's own tracker, already running: the news go where the user talks.
+        tracker = chat.tracker
+    else:
+        tracker = Tracker(
+            lambda text: delivery.deliver(s.job_news_title, text),
+            Path(settings.data_dir) / "progress-durations.json",
+            settings.language,
+        )
+        background.append(tracker.run)
+    runner.attach(report=lambda job, text: report_job(app, job, text), tracker=tracker)
+    background.append(runner.resume)
+    if settings.jobs_runner == "claude_code":
+        approvals = Approvals(
+            lambda request_id, question, summary: ask_coder_permission(
+                app, request_id, question, summary
+            ),
+            lambda text: delivery.deliver(s.coder_permission_title, text),
+            settings.language,
+        )
+        app.state.coder_approvals = approvals
+        channel = delivery.channel
+        if channel is not None and channel.conversation_id is not None:
+            # The user can answer: their yes or no reaches the waiting prompt.
+            registry.extend(build_coder_permission_tools(approvals, settings.language))
+    if settings.review_repo:
+        journal = build_journal(settings)
+        if journal is None:
+            log.warning("nightly review: off, it reads the journal (JOURNAL_KEEP_DAYS=0)")
+            return runner
+        token = settings.jobs_github_token or settings.github_token
+        review = NightlyReview(
+            journal,
+            runner,
+            settings.review_repo,
+            settings.review_at,
+            settings.timezone,
+            Path(settings.data_dir) / "review-done.json",
+            assistant_name=settings.assistant_name,
+            title=s.review_title,
+            is_private=lambda: repo_is_private(
+                http, token.get_secret_value() if token else None, settings.review_repo
+            ),
+            allow_public=settings.review_allow_public,
+        )
+        background.append(review.run)
+        log.info(
+            "nightly review: on %s, after %s",
+            settings.review_repo,
+            settings.review_at.strftime("%H:%M"),
+        )
+    return runner
 
 
 async def tell_user(app: FastAPI, title: str, text: str) -> None:
@@ -1465,6 +1750,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     http = httpx.AsyncClient(timeout=settings.open_meteo_timeout_seconds)
     app.state.settings = settings
     app.state.ha = ha
+    app.state.http = http
     home = home_network_client(settings) if has_home_devices(settings) else None
     await load_crypt_patterns(settings, http)
     app.state.agent = build_agent(settings, ha, http, home)
@@ -1493,6 +1779,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     background = list(getattr(registry, "jobs", []))
     if (runner := build_task_runner(app, http)) is not None:
         background.append(runner.run)
+    # Coding jobs, the coder's permission prompts and the nightly review (docs/jobs.md).
+    app.state.coder_approvals = None
+    job_runner = start_jobs(app, http, background)
     jobs = [asyncio.create_task(job()) for job in background]
     # Home devices: the departure check and the pet supplies watch (docs/home-devices.md).
     devices = getattr(registry, "devices", {})
@@ -1513,6 +1802,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for job in jobs:
             job.cancel()
         await asyncio.gather(*jobs, return_exceptions=True)
+        if job_runner is not None:
+            await job_runner.aclose()
         if "petkit" in devices:
             await devices["petkit"].aclose()
         if ha is not None:
@@ -1532,6 +1823,33 @@ def require_token(
     expected = request.app.state.settings.agent_api_token.get_secret_value()
     if creds is None or not secrets.compare_digest(creds.credentials, expected):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing token")
+
+
+def require_coder_token(
+    request: Request, creds: HTTPAuthorizationCredentials | None = Depends(_bearer)
+) -> None:
+    """The coder's own token: the one the agent uses to reach it, used the other way."""
+    expected = request.app.state.settings.coder_token
+    if (
+        expected is None
+        or creds is None
+        or not secrets.compare_digest(creds.credentials, expected.get_secret_value())
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing token")
+
+
+@app.post("/coder/permission", dependencies=[Depends(require_coder_token)])
+async def coder_permission(request: Request) -> dict:
+    """A permission prompt of the coder's Claude Code, asked to the user (coder_approvals);
+    {} leaves it to the Claude app."""
+    approvals: Approvals | None = getattr(request.app.state, "coder_approvals", None)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if approvals is None or not isinstance(body, dict):
+        return {}
+    return await approvals.ask(body)
 
 
 @app.get("/health")

@@ -80,6 +80,12 @@ subscription = ["claude-agent-sdk>=0.2"]
 # Without it a voice message gets a line asking to write instead. PyAV 19 dropped an
 # argument faster-whisper 1.2.1 still passes to av.open.
 voice = ["faster-whisper>=1.1", "av>=11,<19"]
+# The nightly review's lessons curated into the knowledge base (docs/review.md): the
+# curator of the public claude-code-kit's kb tool, pinned to the commit compose/kb.yml
+# builds. Without it the lessons are not curated.
+curation = [
+    "kb @ https://github.com/robinalexandre/claude-code-kit/archive/930a4934327deb3a7740259676d411233bf159ff.zip#subdirectory=skills/kb/package",
+]
 # Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
 video = ["av>=11"]
 dev = [
@@ -90,6 +96,8 @@ dev = [
     "pytest-asyncio>=0.24",
     "respx>=0.21",
     "ruff>=0.6",
+    # scripts/jobs_setup.py reads agents/coder.md and environments/coder.yaml.
+    "pyyaml>=6",
     # The documents extra, so its tests run.
     "fpdf2>=2.8.4",
     "pdfminer.six>=20250506",
@@ -100,12 +108,16 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+# The curation extra's kb comes from the public kit, by its archive URL.
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/intelligent_home_agent"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -123,3 +135,5 @@ extend-immutable-calls = ["fastapi.Depends"]
 "tests/*" = ["S105", "S106"]
 # Runs the installed git-crypt, when there is one, to check the codec against it.
 "tests/test_config_crypt.py" = ["S105", "S106", "S603", "S607"]
+# The coder container runs fixed commands (git, gh, claude) and calls the agent's fixed URL.
+"coder/*" = ["S310", "S603", "S607"]

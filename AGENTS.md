@@ -57,6 +57,12 @@ src/intelligent_home_agent/
                     that run it; ChatReports plugs a chat into deliver.py
   transcription.py  voice messages as text, on the server (the "voice" extra)
   progress.py       news of work running in the background, said in the chat
+  jobs.py           coding jobs handed to a subagent (docs/jobs.md): JobStore, JobRunner,
+                    the Backend protocol; jobs_claude_code.py (the coder container) and
+                    jobs_managed.py (Anthropic Managed Agents) are its two runners
+  coder_approvals.py  Claude Code's permission prompts in the coder, asked to the user
+  review.py         the nightly review: a quiet coding job over the day's journal
+                    (docs/review.md); curation.py turns its lessons into notes
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
@@ -82,6 +88,8 @@ scripts/setup.py         interactive .env writer (stdlib only)
 compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE;
                          browser*.yml, vpn.yml and browser/ are the remote browser
                          (tools/browser.py, tools/vpn.py, docs/browser.md)
+coder/                   the coder container (its own image, compose/coder.yml): Claude
+                         Code for the coding jobs; agents/coder.md holds its house rules
 scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
 ```
 
@@ -210,6 +218,8 @@ Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/`
 `memory.md` and `procedures.md` (unless `MEMORY_STORE=github`), `turned-down-alerts.json`.
 `tasks/` (unless `TASKS_STORE=github`), `tasks-done.json`, `tasks-reports.json` and
 `task-outbox.json` (which tasks ran, their last reports, what was sent).
+`jobs.json`, `progress-durations.json` and `review-done.json` (coding jobs, how long
+they took, the last night reviewed).
 A feature that keeps a file follows the same pattern: written through a temporary file,
 mode 600, named by the code and never by what a client or a model sent. What must reach
 every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is
@@ -221,8 +231,11 @@ A task's report leaves through `app.state.delivery` (`deliver.Delivery`). A new 
 (a chat) is a class with the attributes of `deliver.ReportChannel` (`name`, `display`,
 `conversation_id`, `reaches`) and `async send(title, text)`. Put it first in
 `main.build_delivery` and name it in `main.reports_reach`, which is what turns the
-tasks on. With a `conversation_id`, tasks run in that conversation and may park writes
-for the user's go there (`main.answer_task`); with `None` (ntfy) nothing is parked.
+tasks on; name it in `main.jobs_reach` too, which turns the coding jobs on. With a
+`conversation_id`, tasks run in that conversation and may park writes for the user's
+go there (`main.answer_task`), and a coding job's report and a permission prompt of
+the coder land there too (`main.report_job`, `ask_coder_permission`); with `None`
+(ntfy) nothing is parked.
 
 ## Adding a chat channel
 
