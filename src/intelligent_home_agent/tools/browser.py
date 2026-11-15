@@ -761,7 +761,7 @@ def build_browser_tools(browser: RemoteBrowser | None) -> list[Tool]:
             except ToolError as exc:
                 if ctx.hostile_read:
                     raise
-                # Shown whole in the poll: the user's go adds the site, as their own
+                # Shown whole under the reply: the user's go adds the site, as their own
                 # request would.
                 raise ParkInstead(str(exc)) from exc
             site = browser.add_site(url)
