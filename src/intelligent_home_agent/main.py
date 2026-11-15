@@ -20,6 +20,11 @@ from intelligent_home_agent.agent import Agent
 from intelligent_home_agent.config import Settings, get_settings
 from intelligent_home_agent.conversations import Conversation, ConversationStore
 from intelligent_home_agent.ha_client import HomeAssistantClient
+from intelligent_home_agent.home_devices import (
+    build_home_device_tools,
+    has_home_devices,
+    home_network_client,
+)
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.llm import LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
@@ -103,6 +108,7 @@ def build_registry(
     ha: HomeAssistantClient | None,
     http: httpx.AsyncClient,
     llm: LLMClient,
+    home: httpx.AsyncClient | None = None,
 ) -> ToolRegistry:
     policy = EntityPolicy.from_lists(
         settings.ha_exposed_domains, settings.ha_sensitive_domains, settings.ha_entity_denylist
@@ -116,6 +122,7 @@ def build_registry(
     registry.extend(build_general_tools(settings.timezone))
     if ha is not None:
         registry.extend(build_home_assistant_tools(ha, policy))
+    registry.extend(build_home_device_tools(settings, home))
     registry.extend(build_weather_tools(meteo, home=home, language=settings.language))
     registry.extend(build_wind_tools(meteo, settings.wind_spots, model=settings.wind_model))
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
@@ -204,11 +211,14 @@ def prompt_config(settings: Settings) -> PromptConfig:
 
 
 def build_agent(
-    settings: Settings, ha: HomeAssistantClient | None, http: httpx.AsyncClient
+    settings: Settings,
+    ha: HomeAssistantClient | None,
+    http: httpx.AsyncClient,
+    home: httpx.AsyncClient | None = None,
 ) -> Agent:
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
     llm = build_llm_client(settings.llm_provider, key, settings.llm_base_url)
-    registry = build_registry(settings, ha, http, llm)
+    registry = build_registry(settings, ha, http, llm, home)
     return Agent(
         llm,
         registry,
@@ -234,7 +244,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     http = httpx.AsyncClient(timeout=settings.open_meteo_timeout_seconds)
     app.state.settings = settings
     app.state.ha = ha
-    app.state.agent = build_agent(settings, ha, http)
+    home = home_network_client(settings) if has_home_devices(settings) else None
+    app.state.agent = build_agent(settings, ha, http, home)
     app.state.store = ConversationStore(settings.conversation_ttl_seconds)
     app.state.ntfy = None
     if settings.ntfy_url:
@@ -245,6 +256,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if ha is not None:
             await ha.aclose()
+        if home is not None:
+            await home.aclose()
         await http.aclose()
 
 

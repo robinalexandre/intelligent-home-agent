@@ -40,7 +40,7 @@ def make_client(monkeypatch):
             monkeypatch.setenv(key, value)
         get_settings.cache_clear()
         stub = StubAgent()
-        monkeypatch.setattr(main, "build_agent", lambda settings, ha, http: stub)
+        monkeypatch.setattr(main, "build_agent", lambda settings, ha, http, home=None: stub)
         test_client = TestClient(main.app)
         test_client.__enter__()
         test_client.stub = stub
@@ -231,3 +231,17 @@ def test_env_example_loads(monkeypatch):
     assert settings.home_latitude is None
     assert settings.ha_token is None
     assert settings.language == "en"
+
+
+def test_home_devices_are_on_when_configured(monkeypatch):
+    base_env(monkeypatch)
+    settings = main.Settings(_env_file=None)
+    assert not main.has_home_devices(settings)
+    monkeypatch.setenv("HUE_BRIDGE_URL", "http://192.168.1.20")
+    monkeypatch.setenv("HUE_APP_KEY", "key")
+    monkeypatch.setenv("DEVIALET_URL", "http://192.168.1.30")
+    monkeypatch.setenv("HA_PROXY_URL", "http://proxy.test:1055")
+    settings = main.Settings(_env_file=None)
+    assert main.has_home_devices(settings)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert {"set_hue_lights", "activate_hue_scene", "control_speaker"} <= names

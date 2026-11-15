@@ -97,6 +97,7 @@ SECRET_KEYS = {
     "SEARXNG_SECRET",
     "KB_TOKEN",
     "KB_GITHUB_TOKEN",
+    "HUE_APP_KEY",
     "LLM_API_KEY",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
@@ -415,6 +416,10 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
         env["HA_URL"] = p.ask("Home Assistant URL", "http://homeassistant.local:8123")
         if token := p.secret("Long-lived access token (HA profile > Security)"):
             env["HA_TOKEN"] = token
+    if p.yes("Philips Hue lights, straight from the bridge (docs/home-devices.md)?", False):
+        env["HUE_BRIDGE_URL"] = p.ask("Bridge address, e.g. http://192.168.1.20")
+        if key := p.secret("App key (docs/home-devices.md shows how to get one)"):
+            env["HUE_APP_KEY"] = key
     if "calendar" in sections and p.yes(
         "Read a CalDAV calendar (iCloud, Fastmail, Nextcloud...)?", True
     ):
@@ -501,6 +506,7 @@ GROUPS = [
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
     ("Outdoor activities", ["OUTDOOR_ACTIVITIES", "WIND_SPOTS", "SURF_SPOTS"]),
     ("Home Assistant", ["HA_URL", "HA_TOKEN"]),
+    ("Home devices", ["HUE_BRIDGE_URL", "HUE_APP_KEY"]),
     ("Calendar", ["CALDAV_URL", "CALDAV_USERNAME", "CALDAV_PASSWORD"]),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),

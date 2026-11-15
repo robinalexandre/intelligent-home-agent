@@ -24,6 +24,8 @@ spoken morning briefing and evening recap.
   pushed to your phone and desktop through ntfy. Made for schedulers.
 - Tools, each one on only when configured:
   - Home Assistant: find devices, read states, call services, HA weather.
+  - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet speaker
+    ([docs/home-devices.md](docs/home-devices.md)).
   - Weather at home or anywhere (Open-Meteo, no key).
   - Outdoor activities: wind sports per spot (strength, gusts, direction), surf per beach
     (waves, period, wind effect, tides), and weather windows for everything else
@@ -95,6 +97,8 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `HA_SENSITIVE_DOMAINS` | `lock,alarm_control_panel,cover` | Need a spoken yes in a later request. |
 | `HA_ENTITY_DENYLIST` | empty | Entities the agent never sees. |
 | `HA_PROXY_URL` | unset | HTTP proxy to reach HA (VPN sidecar). |
+| `HUE_BRIDGE_URL`, `HUE_APP_KEY` | unset | Philips Hue lights, straight from the bridge. |
+| `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | unset, `70` | A Devialet Phantom speaker. |
 | `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
 | `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |

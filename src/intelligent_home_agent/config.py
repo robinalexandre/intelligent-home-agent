@@ -117,6 +117,17 @@ class Settings(BaseSettings):
     # Entities the agent must never see or touch, whatever their domain.
     ha_entity_denylist: CsvList = []
 
+    # --- Home devices driven directly, without Home Assistant (docs/home-devices.md) ---
+    # HTTP proxy to reach the home network from elsewhere; HA_PROXY_URL when empty.
+    home_proxy_url: str | None = None
+    home_timeout_seconds: float = 10.0
+    # Philips Hue bridge: its address on the home network and an app key.
+    hue_bridge_url: str | None = None
+    hue_app_key: SecretStr | None = None
+    # Devialet Phantom speaker: its address; no login. Volumes are capped.
+    devialet_url: str | None = None
+    devialet_max_volume: int = Field(70, ge=0, le=100)
+
     # --- Assistant persona -------------------------------------------------------------
     assistant_name: str = "Assistant"
     language: str = "en"

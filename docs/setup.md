@@ -120,9 +120,10 @@ turns search off.
 
 ## 3. The home
 
-Home control goes through [Home Assistant](https://www.home-assistant.io/). Without it,
-skip this step: the agent still answers questions, gives the weather, the briefing, the
-calendar and the rest.
+Home control goes through [Home Assistant](https://www.home-assistant.io/), which knows
+nearly every device. Without it, skip this step: the agent still answers questions, gives
+the weather, the briefing, the calendar and the rest, and drives a few devices by itself
+(Philips Hue, a Devialet speaker: [home-devices.md](home-devices.md)).
 
 Create a token in Home Assistant: your profile (bottom left) > **Security** >
 **Long-lived access tokens** > Create. Better, create a dedicated non-admin user for the

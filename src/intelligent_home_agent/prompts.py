@@ -110,6 +110,16 @@ def _daily_help(cfg: PromptConfig) -> str:
             "- Current events, opening hours, facts you are unsure of: use web_search, then "
             "answer in one or two sentences without citing sources out loud."
         )
+    if "set_hue_lights" in t:
+        lines.append(
+            "- Hue lights: set_hue_lights with the room or light as the user named it (or "
+            '"all"); activate_hue_scene for a scene; list_hue_lights when unsure of a name.'
+        )
+    if "control_speaker" in t:
+        lines.append(
+            "- The speaker: control_speaker for volume, play, pause, mute or an input; "
+            "get_speaker_state for what it is doing."
+        )
     if "recall" in t:
         lines.append(
             "- Knowledge base: recall searches the user's own notes (what they decided, how "

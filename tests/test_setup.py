@@ -31,6 +31,7 @@ ANSWERS = [
     "",  # min knots: default
     "n",  # no more spots
     "n",  # no Home Assistant
+    "",  # no Hue
     "y",  # CalDAV
     "https://caldav.example.com",
     "someone",  # username
@@ -115,8 +116,10 @@ NOTHING_ELSE = ["", "weather", "short", ""]
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
     # No Home Assistant, a knowledge base, access, node name, channel.
-    answers += ["n", "y", "someone/notes", "funnel", "agent", "scheduled"]
-    env, output = run_with(tmp_path, answers, ["", "kb-github-secret", "tskey-secret"])
+    answers += ["n", "y", "http://192.168.1.20", "y", "someone/notes", "funnel", "agent"]
+    answers += ["scheduled"]
+    env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
+    assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
     assert env["LLM_PROVIDER"] == "ollama" and "LLM_API_KEY" not in env
     assert "LLM_BASE_URL" not in env  # set by compose/ollama.yml
     assert env["COMPOSE_FILE"] == (
@@ -137,14 +140,26 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "", "caddy", "", "agent.example.com", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
     assert "Still empty" not in output and "https://agent.example.com" in output
     assert env["WEB_SEARCH_ENABLED"] == "false" and "WEB_SEARCH_BACKEND" not in env
-    answers = ["", *START, "mistral", "m", "brave", *NOTHING_ELSE, "n", "", "cloudflare", "siri"]
+    answers = [
+        "",
+        *START,
+        "mistral",
+        "m",
+        "brave",
+        *NOTHING_ELSE,
+        "n",
+        "",
+        "",
+        "cloudflare",
+        "siri",
+    ]
     (tmp_path / "other").mkdir()
     env, output = run_with(tmp_path / "other", answers, ["", "", ""])
     assert "LLM_API_KEY, TUNNEL_TOKEN, WEB_SEARCH_API_KEY." in output
@@ -152,7 +167,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
 
 def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
-    answers += [*NOTHING_ELSE, "n", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
     assert "uvicorn intelligent_home_agent.main:app" in output
