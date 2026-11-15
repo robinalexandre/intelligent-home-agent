@@ -7,7 +7,7 @@ import respx
 from intelligent_home_agent.tools import ToolError
 from intelligent_home_agent.tools.hue import Hue, build_hue_tools, rgb_to_xy
 
-BRIDGE = "http://192.168.1.14"
+BRIDGE = "http://192.168.1.50"
 BASE = f"{BRIDGE}/api/key1"
 
 GROUPS = {

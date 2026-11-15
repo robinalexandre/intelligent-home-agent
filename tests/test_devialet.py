@@ -7,7 +7,7 @@ import respx
 from intelligent_home_agent.tools import ToolError
 from intelligent_home_agent.tools.devialet import Devialet, build_devialet_tools
 
-BASE = "http://192.168.1.30/ipcontrol/v1"
+BASE = "http://192.168.1.51/ipcontrol/v1"
 SOURCES = {
     "sources": [
         {"sourceId": "a1", "type": "airplay2"},
@@ -19,7 +19,7 @@ SOURCES = {
 
 def tools(http, max_volume=70):
     return {
-        t.name: t for t in build_devialet_tools(Devialet(http, "http://192.168.1.30/"), max_volume)
+        t.name: t for t in build_devialet_tools(Devialet(http, "http://192.168.1.51/"), max_volume)
     }
 
 

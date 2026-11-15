@@ -443,7 +443,7 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
         if token := p.secret("GitHub token (classic, repo scope) for pull requests and reminders"):
             env["GITHUB_TOKEN"] = token
             if "reminders" in sections:
-                repo = p.ask("Repo holding coding-assistant reminders, owner/repo (empty: none)")
+                repo = p.ask("Repo with the coding-assistant reminders, owner/repo (empty: none)")
                 if repo:
                     env["ASSISTANT_REMINDERS_REPO"] = repo
 

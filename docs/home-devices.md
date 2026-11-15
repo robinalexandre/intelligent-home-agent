@@ -42,7 +42,7 @@ colour work for a room, a light or the whole home.
 
 ## Devialet Phantom
 
-`DEVIALET_URL` is the speaker's address (e.g. `http://192.168.1.30`): its IP Control API
+`DEVIALET_URL` is the speaker's address (e.g. `http://192.168.1.51`): its IP Control API
 has no login. `DEVIALET_MAX_VOLUME` (70 by default) caps every volume the agent sets, so a
 misheard request can't blast the room. Volume, play, pause, mute, next, a physical input
 and standby; streaming (AirPlay, Spotify Connect) starts from your phone.
