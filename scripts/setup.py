@@ -47,6 +47,17 @@ MODELS = {
     "openai-compatible": "any other server that speaks the OpenAI chat API (give its URL)",
 }
 KEYLESS = {"ollama", "lmstudio", "openai-compatible"}
+# Not a provider of its own: Claude (anthropic), answered by Claude Code on a Claude plan
+# instead of the API (ENGINE=subscription, docs/subscription.md).
+SUBSCRIPTION = "claude-subscription"
+SUBSCRIPTION_HELP = (
+    "Claude, on your Claude subscription through Claude Code: no API bill, slower replies"
+)
+DISPLAYS = {
+    "chat": "replies read in a chat: the wait is fine",
+    "notification": "briefings and other notifications: a few seconds more",
+    "voice": "spoken replies: a few seconds more of silence before each answer",
+}
 SEARCH = {
     "duckduckgo": "DuckDuckGo: no account, best effort (it limits automated searches)",
     "searxng": "your own SearXNG search engine: no account, dependable",
@@ -139,6 +150,7 @@ SECRET_KEYS = {
     "NUKI_API_TOKEN",
     "PETKIT_PASSWORD",
     "LLM_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
     "MAIL_ACCOUNTS",
@@ -284,7 +296,12 @@ def ask_home(p: Prompter, env: dict[str, str], lookup: Callable[[str, str], dict
 
 def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     p.say("\n# Language model: who answers?")
-    provider = p.pick("Provider", MODELS, "anthropic")
+    # The subscription right after the API: the two ways to Claude side by side.
+    choices = {"anthropic": MODELS["anthropic"], SUBSCRIPTION: SUBSCRIPTION_HELP, **MODELS}
+    provider = p.pick("Provider", choices, "anthropic")
+    if provider == SUBSCRIPTION:
+        ask_subscription(p, env, docker=docker)
+        return
     env["LLM_PROVIDER"] = provider
     if provider == "openai-compatible":
         env["LLM_BASE_URL"] = p.ask("Server URL, usually ending in /v1")
@@ -304,6 +321,31 @@ def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     while not (model := p.ask("Model name, as the provider spells it")):
         p.say("  A model name is needed.")
     env["LLM_MODEL"] = model
+
+
+def ask_subscription(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
+    env["LLM_PROVIDER"] = "anthropic"
+    env["ENGINE"] = "subscription"
+    p.say("  Claude Code answers, signed in to your own Claude plan. On a computer with a")
+    p.say("  browser, install Claude Code, run `claude setup-token` and paste the token it")
+    p.say("  prints (valid a year). Each reply starts a Claude Code process: a few seconds")
+    p.say("  more than the API, fine in a chat, slow for a voice. The plan's usage limits")
+    p.say("  are shared with your own Claude Code sessions. See docs/subscription.md.")
+    if token := p.secret("Token from `claude setup-token`"):
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    p.say("  An Anthropic API key as well is optional. With one, the API answers what the")
+    p.say("  subscription can't (a file you send, a usage limit, an error) and the replies")
+    p.say("  you'd rather not wait for. Without one, the subscription answers everything")
+    p.say("  and says so when it can't.")
+    if key := p.secret("Anthropic API key, to take what the subscription can't"):
+        env["LLM_API_KEY"] = key
+        displays = p.choose("The subscription answers (the API the rest)", DISPLAYS, ["chat"])
+        if displays != ["chat"]:
+            env["SUBSCRIPTION_DISPLAYS"] = ",".join(displays)
+    env["LLM_MODEL"] = p.ask("Model", "claude-sonnet-5-5")
+    if docker:
+        # The image leaves Claude Code out unless asked (some 400 MB).
+        env["EXTRAS"] = "documents,subscription"
 
 
 def ask_search(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
@@ -479,7 +521,11 @@ def ask_documents(p: Prompter, env: dict[str, str]) -> None:
     provider = p.pick("Generated pictures", GENERATORS, "none")
     if provider != "none" and (key := p.secret(f"API key for {provider}")):
         env[f"GENERATION_{provider.upper()}_API_KEY"] = key
-    if env.get("LLM_PROVIDER") == "anthropic" and p.yes(
+    # The sandbox is the API's: not with a Claude subscription alone.
+    sandbox = env.get("LLM_PROVIDER") == "anthropic" and (
+        "ENGINE" not in env or "LLM_API_KEY" in env
+    )
+    if sandbox and p.yes(
         "Exact calculations and charts in Anthropic's code sandbox (billed with the model)?",
         False,
     ):
@@ -690,6 +736,7 @@ GROUPS = [
         [
             "COMPOSE_PATH_SEPARATOR",
             "COMPOSE_FILE",
+            "EXTRAS",
             "AGENT_BIND",
             "AGENT_DOMAIN",
             "TRAEFIK_NETWORK",
@@ -701,6 +748,7 @@ GROUPS = [
         ],
     ),
     ("Language model", ["LLM_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"]),
+    ("Claude subscription", ["ENGINE", "CLAUDE_CODE_OAUTH_TOKEN", "SUBSCRIPTION_DISPLAYS"]),
     (
         "Web search",
         [
@@ -822,7 +870,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     missing = [
         key
         for key, needed in (
-            ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS),
+            ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS and "ENGINE" not in env),
+            ("CLAUDE_CODE_OAUTH_TOKEN", "ENGINE" in env),
             ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
             ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),
@@ -842,7 +891,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         if "DRIVES" in env:
             p.say("  Drives: log each one in before asking about your files (docs/drives.md).")
     else:
-        p.say("  Start: pip install -e . && uvicorn intelligent_home_agent.main:app")
+        extra = '".[subscription]"' if "ENGINE" in env else "."
+        p.say(f"  Start: pip install -e {extra} && uvicorn intelligent_home_agent.main:app")
     p.say("  Check: docs/setup.md, step 6. Clients authenticate with AGENT_API_TOKEN from .env.")
     for channel in channels:
         p.say(f"  {NEXT_STEPS[channel]}")

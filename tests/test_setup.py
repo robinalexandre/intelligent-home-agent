@@ -328,3 +328,40 @@ def test_a_calendar_on_another_server_asks_for_both_addresses():
     assert queue == [] and "CALDAV_WRITE" not in env
     assert env["CALDAV_URL"] == "https://dav.example.com/"
     assert env["CARDDAV_URL"] == "https://dav.example.com/c/"
+
+
+def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
+    # Docker; the subscription with an API key beside it: where it answers, the model.
+    answers = ["", *START, "claude-subscription", "chat, notification", ""]
+    # A4, no pictures, no code sandbox; then nothing else, as in the tests above.
+    # No Home Assistant, Hue, other devices; memory in local files; no knowledge base, no
+    # drives; this machine only.
+    answers += [*NOTHING_ELSE, "", "n", "", "", "", "", "", "", "siri"]
+    env, output = run_with(tmp_path, answers, ["oat-secret", "sk-secret"])
+    assert (env["LLM_PROVIDER"], env["ENGINE"]) == ("anthropic", "subscription")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "oat-secret" and env["LLM_API_KEY"] == "sk-secret"
+    assert env["SUBSCRIPTION_DISPLAYS"] == "chat,notification"
+    assert env["LLM_MODEL"] == "claude-sonnet-5-5"
+    # The image is built with Claude Code in it.
+    assert env["EXTRAS"] == "documents,subscription"
+    assert "oat-secret" not in output and "sk-secret" not in output
+    assert "claude setup-token" in output and "Still empty" not in output
+    # Claude searches the web itself: no search engine was asked for.
+    assert "WEB_SEARCH_BACKEND" not in env
+
+    # Without Docker and without a key: no display to choose, no sandbox to offer, and the
+    # extra to install.
+    (tmp_path / "alone").mkdir()
+    answers = ["n", *START, "claude-subscription", "claude-test"]
+    answers += [*NOTHING_ELSE, "n", "", "", "", "siri"]
+    env, output = run_with(tmp_path / "alone", answers, ["oat-secret", ""])
+    assert env["ENGINE"] == "subscription" and "LLM_API_KEY" not in env
+    assert "SUBSCRIPTION_DISPLAYS" not in env and "EXTRAS" not in env
+    assert env["LLM_MODEL"] == "claude-test" and "CODE_EXECUTION_ENABLED" not in env
+    assert "Still empty" not in output
+    assert 'pip install -e ".[subscription]"' in output
+
+    # The token left for later is named among what is still missing; the API key is not.
+    (tmp_path / "later").mkdir()
+    env, output = run_with(tmp_path / "later", answers, ["", ""])
+    assert "Still empty, add to .env before starting: CLAUDE_CODE_OAUTH_TOKEN." in output
