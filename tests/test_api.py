@@ -216,6 +216,17 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "get_surf_forecast",
         "get_calendar_events",
         "get_recent_emails",
+        "create_calendar_event",
+        "search_emails",
+        "read_email",
+        "save_email_draft",
+        "flag_email",
+        "move_email",
+        "list_email_folders",
+        "create_email_folder",
+        "list_email_drafts",
+        "update_email_draft",
+        "delete_email_draft",
         "get_github_pull_requests",
         "get_assistant_reminders",
         "web_search",
@@ -223,6 +234,57 @@ def test_registry_only_has_configured_tools(monkeypatch):
     # The core's own tools are always there: what waits for a go, and long results.
     assert {"run_proposals", "propose_action", "drop_proposals", "read_result_part"} <= names
     assert "ask_in_poll" not in names
+
+
+MAIL_WRITES = {
+    "save_email_draft",
+    "flag_email",
+    "move_email",
+    "list_email_folders",
+    "create_email_folder",
+    "list_email_drafts",
+    "update_email_draft",
+    "delete_email_draft",
+}
+
+
+def test_mail_and_calendar_are_only_read_until_writing_is_turned_on(monkeypatch):
+    base_env(monkeypatch)
+    account = {"name": "Home", "host": "imap.example.com", "username": "sam", "password": "p"}
+    monkeypatch.setenv("MAIL_ACCOUNTS", json.dumps([account]))
+    monkeypatch.setenv("CALDAV_URL", "https://dav.example.com")
+    monkeypatch.setenv("CALDAV_USERNAME", "sam")
+    monkeypatch.setenv("CALDAV_PASSWORD", "p")
+
+    def registry():
+        settings = main.Settings(_env_file=None)
+        return main.build_registry(settings, ha=None, http=None, llm=None)
+
+    read_only = registry().names()
+    both = [account, {**account, "name": "Work", "write": True}]
+    monkeypatch.setenv("MAIL_ACCOUNTS", json.dumps(both))
+    monkeypatch.setenv("CALDAV_WRITE", "true")
+    writing = registry()
+
+    reads = {"get_calendar_events", "get_recent_emails", "search_emails", "read_email"}
+    assert reads <= read_only and not read_only & (MAIL_WRITES | {"create_calendar_event"})
+    assert MAIL_WRITES | {"create_calendar_event"} <= writing.names()
+    # Only the account opened to writes is offered for drafts and filing.
+    assert "Accounts: Work (" in writing.get("save_email_draft").description
+    assert "Accounts: Home, Work" in writing.get("get_recent_emails").description
+
+
+def test_contacts_birthdays_alone_give_the_calendar_tool(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.setenv("CARDDAV_URL", "https://dav.example.com")
+    settings = main.Settings(_env_file=None)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "get_calendar_events" not in names  # no login
+    monkeypatch.setenv("CARDDAV_USERNAME", "sam")
+    monkeypatch.setenv("CARDDAV_PASSWORD", "p")
+    settings = main.Settings(_env_file=None)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "get_calendar_events" in names and "create_calendar_event" not in names
 
 
 def test_settings_reject_unknown_sections_and_activities(monkeypatch):

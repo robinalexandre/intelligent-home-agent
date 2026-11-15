@@ -3,13 +3,18 @@ from intelligent_home_agent.tools.assistant_reminders import (
     build_assistant_reminder_tools,
 )
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError, ToolRegistry
-from intelligent_home_agent.tools.calendar import CalDavCalendar, build_calendar_tools
+from intelligent_home_agent.tools.calendar import (
+    CalDavCalendar,
+    build_calendar_tools,
+    build_calendar_write_tools,
+)
+from intelligent_home_agent.tools.contacts import CardDavBirthdays, MergedCalendar
 from intelligent_home_agent.tools.general import build_general_tools
 from intelligent_home_agent.tools.github import GitHub, build_github_tools
 from intelligent_home_agent.tools.home_assistant import EntityPolicy, build_home_assistant_tools
 from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledge_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
-from intelligent_home_agent.tools.mail import ImapMailbox, build_email_tools
+from intelligent_home_agent.tools.mail import ImapMailbox, build_draft_tools, build_email_tools
 from intelligent_home_agent.tools.outdoor import build_outdoor_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.surf import build_surf_tools
@@ -23,10 +28,12 @@ from intelligent_home_agent.tools.web import (
 
 __all__ = [
     "CalDavCalendar",
+    "CardDavBirthdays",
     "EntityPolicy",
     "GitHub",
     "ImapMailbox",
     "KnowledgeBase",
+    "MergedCalendar",
     "OpenMeteo",
     "ReminderRepo",
     "Router",
@@ -36,6 +43,8 @@ __all__ = [
     "ToolRegistry",
     "build_assistant_reminder_tools",
     "build_calendar_tools",
+    "build_calendar_write_tools",
+    "build_draft_tools",
     "build_email_tools",
     "build_engine_web_tools",
     "build_general_tools",

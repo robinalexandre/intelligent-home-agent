@@ -36,6 +36,29 @@ class Strings:
     written_line: str
     # Example of offering details in a chat, for the prompt.
     chat_detail_offer: str
+    # Mail and calendar writes, as the user reads them before giving their go.
+    mail_headline: str
+    draft_headline: str
+    mail_flag_summary: str
+    mail_create_folder_summary: str
+    mail_move_summary: str
+    draft_update_summary: str
+    draft_delete_summary: str
+    draft_change_recipients: str
+    draft_nobody: str
+    draft_change_subject: str
+    draft_change_body: str
+    draft_change_attach: str
+    draft_change_remove: str
+    draft_no_change: str
+    calendar_add_summary: str
+    calendar_where: str
+    calendar_notes: str
+    # A draft saved in the turn, noted under the reply so none goes unseen; and the
+    # warning when it carries files after the request read content written by others.
+    draft_line: str
+    draft_files: str
+    draft_check: str
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -60,6 +83,33 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (may delete or overwrite)",
         written_line="Written: {summary}",
         chat_detail_offer='"Want the details?"',
+        mail_headline='"{subject}" from {sender}',
+        draft_headline='"{subject}" to {to}',
+        mail_flag_summary="Flag the email {headline} ({account})",
+        mail_create_folder_summary='Create the mail folder "{name}" ({account})',
+        mail_move_summary=(
+            'File into the folder "{folder}" ({target}) the email of {source} {headline}'
+        ),
+        draft_update_summary=(
+            "Change the draft of {account} {headline}: {what} (the old one goes to the trash)"
+        ),
+        draft_delete_summary="Delete the draft of {account} {headline} (it goes to the trash)",
+        draft_change_recipients="{field}: {value}",
+        draft_nobody="nobody",
+        draft_change_subject="subject: {subject}",
+        draft_change_body="new text: {text}",
+        draft_change_attach="attach {files}",
+        draft_change_remove="remove {files}",
+        draft_no_change="nothing changes",
+        calendar_add_summary='Add to the calendar "{title}", from {start} to {end}{where}{notes}',
+        calendar_where=", at {location}",
+        calendar_notes=" (notes: {notes})",
+        draft_line='Draft saved: {to}, "{subject}"{files}',
+        draft_files=", attached: {files}",
+        draft_check=(
+            "Files attached after reading content written by others ({files}): check the "
+            "recipients before sending."
+        ),
     ),
     "fr": Strings(
         name="French",
@@ -82,6 +132,37 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (peut supprimer ou écraser)",
         written_line="Écrit : {summary}",
         chat_detail_offer='"Tu veux le détail ?"',
+        mail_headline="« {subject} » de {sender}",
+        draft_headline="« {subject} » à {to}",
+        mail_flag_summary="Signaler le mail {headline} ({account})",
+        mail_create_folder_summary="Créer le dossier de mails « {name} » ({account})",
+        mail_move_summary=(
+            "Ranger dans le dossier « {folder} » ({target}) le mail de {source} {headline}"
+        ),
+        draft_update_summary=(
+            "Modifier le brouillon de {account} {headline} : {what} (l'ancien va à la corbeille)"
+        ),
+        draft_delete_summary=(
+            "Supprimer le brouillon de {account} {headline} (il va à la corbeille)"
+        ),
+        draft_change_recipients="{field} : {value}",
+        draft_nobody="personne",
+        draft_change_subject="objet : {subject}",
+        draft_change_body="nouveau texte : {text}",
+        draft_change_attach="joindre {files}",
+        draft_change_remove="retirer {files}",
+        draft_no_change="rien ne change",
+        calendar_add_summary=(
+            "Ajouter au calendrier « {title} », du {start} au {end}{where}{notes}"
+        ),
+        calendar_where=", à {location}",
+        calendar_notes=" (notes : {notes})",
+        draft_line="Brouillon enregistré : {to}, « {subject} »{files}",
+        draft_files=", pièces jointes : {files}",
+        draft_check=(
+            "Fichiers joints après lecture d'un contenu écrit par d'autres ({files}) : "
+            "vérifie les destinataires avant d'envoyer."
+        ),
     ),
 }
 

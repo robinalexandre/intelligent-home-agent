@@ -33,8 +33,12 @@ ANSWERS = [
     "n",  # no Home Assistant
     "",  # no Hue
     "y",  # CalDAV
-    "https://caldav.example.com",
+    "nextcloud",  # provider
+    "https://cloud.example.com/",
     "someone",  # username
+    "y",  # the agent may add events
+    "",  # to the server's default calendar
+    "y",  # contacts' birthdays
     "",  # no knowledge base
     "",  # access: this machine only
     "siri,push",  # channels
@@ -83,6 +87,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
          "directions": ["W", "SW"], "min_knots": 12.0}
     ]  # fmt: skip
     assert env["CALDAV_PASSWORD"] == "caldav-pass"
+    assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
+    assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
     assert "HA_TOKEN" not in env and "NTFY_TOKEN" not in env
     assert len(env["AGENT_API_TOKEN"]) >= 40
@@ -207,3 +213,38 @@ def test_written_env_loads_into_settings(tmp_path, monkeypatch):
     settings = Settings(_env_file=path)
     assert settings.outdoor_activities == ["surf", "outdoors"]
     assert settings.surf_spots[0].facing == "W"
+
+
+def test_a_mailbox_is_asked_for_by_provider_and_only_read_unless_agreed():
+    from intelligent_home_agent.config import MailAccount
+
+    answers = ["gmail", "", "sam@example.com", "n"]
+    answers += ["other", "Work", "mail.example.com", "sam", "y"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["app-pass", "other-pass"])
+    p = setup.Prompter(read, read_secret, lambda _: None)
+
+    first, second = setup.ask_mailbox(p, 1), setup.ask_mailbox(p, 2)
+
+    assert queue == []
+    assert first == {
+        "name": "Gmail",
+        "host": "imap.gmail.com",
+        "username": "sam@example.com",
+        "password": "app-pass",
+    }
+    assert (second["name"], second["host"], second["write"]) == ("Work", "mail.example.com", True)
+    assert not MailAccount(**first).write and MailAccount(**second).write
+
+
+def test_a_calendar_on_another_server_asks_for_both_addresses():
+    answers = ["other", "https://dav.example.com/", "sam", "n", "y", "https://dav.example.com/c/"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["dav-pass"])
+    env: dict[str, str] = {}
+
+    setup.ask_calendar(setup.Prompter(read, read_secret, lambda _: None), env)
+
+    assert queue == [] and "CALDAV_WRITE" not in env
+    assert env["CALDAV_URL"] == "https://dav.example.com/"
+    assert env["CARDDAV_URL"] == "https://dav.example.com/c/"

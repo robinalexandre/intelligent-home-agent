@@ -61,6 +61,17 @@ class MailAccount(BaseModel):
     password: SecretStr
     port: int = 993
     mailbox: str = "INBOX"
+    # Let the agent save drafts, flag emails and file them into the user's own folders in
+    # this account. It never sends and never deletes. Off: the account is only read.
+    write: bool = False
+    # The From address of the drafts, when the login isn't the address (some providers
+    # log in with a user name).
+    address: str | None = None
+    # The special folders, when the server neither marks them (SPECIAL-USE) nor gives them
+    # a usual name: their exact names, e.g. "INBOX.Brouillons". Empty: found by itself.
+    drafts: str | None = None
+    sent: str | None = None
+    trash: str | None = None
 
 
 class McpServer(BaseModel):
@@ -214,14 +225,24 @@ class Settings(BaseSettings):
     web_search_max_uses: int = 3
     web_search_results: int = 5
 
-    # --- Calendar (CalDAV, read-only) --------------------------------------------------
+    # --- Calendar (CalDAV) -------------------------------------------------------------
     caldav_url: str | None = None
     caldav_username: str | None = None
     caldav_password: SecretStr | None = None
     # Only read these calendars (by name); empty means all of them.
     caldav_calendars: CsvList = []
+    # Let the agent add events (docs/mail-calendar.md). Off: the calendar is only read.
+    caldav_write: bool = False
+    # The calendar new events go to, by name; empty: the one the server gives as default.
+    caldav_default_calendar: str | None = None
 
-    # --- Email (IMAP, read-only) -------------------------------------------------------
+    # --- Contacts' birthdays (CardDAV, read-only) --------------------------------------
+    # Shown as all-day events in the calendar. Username and password default to CalDAV's.
+    carddav_url: str | None = None
+    carddav_username: str | None = None
+    carddav_password: SecretStr | None = None
+
+    # --- Email (IMAP; each account is read-only unless it says "write": true) ----------
     mail_accounts: list[MailAccount] = []
 
     # --- Travel time from home (OpenStreetMap: Nominatim + OSRM, no key) ---------------

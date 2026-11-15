@@ -35,16 +35,20 @@ from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.tools import (
     CalDavCalendar,
+    CardDavBirthdays,
     EntityPolicy,
     GitHub,
     ImapMailbox,
     KnowledgeBase,
+    MergedCalendar,
     OpenMeteo,
     ReminderRepo,
     Router,
     ToolRegistry,
     build_assistant_reminder_tools,
     build_calendar_tools,
+    build_calendar_write_tools,
+    build_draft_tools,
     build_email_tools,
     build_engine_web_tools,
     build_general_tools,
@@ -180,16 +184,40 @@ def build_registry(
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
     activities = [CATALOG[key] for key in settings.outdoor_activities]
     registry.extend(build_outdoor_tools(meteo, activities, home=home, language=settings.language))
+    calendars: list = []
     if settings.caldav_url and settings.caldav_username and settings.caldav_password:
         calendar = CalDavCalendar(
             settings.caldav_url,
             settings.caldav_username,
             settings.caldav_password.get_secret_value(),
             settings.caldav_calendars,
+            settings.caldav_default_calendar,
         )
-        registry.extend(build_calendar_tools(calendar, settings.timezone))
+        calendars.append(calendar)
+        if settings.caldav_write:
+            registry.extend(
+                build_calendar_write_tools(calendar, settings.timezone, settings.language)
+            )
+    # Contacts' birthdays show as all-day events; the CalDAV login is used when CardDAV
+    # has none of its own (same account at most providers).
+    dav_user = settings.carddav_username or settings.caldav_username
+    dav_password = settings.carddav_password or settings.caldav_password
+    if settings.carddav_url and dav_user and dav_password:
+        calendars.append(
+            CardDavBirthdays(
+                http,
+                settings.carddav_url,
+                dav_user,
+                dav_password.get_secret_value(),
+                settings.timezone,
+            )
+        )
+    if calendars:
+        merged = calendars[0] if len(calendars) == 1 else MergedCalendar(calendars)
+        registry.extend(build_calendar_tools(merged, settings.timezone))
     mailboxes = [ImapMailbox(account) for account in settings.mail_accounts]
     registry.extend(build_email_tools(mailboxes, settings.timezone))
+    registry.extend(build_draft_tools([m for m in mailboxes if m.writable], settings.language))
     if settings.travel_enabled:
         router = Router(
             http,
@@ -341,6 +369,14 @@ def with_waiting(text: str, actions: list[dict], conv: Conversation, language: s
     lines = [
         s.written_line.format(summary=a["summary"]) for a in actions if a.get("type") == "written"
     ]
+    for draft in (a for a in actions if a.get("type") == "draft"):
+        names = ", ".join(draft["attachments"])
+        files = s.draft_files.format(files=names) if names else ""
+        lines.append(
+            s.draft_line.format(to=", ".join(draft["to"]), subject=draft["subject"], files=files)
+        )
+        if draft.get("check"):
+            lines.append(s.draft_check.format(files=", ".join(draft["check"])))
     proposals = [a for a in actions if a.get("type") == "proposal"]
     if proposals:
         lines += ["", s.waiting_header] if lines else [s.waiting_header]
