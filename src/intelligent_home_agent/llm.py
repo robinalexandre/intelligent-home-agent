@@ -57,6 +57,9 @@ OPENAI_COMPATIBLE: dict[str, Endpoint] = {
 PROVIDERS = (ANTHROPIC, *OPENAI_COMPATIBLE, CUSTOM)
 # Providers that run the server-side web search tool used by tools/web.py.
 WEB_SEARCH_PROVIDERS = {ANTHROPIC}
+# Providers whose client sends a PDF to the model as a document (the OpenAI-compatible
+# client replaces it with a note): what reads scanned PDFs needs one (drive_content.py).
+DOCUMENT_PROVIDERS = {ANTHROPIC}
 
 
 def needs_key(provider: str) -> bool:

@@ -40,6 +40,10 @@ spoken morning briefing and evening recap.
     ([docs/connectors.md](docs/connectors.md)).
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
+  - File drives through rclone (Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, an
+    S3 bucket and more, several at once): browse, search by name and by what the files
+    say, read, and file things away without ever replacing a file: see
+    [docs/drives.md](docs/drives.md).
   - Web search with any model, in a separate model request that only sees the query.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
@@ -116,6 +120,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
 | `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
+| `DRIVE_URL`, `DRIVE_PASSWORD`, `DRIVES` | unset, unset, `[]` | File drives through the rclone sidecar (`compose/drive.yml`): the drives as a JSON list of `name`, `remote`, and optionally `label`, `backend`, `read_only`, `content`. See [docs/drives.md](docs/drives.md). |
+| `DRIVE_INDEX_HOURS` | `24` | How old the index of file names may get. |
+| `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
+| `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
@@ -184,6 +192,11 @@ The guardrails are enforced in code, not only in the prompt.
   `needs_clean_turn` (home control, any write) don't run for the rest of that request, so
   injected text can't trigger actions. Travel time, which sends a destination out, then
   only accepts a place read from the calendar in that request.
+- **Drives**: a file read from a drive, a folder listing or a search taints the request
+  like an email does, so text hidden in a document can't make the agent copy or delete
+  files. It never replaces a file (a taken name gets a numbered copy), deletes only on
+  your own message, and first keeps a copy of what it deletes. A drive can be read-only,
+  and rclone's API has no published port.
 - **Your go, on exactly what you were shown**: an action held back that way is not lost.
   It is parked with its exact arguments, and the reply ends with a numbered list written
   by the code, not by the model:

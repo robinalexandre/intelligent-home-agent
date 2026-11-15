@@ -18,6 +18,8 @@ dependencies = [
     "python-pptx>=1.0",
     "python-docx>=1.1",
     "defusedxml>=0.7",
+    # The text layer of the PDFs in a drive, for search by content (drive_content.py).
+    "pypdf>=5.0",
 ]
 
 [project.optional-dependencies]

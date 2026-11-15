@@ -16,6 +16,7 @@ from intelligent_home_agent.llm import (
     CUSTOM,
     DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_ANTHROPIC_SEARCH_MODEL,
+    DOCUMENT_PROVIDERS,
     PROVIDERS,
     WEB_SEARCH_PROVIDERS,
     needs_key,
@@ -96,6 +97,27 @@ class McpServer(BaseModel):
             if self.refresh_token is None and self.client_secret is None:
                 raise ValueError(f"{self.name}: set client_secret or refresh_token")
         return self
+
+
+class Drive(BaseModel):
+    """A file drive: one remote of the rclone sidecar (docs/drives.md)."""
+
+    # Short name the tools take, e.g. "gdrive", "nas".
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,19}$")
+    # What the user calls it ("Google Drive", "Home NAS"); the service's name when empty.
+    label: str = ""
+    # The remote as rclone's config names it, with an optional folder: "gdrive:",
+    # "nas:Documents", or a view made with rclone's combine or alias.
+    remote: str = Field(pattern=r"^[\w][\w .+@-]*:[^\x00-\x1f]*$")
+    # rclone's type of the storage behind it (drive, iclouddrive, onedrive, dropbox,
+    # webdav, sftp, s3...): only used to say what to do when its login fails, and where
+    # the service keeps what is deleted. Empty: general advice.
+    backend: str = ""
+    # The agent only lists, searches and reads there.
+    read_only: bool = False
+    # Index the text inside its files for search_drive_content (every readable file is
+    # downloaded once): false for a drive too big or billed by the download.
+    content: bool = True
 
 
 class Settings(BaseSettings):
@@ -252,6 +274,31 @@ class Settings(BaseSettings):
     kb_url: str | None = None
     kb_token: SecretStr | None = None
 
+    # --- File drives through an rclone sidecar (compose/drive.yml, docs/drives.md) -----
+    # Where the sidecar's API is (set by compose/drive.yml) and the password both share.
+    # Tools exist once the URL, the password and at least one drive are set.
+    drive_url: str | None = None
+    drive_user: str = "agent"
+    drive_password: SecretStr | None = None
+    # The drives, a JSON list: name, remote, and optionally label, backend, read_only,
+    # content.
+    drives: list[Drive] = []
+    # How old the index of file names may get before it is rebuilt.
+    drive_index_hours: float = Field(24, gt=0)
+    # Copies of what the agent deletes, in DATA_DIR/drive-trash: how long they are kept,
+    # the biggest item copied and the most the trash may hold. Beyond that, a deletion
+    # waits for the user to accept it without a copy.
+    drive_trash_days: float = Field(30, gt=0)
+    drive_trash_max_item_mb: int = Field(1024, ge=0)
+    drive_trash_max_total_mb: int = Field(5120, ge=0)
+    # Index the text inside the files (PDF, office, text) for search by content.
+    drive_content: bool = True
+    # Scanned PDFs: "model" has the model read them (a few per hour, each a paid request;
+    # needs a provider that takes PDFs, anthropic today), "off" lists them by name only.
+    drive_ocr: Literal["off", "model"] = "off"
+    # Empty: a small Claude model with anthropic.
+    drive_ocr_model: str = ""
+
     # --- Push notifications (ntfy, optional) -------------------------------------------
     # Full topic URL, e.g. https://ntfy.sh/some-long-random-topic or a self-hosted server.
     ntfy_url: str | None = None
@@ -305,6 +352,24 @@ class Settings(BaseSettings):
             raise ValueError("two MCP_SERVERS entries share a name")
         return value
 
+    @field_validator("drives")
+    @classmethod
+    def _distinct_drives(cls, value: list[Drive]) -> list[Drive]:
+        names = [drive.name for drive in value]
+        if len(set(names)) != len(names):
+            raise ValueError("two DRIVES entries share a name")
+        return value
+
+    @property
+    def drives_enabled(self) -> bool:
+        return bool(self.drives and self.drive_url and self.drive_password)
+
+    @property
+    def drive_ocr_enabled(self) -> bool:
+        """Scans are only read where the provider takes a PDF as a document; elsewhere
+        DRIVE_OCR=model falls back to the text layers alone (main logs it)."""
+        return self.drive_ocr == "model" and self.llm_provider in DOCUMENT_PROVIDERS
+
     @field_validator("llm_provider")
     @classmethod
     def _known_provider(cls, value: str) -> str:
@@ -323,6 +388,10 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        if not self.drive_ocr_model:
+            self.drive_ocr_model = (
+                DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
+            )
         return self
 
     @model_validator(mode="after")
