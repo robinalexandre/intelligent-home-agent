@@ -197,6 +197,8 @@ SECRET_KEYS = {
     "JOBS_GITHUB_TOKEN",
     "HUE_APP_KEY",
     "NUKI_API_TOKEN",
+    "CAR_REFRESH_TOKEN",
+    "CAR_PIN",
     "PETKIT_PASSWORD",
     "HOSTING_API_TOKEN",
     "LLM_API_KEY",
@@ -749,6 +751,7 @@ def ask_github(p: Prompter, env: dict[str, str]) -> None:
 DEVICES = {
     "hue": "Philips Hue lights, straight from the bridge",
     "nuki": "a Nuki smart lock (a Nuki Web API token)",
+    "car": "a connected car: an Audi through myAudi (the app's unofficial API)",
     "petkit": "a PetKit feeder or litter box (a second PetKit account)",
     "netatmo": "Netatmo cameras, weather station or thermostat",
     "android-tv": "a Google TV / Android TV device: a TV, a projector, a box",
@@ -762,6 +765,10 @@ HOSTING = {
 }
 DEVICE_STEPS = {
     "netatmo": "run python scripts/netatmo_login.py and add the lines it writes to .env",
+    "car": (
+        "on a computer with a browser, run python scripts/audi_login.py --country "
+        "<your country code> and add the lines it writes to .env (docs/home-devices.md)"
+    ),
     "android-tv": (
         "on the home network, run python scripts/android_tv_pair.py <address>; to let it "
         "find and start a film inside an app (ANDROID_TV_NAVIGATOR), docs/home-devices.md"

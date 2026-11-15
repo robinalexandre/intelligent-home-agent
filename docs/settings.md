@@ -134,6 +134,8 @@ All *(Compose)*; [setup.md, step 4](setup.md#4-reaching-the-agent).
 | `APPLE_DEVICES`, `APPLE_TV_COMPANION_CREDENTIALS`, `APPLE_TV_AIRPLAY_CREDENTIALS` | unset | Apple TV and HomePods (`apple` extra); what `scripts/apple_devices.py` prints. |
 | `NUKI_API_TOKEN` | unset | A Nuki smart lock, through the Nuki Web API. |
 | `UNLOCK_TOTP_SECRET`, `UNLOCK_PHRASE` | unset | Proof asked before a door opens (`scripts/unlock_codes_setup.py`). Neither: opening waits for your yes each time. |
+| `CAR_PROVIDER`, `CAR_VIN`, `CAR_REFRESH_TOKEN`, `CAR_CLIENT_ID` | unset | A connected car: `audi` (myAudi, through the app's unofficial API) so far; `scripts/audi_login.py` writes them. |
+| `CAR_PIN`, `CAR_NAME` | unset, "the car" | The maker's PIN, which allows locking and the heating (unlocking also needs the unlock proof above); what you call the car. |
 | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | unset | Netatmo cameras, weather station, thermostat (`scripts/netatmo_login.py`). |
 | `PETKIT_USERNAME`, `PETKIT_PASSWORD`, `PETKIT_REGION` | unset, unset, `HOME_COUNTRY` | PetKit feeder and litter box (`petkit` extra), through a second PetKit account. |
 | `PETKIT_ALERTS` | `true` | With a chat or `NTFY_URL`: a message when supplies run low or the bin is full. |
@@ -225,7 +227,8 @@ Everything is under `DATA_DIR`, readable by the agent's user only:
 | `conversations/`, `files/` | Chats in progress and their files. |
 | `tasks/`, `tasks-done.json`, `tasks-reports.json`, `task-outbox.json` | Tasks (unless `TASKS_STORE=github`), which ran, their reports. |
 | `turned-down-alerts.json`, `activity-alerts.json`, `pet-alerts.json` | Alerts you turned down or asked for. |
-| `jobs.json`, `progress-durations.json`, `review-done.json` | Coding jobs and the nightly review. |
+| `jobs.json`, `progress-durations.json`, `review-done.json`, `coder-sessions.json` | Coding jobs, the coder's sessions and the nightly review. |
+| `car.json` | The car's renewed login. |
 | `icloud-web/`, `whisper/`, `claude/`, `drive-trash/` | The iCloud session, the speech model, Claude Code's transcripts, copies of files deleted from a drive. |
 
 ### Tasks and alerts
@@ -291,6 +294,8 @@ Everything is under `DATA_DIR`, readable by the agent's user only:
 | `JOBS_GIT_NAME`, `JOBS_GIT_EMAIL` | unset | The identity of the coder's commits. |
 | `JOBS_MODEL_SIMPLE`, `JOBS_MODEL_NORMAL`, `JOBS_MODEL_COMPLEX` | `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-fable-5-1` | `claude_code`: the coder's model by complexity. |
 | `CODER_MAX_BUDGET_USD`, `CODER_RC_NAME`, `CODER_SYNC_REPOS` *(Compose)* | `15`, `Home agent code`, `false` | `claude_code`: runaway guard per job; Remote Control's name and whether repositories are kept cloned. |
+| `CODER_SESSIONS_WATCH`, `CODER_SESSIONS_POLL_SECONDS` | `true`, `60` | `claude_code`: news of every Claude Code session of the coder (one finished, one asks something), and how often they are looked at. |
+| `CODER_RELAY_MODEL` *(Compose)* | `claude-sonnet-5-5` | `claude_code`: the model of the short turn that passes your answer to a session. |
 | `JOBS_AGENT_ID`, `JOBS_ENVIRONMENT_ID`, `JOBS_VAULT_ID` | unset | `managed`: written by `scripts/jobs_setup.py`. |
 | `JOBS_BUDGET_USD`, `JOBS_MAX_ITERATIONS`, `JOBS_WORKSPACE` | `10`, `5`, `default` | `managed`: the spend cap per job, the grader's rounds, the Anthropic workspace. |
 | `REVIEW_REPO` | unset | Your own private copy of this repository, `owner/repo`. Unset: no review. |

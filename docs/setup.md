@@ -254,7 +254,9 @@ If something is off:
 | `The model server answered 404` | `LLM_MODEL` isn't a model of that provider, or `LLM_BASE_URL` lacks its `/v1`. |
 | The Tailscale address has no certificate | Enable HTTPS certificates in the tailnet's DNS settings, then restart the sidecar. |
 
-**Update**: `git pull && docker compose up -d --build` (without Docker: `git pull`,
+**Update**: `git pull && docker compose up -d --build`, or `scripts/update.sh`, which does
+both and leaves the coding jobs' coder container running unless it changed
+([jobs.md](jobs.md#updating-without-ending-its-sessions)) (without Docker: `git pull`,
 `pip install ".[documents]"` with the extras you use, restart).
 
 **Back up** two things:
@@ -283,7 +285,7 @@ wasn't verified against the real service.
 
 | Feature | Gives you | Needs | Page |
 |---|---|---|---|
-| Devices without Home Assistant | Philips Hue lights, a Devialet speaker, a Google TV / Android TV device, an Apple TV and HomePods, a Nuki lock, Netatmo cameras and sensors, a PetKit feeder and litter box | each device's address or account; three of them an optional library | [home-devices.md](home-devices.md) |
+| Devices without Home Assistant | Philips Hue lights, a Devialet speaker, a Google TV / Android TV device, an Apple TV and HomePods, a Nuki lock, Netatmo cameras and sensors, a PetKit feeder and litter box, a connected car (an Audi so far) | each device's address or account; three of them an optional library | [home-devices.md](home-devices.md) |
 | Leaving home | what is still unlocked, on or playing when you leave, fixed on your yes | a device above or Home Assistant, and a phone automation calling `POST /v1/departure` | [home-devices.md](home-devices.md#leaving-home) |
 | Weigh-ins | "what do I weigh?", the trend; read-only | a Withings scale and a free developer application | [health.md](health.md) |
 

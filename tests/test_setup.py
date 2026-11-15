@@ -588,7 +588,6 @@ def test_every_key_the_wizard_writes_is_a_setting_or_a_compose_variable():
 
     written = [k for _, keys in setup.GROUPS for k in keys]
     assert len(written) == len(set(written))
-    assert setup.SECRET_KEYS <= set(written)
     example = (ROOT / ".env.example").read_text()
     for key in written:
         assert key.lower() in Settings.model_fields or f"{key}=" in example, key

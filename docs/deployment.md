@@ -50,7 +50,9 @@ curl -s https://agent.example.com/health
 curl -s https://agent.example.com/health/ha -H "Authorization: Bearer $AGENT_API_TOKEN"
 ```
 
-Update: `git pull && docker compose up -d --build`. What to back up:
+Update: `git pull && docker compose up -d --build`, or `scripts/update.sh` (the same,
+keeping the coder container of the [coding jobs](jobs.md#updating-without-ending-its-sessions)
+running unless it changed). What to back up:
 [setup.md, step 6](setup.md#6-check-update-back-up).
 
 ## Without Docker

@@ -74,7 +74,8 @@ Everything is off until you configure it, and the assistant only knows about wha
 - Home Assistant: find devices, read states, call services.
 - Without Home Assistant: Philips Hue, a Devialet speaker, a Google TV / Android TV
   device, an Apple TV and HomePods, a Nuki lock, Netatmo cameras and sensors, a PetKit
-  feeder and litter box; what is still on or unlocked when you leave home
+  feeder and litter box, a connected car (an Audi so far, through the myAudi app's
+  unofficial API); what is still on or unlocked when you leave home
   ([docs/home-devices.md](docs/home-devices.md)).
 - Weigh-ins from a Withings scale, said only when you ask ([docs/health.md](docs/health.md)).
 
@@ -132,7 +133,9 @@ Everything is off until you configure it, and the assistant only knows about wha
 **Coding jobs and nightly review**, for people who code
 
 - A fix or a feature on one of your repositories, done by Claude Code, ending in a pull
-  request ([docs/jobs.md](docs/jobs.md)); a nightly review of the agent's own requests
+  request, and every Claude Code session of that container followed and answered
+  through the agent ([docs/jobs.md](docs/jobs.md)); a nightly review of the agent's own
+  requests
   ([docs/review.md](docs/review.md)).
 
 **Outdoor** ([docs/outdoor.md](docs/outdoor.md))
@@ -213,7 +216,7 @@ Each feature adds its own rules on top, described on its page:
 | [Apple apps](docs/apple.md) | The agent keeps a session, never the password. After a Find My read no new site opens and a search waits, so a position can't leave. |
 | [Remote browser](docs/browser.md#guards) | You type your passwords yourself, in a page only you reach. Clicks only run in a request that read nothing but that same site. Chrome can't reach private addresses. |
 | [Tasks and notes](docs/tasks.md#what-the-assistant-may-do-with-tasks) | Scheduled only in a clean request or on your go; only your own message changes or deletes one. |
-| [Coding jobs](docs/jobs.md#guardrails), [nightly review](docs/review.md) | The coder has none of the agent's secrets and can touch only what its GitHub token can. The review hands a day of your conversations to the coder, and only to a private repository. |
+| [Coding jobs](docs/jobs.md#guardrails), [nightly review](docs/review.md) | The coder has none of the agent's secrets and can touch only what its GitHub token can. What its sessions say is data, and only your own message is passed to one. The review hands a day of your conversations to the coder, and only to a private repository. |
 | [Claude subscription](docs/subscription.md#what-claude-code-may-do-here) | Claude Code is used as the model only: its own tools are off, the agent's tools and rules apply. |
 
 What leaves your server, and to whom: [docs/deployment.md](docs/deployment.md#data-that-leaves-the-server).
@@ -305,6 +308,8 @@ real thing** from this repository, collected from the feature pages:
   service.
 - **The TV navigator**: used on one Google TV projector with Claude; other models were
   not tried on a real screen.
+- **The car**: ported from a setup with one Audi and one account; nothing was run
+  against other models or markets, and no other make exists yet.
 - **Not recorded**: runs against real services of the model providers other than
   Anthropic, of the search engines (DuckDuckGo, SearXNG, Brave, Tavily), of an
   OpenAI-compatible image server, of the Home Assistant, Google Home and Alexa recipes,

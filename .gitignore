@@ -9,3 +9,6 @@ dist/
 build/
 .idea/
 shortcuts/
+# What the coder was last built from (scripts/update.sh).
+.coder-deployed
+*-credentials.env

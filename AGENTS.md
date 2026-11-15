@@ -64,6 +64,8 @@ src/intelligent_home_agent/
                     the Backend protocol; jobs_claude_code.py (the coder container) and
                     jobs_managed.py (Anthropic Managed Agents) are its two runners
   coder_approvals.py  Claude Code's permission prompts in the coder, asked to the user
+  coder_sessions.py   every Claude Code session of the coder (coder/sessions.py reads
+                    their transcripts): listed, answered, their news told to the user
   review.py         the nightly review: a quiet coding job over the day's journal
                     (docs/review.md); curation.py turns its lessons into notes
   leaks.py          keeps what a request holds out of text the model writes for the outside
@@ -76,7 +78,7 @@ src/intelligent_home_agent/
   notify.py         ntfy push
   shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,
-                    Apple TV and HomePods, Nuki, Netatmo, PetKit), each on with its
+                    Apple TV and HomePods, Nuki, Netatmo, PetKit, a car), each on with its
                     settings; unofficial libraries are optional extras
   departure.py      POST /v1/departure: what is still unlocked or on, fixes parked
   pet_alerts.py     the pet supplies watched and pushed through ntfy
@@ -101,6 +103,8 @@ compose/                 one Compose file per optional container or way to reach
 coder/                   the coder container (its own image, compose/coder.yml): Claude
                          Code for the coding jobs; agents/coder.md holds its house rules,
                          environments/coder.yaml the Managed Agents sandbox
+scripts/update.sh        git pull and rebuild on the server, the coder left running
+                         unless it changed (docs/jobs.md)
 docs/setup.md            the guided path: six steps, then one line per optional feature
 docs/settings.md         every setting, in the order of setup.md and .env.example
 docs/<feature>.md        one page per feature, all starting with the same five-row table
@@ -256,6 +260,7 @@ Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/`
 `task-outbox.json` (which tasks ran, their last reports, what was sent).
 `jobs.json`, `progress-durations.json` and `review-done.json` (coding jobs, how long
 they took, the last night reviewed).
+`coder-sessions.json` (what was already told of the coder's sessions).
 `pet-alerts.json`, `icloud-web/` (the iCloud session), `whisper/` (the speech model),
 `claude/` (Claude Code's own files with `ENGINE=subscription`), `drive-trash/` (copies of
 what was deleted from a drive). docs/settings.md lists them for the user: add yours there.

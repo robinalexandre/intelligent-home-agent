@@ -150,6 +150,12 @@ from intelligent_home_agent.tools.assistant_notes import (  # noqa: E402
     RepoFolder,
     build_assistant_note_tools,
 )
+from intelligent_home_agent.tools.car import (  # noqa: E402
+    Car,
+    CarAccount,
+    build_car,
+    build_car_tools,
+)
 from intelligent_home_agent.tools.hosting import (  # noqa: E402
     HostingApi,
     build_hosting_provider,
@@ -173,6 +179,10 @@ __all__ += [
     "build_task_tools",
     "build_vulnerability_tools",
     "HostingApi",
+    "Car",
+    "CarAccount",
+    "build_car",
+    "build_car_tools",
     "build_hosting_provider",
     "build_hosting_tools",
 ]
