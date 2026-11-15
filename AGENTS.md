@@ -39,6 +39,8 @@ src/intelligent_home_agent/
   prompts.py        system prompt, built from what is configured
   i18n.py           every word the code says to the user, per language
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
+  activity_alerts.py  a message when a good window is coming for an activity: the watch,
+                    its tools, what it sends through deliver.py (docs/outdoor.md)
   config.py         settings (env / .env)
   conversations.py  conversation state: messages, files (Attachment), writes waiting for
                     the user's go (Proposal), pending Home Assistant confirmations; what
@@ -199,7 +201,8 @@ dict blocks, never SDK objects).
 
 Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/` and
 `files/` (chats only: `main.save_conversation`, `restore_conversations`, `file_store`),
-`memory.md` and `procedures.md` (unless `MEMORY_STORE=github`), `turned-down-alerts.json`.
+`memory.md` and `procedures.md` (unless `MEMORY_STORE=github`), `turned-down-alerts.json`,
+`activity-alerts.json`.
 `tasks/` (unless `TASKS_STORE=github`), `tasks-done.json`, `tasks-reports.json` and
 `task-outbox.json` (which tasks ran, their last reports, what was sent).
 A feature that keeps a file follows the same pattern: written through a temporary file,
@@ -260,3 +263,6 @@ the `subscription` extra installed.
 Add an `Activity` to `CATALOG` in `activities.py`: kind `weather` with limits (rain,
 wind, temperature, visibility) is enough for `get_outdoor_forecast` to handle it. Kinds
 `wind` and `surf` reuse the per-spot tools. Add aliases in the languages you know.
+An activity in the catalog can be alerted on with nothing more (`activity_alerts.py`);
+its name in another language goes in `activity_names` (`i18n.py`). A source of measured
+wind is a class in `tools/live_wind.py`, named in `config.LIVE_WIND_SOURCES`.

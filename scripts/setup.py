@@ -129,6 +129,14 @@ MAIL_HOSTS = {
     "icloud": "imap.mail.me.com",
     "fastmail": "imap.fastmail.com",
 }
+# Where measured wind can come from (tools/live_wind.py); a test keeps this in step with
+# config.LIVE_WIND_SOURCES.
+LIVE_SOURCES = {
+    "openwindmap": "community wind beacons, no key; dense in France and the Alps",
+    "metar": "airports worldwide, no key; a reading every 30 to 60 minutes",
+    "meteofrance": "official stations in France; needs a free application id",
+}
+
 CHANNELS = {
     "siri": "Siri Shortcuts on iPhone, HomePod, Mac",
     "home_assistant": "Home Assistant Assist (voice satellites, phone app), and through it "
@@ -160,6 +168,7 @@ SECRET_KEYS = {
     "MAIL_ACCOUNTS",
     "GITHUB_TOKEN",
     "NTFY_TOKEN",
+    "METEOFRANCE_APPLICATION_ID",
     "GENERATION_GEMINI_API_KEY",
     "GENERATION_OPENAI_API_KEY",
 }
@@ -558,6 +567,17 @@ def ask_activities(p: Prompter, env: dict[str, str]) -> None:
             spots.append(_spot(p, label))
         if spots:
             env[key] = json.dumps(spots, ensure_ascii=False)
+    if "WIND_SPOTS" in env or "SURF_SPOTS" in env:
+        p.say("  The wind measured right now near your spots (docs/outdoor.md has the coverage):")
+        if sources := p.choose("Read it from (empty: forecasts only)", LIVE_SOURCES, []):
+            if "meteofrance" in sources:
+                if key := p.secret("Météo-France application id"):
+                    env["METEOFRANCE_APPLICATION_ID"] = key
+                else:
+                    p.say(
+                        "  Without it Météo-France stays off: METEOFRANCE_APPLICATION_ID in .env."
+                    )
+            env["LIVE_WIND_SOURCES"] = ",".join(sources)
 
 
 def ask_documents(p: Prompter, env: dict[str, str]) -> None:
@@ -850,6 +870,38 @@ def ask_tasks(p: Prompter, env: dict[str, str]) -> None:
         env["TASKS_STORE"] = "github"
 
 
+def ask_hour(p: Prompter, question: str, default: int) -> int:
+    while True:
+        hour = p.number(question, str(default))
+        if hour == int(hour) and 0 <= hour <= 23:
+            return int(hour)
+        p.say("  An hour of the day, 0 to 23.")
+
+
+def ask_activity_alerts(p: Prompter, env: dict[str, str]) -> None:
+    """A message when a good window is coming for an activity: asked only when something
+    can carry it (a push) and for the activities that can be judged."""
+    chosen = [k for k in env.get("OUTDOOR_ACTIVITIES", "").split(",") if k]
+    needs = {"wind": "WIND_SPOTS", "surf": "SURF_SPOTS", "weather": "HOME_LATITUDE"}
+    possible = [k for k in chosen if needs[CATALOG[k].kind] in env]
+    if "NTFY_URL" not in env or not possible:
+        return
+    p.say("\n# Alerts for your activities, sent as a push (docs/outdoor.md)")
+    p.say("  One message when a good window is coming (enough wind at a spot, waves at a")
+    p.say("  beach, a dry and mild stretch for the rest); nothing when nothing fits. You can")
+    p.say("  also just ask the assistant later: 'tell me when it's good for a ride'.")
+    labels = {k: ", ".join(FORECASTS[n] for n in CATALOG[k].needs) for k in possible}
+    picked = p.choose("Alert you for (empty: none)", labels, [])
+    if not picked:
+        return
+    env["ACTIVITY_ALERTS"] = ",".join(picked)
+    while not 1 <= (lead := p.number("How many hours ahead, at most (1 to 72)", "24")) <= 72:
+        p.say("  Between 1 and 72 hours.")
+    env["ACTIVITY_ALERTS_LEAD_HOURS"] = str(int(lead))
+    env["ACTIVITY_ALERTS_QUIET_START"] = str(ask_hour(p, "No message from (hour, 0-23)", 22))
+    env["ACTIVITY_ALERTS_QUIET_END"] = str(ask_hour(p, "... until (hour, 0-23)", 8))
+
+
 GROUPS = [
     ("API", ["AGENT_API_TOKEN"]),
     (
@@ -884,7 +936,20 @@ GROUPS = [
     ("Assistant", ["ASSISTANT_NAME", "USER_NAME", "LANGUAGE", "TIMEZONE"]),
     ("Home", ["HOME_CITY", "HOME_COUNTRY", "HOME_LATITUDE", "HOME_LONGITUDE"]),
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
-    ("Outdoor activities", ["OUTDOOR_ACTIVITIES", "WIND_SPOTS", "SURF_SPOTS"]),
+    (
+        "Outdoor activities (docs/outdoor.md)",
+        [
+            "OUTDOOR_ACTIVITIES",
+            "WIND_SPOTS",
+            "SURF_SPOTS",
+            "LIVE_WIND_SOURCES",
+            "METEOFRANCE_APPLICATION_ID",
+            "ACTIVITY_ALERTS",
+            "ACTIVITY_ALERTS_LEAD_HOURS",
+            "ACTIVITY_ALERTS_QUIET_START",
+            "ACTIVITY_ALERTS_QUIET_END",
+        ],
+    ),
     ("Home Assistant", ["HA_URL", "HA_TOKEN"]),
     (
         "Home devices",
@@ -1002,6 +1067,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
     ask_tasks(p, env)
+    ask_activity_alerts(p, env)
 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:

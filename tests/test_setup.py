@@ -33,6 +33,7 @@ ANSWERS = [
     "w, sw",
     "",  # min knots: default
     "n",  # no more spots
+    "openwindmap, 2",  # measured wind: the beacons and the airports
     "letter",  # paper
     "gemini",  # generated pictures
     "y",  # code sandbox
@@ -55,6 +56,11 @@ ANSWERS = [
     "7h",  # the briefing by itself: not a time, asked again
     "7:30",
     "",  # no recap by itself
+    "wingfoil, 2",  # alerts: the wind sport and cycling
+    "100",  # how early: too far, asked again
+    "36",
+    "",  # quiet from 22
+    "7",  # until 7
 ]
 SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
@@ -104,6 +110,10 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     assert env["GENERATION_GEMINI_API_KEY"] == "gen-secret"
     assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
     assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
+    assert env["LIVE_WIND_SOURCES"] == "openwindmap,metar"
+    assert env["ACTIVITY_ALERTS"] == "wingfoil,cycling"
+    assert env["ACTIVITY_ALERTS_LEAD_HOURS"] == "36"
+    assert (env["ACTIVITY_ALERTS_QUIET_START"], env["ACTIVITY_ALERTS_QUIET_END"]) == ("22", "7")
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
     assert env["MORNING_BRIEFING_AT"] == "07:30" and "EVENING_RECAP_AT" not in env
     assert "TASKS_STORE" not in env  # files on this machine, the default
@@ -470,3 +480,49 @@ def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
     (tmp_path / "later").mkdir()
     env, output = run_with(tmp_path / "later", answers, ["", ""])
     assert "Still empty, add to .env before starting: CLAUDE_CODE_OAUTH_TOKEN." in output
+
+
+def test_alerts_are_offered_only_with_a_push_and_for_what_can_be_judged():
+    from intelligent_home_agent.config import LIVE_WIND_SOURCES
+
+    assert tuple(setup.LIVE_SOURCES) == LIVE_WIND_SOURCES
+    silent = setup.Prompter(*scripted([])[:1], None, lambda _line: None)
+    # No push: nothing could carry an alert, so nothing is asked.
+    env = {"OUTDOOR_ACTIVITIES": "surf,cycling", "HOME_LATITUDE": "0.0"}
+    setup.ask_activity_alerts(silent, env)
+    # A push, but surf without a beach and no home for the weather: nothing to offer.
+    env = {"OUTDOOR_ACTIVITIES": "surf,cycling", "NTFY_URL": "https://ntfy.example.com/t"}
+    setup.ask_activity_alerts(silent, env)
+    assert "ACTIVITY_ALERTS" not in env
+
+    env["HOME_LATITUDE"] = "0.0"
+    printed = []
+    read, queue = scripted(["surf", "1", "", "", ""])  # surf is not on offer: asked again
+    setup.ask_activity_alerts(setup.Prompter(read, None, printed.append), env)
+    assert queue == []
+    assert env["ACTIVITY_ALERTS"] == "cycling" and env["ACTIVITY_ALERTS_LEAD_HOURS"] == "24"
+    assert "  1. cycling: rain, wind speed, gusts and direction, temperature" in printed
+    assert not any("surf:" in line for line in printed)
+
+    # Declined: no setting at all.
+    env = {"OUTDOOR_ACTIVITIES": "cycling", "NTFY_URL": "x", "HOME_LATITUDE": "0.0"}
+    setup.ask_activity_alerts(setup.Prompter(*scripted([""])[:1], None, lambda _l: None), env)
+    assert "ACTIVITY_ALERTS" not in env
+
+
+def test_measured_wind_is_asked_with_a_spot_and_meteo_france_wants_its_id():
+    spot = ["y", "South Bay", "0.0", "0.0", "w", "", "", "n"]
+    read, queue = scripted(["surf", "y", *spot, "metar, meteofrance"])
+    secret, _ = scripted(["mf-app-id"])
+    env = {}
+    setup.ask_activities(setup.Prompter(read, secret, lambda _line: None), env)
+    assert queue == []
+    assert env["LIVE_WIND_SOURCES"] == "metar,meteofrance"
+    assert env["METEOFRANCE_APPLICATION_ID"] == "mf-app-id"
+    assert "METEOFRANCE_APPLICATION_ID" in setup.SECRET_KEYS
+
+    # No spot: the measured wind is not asked about.
+    read, queue = scripted(["cycling", "y"])
+    env = {}
+    setup.ask_activities(setup.Prompter(read, secret, lambda _line: None), env)
+    assert queue == [] and "LIVE_WIND_SOURCES" not in env

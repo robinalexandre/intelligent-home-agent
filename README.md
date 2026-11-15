@@ -39,7 +39,9 @@ spoken morning briefing and evening recap.
   - Weather at home or anywhere (Open-Meteo, no key).
   - Outdoor activities: wind sports per spot (strength, gusts, direction), surf per beach
     (waves, period, wind effect, tides), and weather windows for everything else
-    (cycling, running, hiking, skiing, climbing, golf, or just "I go out a lot").
+    (cycling, running, hiking, skiing, climbing, golf, or just "I go out a lot"); the
+    wind measured right now near your spots, and a message when a good window is coming
+    for what you do ([docs/outdoor.md](docs/outdoor.md)).
   - Mailboxes (IMAP), calendars (CalDAV) and contacts' birthdays (CardDAV), with any
     provider that offers them: read-only by default; when you allow it, email
     drafts, flags and filing into your folders, and new calendar events. It never
@@ -144,7 +146,10 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `BRIEF_SECTIONS` | all | Any of `calendar,travel,mail,pull_requests,reminders,weather,activities`. |
 | `WEATHER_DETAIL` | `short` | `off`, `short` (one sentence) or `detailed`. |
 | `OUTDOOR_ACTIVITIES` | none | e.g. `surf,wingfoil,cycling`; names or aliases from `activities.py`. |
-| `WIND_SPOTS`, `SURF_SPOTS`, `WIND_MODEL` | none, none, `best_match` | Spots for the wind and surf tools (JSON). |
+| `WIND_SPOTS`, `SURF_SPOTS`, `WIND_MODEL` | none, none, `best_match` | Spots for the wind and surf tools (JSON); see [docs/outdoor.md](docs/outdoor.md). |
+| `HOME_MOVES` | none | Where home is from a given day, when you move (JSON). |
+| `LIVE_WIND_SOURCES`, `LIVE_WIND_RADIUS_KM`, `METEOFRANCE_APPLICATION_ID` | none, `20`, unset | Wind measured now near the spots: any of `openwindmap`, `metar`, `meteofrance` (France, needs the id). |
+| `ACTIVITY_ALERTS`, `ACTIVITY_ALERTS_LEAD_HOURS`, `ACTIVITY_ALERTS_QUIET_START`, `ACTIVITY_ALERTS_QUIET_END` | none, `24`, `22`, `8` | Activities you are told about when a good window is coming, how early, and the silent hours. They need `NTFY_URL`. |
 | `HA_URL`, `HA_TOKEN` | local URL, unset | Home Assistant; no token means no home tools. |
 | `HA_EXPOSED_DOMAINS` | common domains | Only these entity domains are visible. |
 | `HA_SENSITIVE_DOMAINS` | `lock,alarm_control_panel,cover` | Need a spoken yes in a later request. |
@@ -192,7 +197,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DRIVE_INDEX_HOURS` | `24` | How old the index of file names may get. |
 | `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
 | `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
-| `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing` and for the tasks the agent runs by itself. |
+| `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`, for the tasks the agent runs by itself and for the activity alerts. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
@@ -205,17 +210,11 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 
 ### Outdoor activities
 
-Each activity maps to the forecast data it needs:
-
-| Activity | Kind | Forecasts | Tool |
-|---|---|---|---|
-| surf | per beach | waves, period, tides, wind | `get_surf_forecast` (`SURF_SPOTS`) |
-| wingfoil, kitesurf, windsurf, sailing | per spot | wind, gusts, direction (tides, waves) | `get_wind_forecast` (`WIND_SPOTS`) |
-| cycling, running, hiking, skiing, climbing, golf, outdoors | weather | rain, wind, temperature, UV, snow, visibility (per activity) | `get_outdoor_forecast` |
-
-Free text works in the setup script ("I bike and go out a lot" gives `cycling,outdoors`).
-Wind activities without spots fall back to the general weather. To add an activity, see
-[AGENTS.md](AGENTS.md).
+List what you do (`OUTDOOR_ACTIVITIES`, free text in the setup script) and each activity
+gets the forecast it needs: wind per spot, surf per beach, a weather window for the rest.
+Spots, a home that moves, the wind measured now and its sources, and the alerts ("tell me
+when it's good for a ride") are in [docs/outdoor.md](docs/outdoor.md). To add an activity,
+see [AGENTS.md](AGENTS.md).
 
 ### Coding-assistant reminders
 
