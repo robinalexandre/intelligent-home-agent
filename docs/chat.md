@@ -63,6 +63,10 @@ run at once:
   take `"deliver": "chat"` (the first channel) or a channel's name (`"whatsapp"`,
   `"telegram"`): the reply is also sent in the chat and the conversation goes on there.
   That is how a voice Shortcut's briefing can be answered in writing later.
+- **The remote browser** ([browser.md](browser.md)): when a site asks you to log in, the
+  link to the browser's page comes in the agent's reply, here a tap away; say it's done
+  in the chat and it carries on. A capture it takes of a page (`browser_screenshot`) is
+  kept by name for a draft, not sent in the chat by itself.
 - Phone reminders can't be created from a chat (only a client on the phone can): the
   agent schedules a task instead when tasks are on, and the code says so otherwise.
 
