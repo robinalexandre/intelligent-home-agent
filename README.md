@@ -31,6 +31,8 @@ spoken morning briefing and evening recap.
   - Calendar (CalDAV) and mailboxes (IMAP), both read-only.
   - When to leave for an appointment (driving time from home, OpenStreetMap).
   - GitHub pull requests waiting for you, and reminders left with a coding assistant.
+  - Your own notes (a knowledge base in a GitHub repository), searched before it says it
+    doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - Web search with any model, in a separate model request that only sees the query.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
@@ -100,6 +102,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
 | `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
 | `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
+| `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered. |
 

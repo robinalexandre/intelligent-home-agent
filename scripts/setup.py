@@ -95,6 +95,8 @@ SECRET_KEYS = {
     "TUNNEL_TOKEN",
     "WEB_SEARCH_API_KEY",
     "SEARXNG_SECRET",
+    "KB_TOKEN",
+    "KB_GITHUB_TOKEN",
     "LLM_API_KEY",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
@@ -322,6 +324,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
         files.append("compose/ollama.yml")
     if env.pop("_COMPOSE_SEARXNG", None):
         files.append("compose/searxng.yml")
+    if env.pop("_COMPOSE_KB", None):
+        files.append("compose/kb.yml")
     if len(files) > 1:
         # ":" on every system, Windows included.
         env["COMPOSE_PATH_SEPARATOR"] = ":"
@@ -439,6 +443,20 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
                     env["ASSISTANT_REMINDERS_REPO"] = repo
 
 
+def ask_knowledge(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# Knowledge base: your own notes, searched by the assistant (docs/knowledge.md)")
+    p.say("  Markdown notes in a GitHub repository, e.g. the one claude-code-kit keeps.")
+    if not p.yes("Use one?", False):
+        return
+    while "/" not in (repo := p.ask("Notes repository, owner/repo")):
+        p.say("  Type it as owner/repo.")
+    env["KB_REPO"] = repo
+    if token := p.secret("GitHub token that can read it (fine-grained, Contents: read)"):
+        env["KB_GITHUB_TOKEN"] = token
+    env["KB_TOKEN"] = secrets.token_urlsafe(32)
+    env["_COMPOSE_KB"] = "1"
+
+
 def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
     p.say("\n# How will you reach the assistant?")
     channels = p.choose("Channels", CHANNELS, ["siri"])
@@ -486,6 +504,7 @@ GROUPS = [
     ("Calendar", ["CALDAV_URL", "CALDAV_USERNAME", "CALDAV_PASSWORD"]),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
+    ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
 ]
 
@@ -532,7 +551,10 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     sections = ask_brief(p, env)
     ask_activities(p, env)
     ask_sources(p, env, sections)
+    if docker:
+        ask_knowledge(p, env)
     address = ask_access(p, env) if docker else None
+    env.pop("_COMPOSE_KB", None)
     env.pop("_COMPOSE_OLLAMA", None)
     env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
@@ -550,6 +572,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
             ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
             ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),
+            ("KB_GITHUB_TOKEN", "KB_REPO" in env),
         )
         if needed and key not in env
     ]

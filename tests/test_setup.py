@@ -34,6 +34,7 @@ ANSWERS = [
     "y",  # CalDAV
     "https://caldav.example.com",
     "someone",  # username
+    "",  # no knowledge base
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
@@ -113,13 +114,17 @@ NOTHING_ELSE = ["", "weather", "short", ""]
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
-    answers += ["n", "funnel", "agent", "scheduled"]  # no Home Assistant, access, name, channel
-    env, output = run_with(tmp_path, answers, ["", "tskey-secret"])
+    # No Home Assistant, a knowledge base, access, node name, channel.
+    answers += ["n", "y", "someone/notes", "funnel", "agent", "scheduled"]
+    env, output = run_with(tmp_path, answers, ["", "kb-github-secret", "tskey-secret"])
     assert env["LLM_PROVIDER"] == "ollama" and "LLM_API_KEY" not in env
     assert "LLM_BASE_URL" not in env  # set by compose/ollama.yml
     assert env["COMPOSE_FILE"] == (
         "docker-compose.yml:compose/tailscale.yml:compose/ollama.yml:compose/searxng.yml"
+        ":compose/kb.yml"
     )
+    assert env["KB_REPO"] == "someone/notes" and env["KB_GITHUB_TOKEN"] == "kb-github-secret"
+    assert env["KB_TOKEN"] not in output and "kb-github-secret" not in output
     assert env["WEB_SEARCH_BACKEND"] == "searxng" and len(env["SEARXNG_SECRET"]) == 64
     assert env["SEARXNG_SECRET"] not in output and "WEB_SEARCH_URL" not in env
     assert env["COMPOSE_PATH_SEPARATOR"] == ":"
@@ -132,14 +137,14 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "caddy", "", "agent.example.com", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
     assert "Still empty" not in output and "https://agent.example.com" in output
     assert env["WEB_SEARCH_ENABLED"] == "false" and "WEB_SEARCH_BACKEND" not in env
-    answers = ["", *START, "mistral", "m", "brave", *NOTHING_ELSE, "n", "cloudflare", "siri"]
+    answers = ["", *START, "mistral", "m", "brave", *NOTHING_ELSE, "n", "", "cloudflare", "siri"]
     (tmp_path / "other").mkdir()
     env, output = run_with(tmp_path / "other", answers, ["", "", ""])
     assert "LLM_API_KEY, TUNNEL_TOKEN, WEB_SEARCH_API_KEY." in output
@@ -159,7 +164,7 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb"}
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}

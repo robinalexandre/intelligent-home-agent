@@ -7,6 +7,7 @@ from intelligent_home_agent.tools.calendar import CalDavCalendar, build_calendar
 from intelligent_home_agent.tools.general import build_general_tools
 from intelligent_home_agent.tools.github import GitHub, build_github_tools
 from intelligent_home_agent.tools.home_assistant import EntityPolicy, build_home_assistant_tools
+from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledge_tools
 from intelligent_home_agent.tools.mail import ImapMailbox, build_email_tools
 from intelligent_home_agent.tools.outdoor import build_outdoor_tools
 from intelligent_home_agent.tools.surf import build_surf_tools
@@ -23,6 +24,7 @@ __all__ = [
     "EntityPolicy",
     "GitHub",
     "ImapMailbox",
+    "KnowledgeBase",
     "OpenMeteo",
     "ReminderRepo",
     "Router",
@@ -37,6 +39,7 @@ __all__ = [
     "build_general_tools",
     "build_github_tools",
     "build_home_assistant_tools",
+    "build_knowledge_tools",
     "build_outdoor_tools",
     "build_search_engine",
     "build_surf_tools",

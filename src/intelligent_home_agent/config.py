@@ -182,6 +182,10 @@ class Settings(BaseSettings):
     assistant_reminders_repo: str | None = None
     assistant_reminders_path: str = "reminders"
 
+    # --- Knowledge base (the kb container of compose/kb.yml, docs/knowledge.md) --------
+    kb_url: str | None = None
+    kb_token: SecretStr | None = None
+
     # --- Push notifications (ntfy, optional) -------------------------------------------
     # Full topic URL, e.g. https://ntfy.sh/some-long-random-topic or a self-hosted server.
     ntfy_url: str | None = None

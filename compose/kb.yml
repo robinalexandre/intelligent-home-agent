@@ -1,0 +1,33 @@
+# A knowledge base the agent can search: your Markdown notes, in a GitHub repository, indexed
+# (full text, meaning, links between notes) by the kb tool of claude-code-kit. See
+# docs/knowledge.md. Needs in .env: KB_TOKEN (a shared secret you generate), KB_REPO
+# (owner/repo of the notes) and KB_GITHUB_TOKEN (read access to that repository).
+# The first start downloads an embedding model of about 500 MB onto the volume.
+services:
+  agent:
+    environment:
+      KB_URL: http://kb:8800
+    networks: [default, kb]
+
+  kb:
+    build: https://github.com/robinalexandre/claude-code-kit.git#930a4934327deb3a7740259676d411233bf159ff:skills/kb/package
+    environment:
+      KB_TOKEN: ${KB_TOKEN:?Set KB_TOKEN in .env}
+      KB_REPO: ${KB_REPO:?Set KB_REPO in .env}
+      KB_GITHUB_TOKEN: ${KB_GITHUB_TOKEN:-}
+      KB_PULL_SECONDS: ${KB_PULL_SECONDS:-300}
+      # Only when the notes repository encrypts its folders with git-crypt.
+      KB_CRYPT_KEY: ${KB_CRYPT_KEY:-}
+    volumes:
+      - kb_data:/data
+    # The agent reaches it on a network with no way out; it fetches the notes on another.
+    networks: [kb, kb_egress]
+    restart: unless-stopped
+
+networks:
+  kb:
+    internal: true
+  kb_egress:
+
+volumes:
+  kb_data:

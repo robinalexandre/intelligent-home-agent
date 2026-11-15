@@ -29,6 +29,7 @@ from intelligent_home_agent.tools import (
     EntityPolicy,
     GitHub,
     ImapMailbox,
+    KnowledgeBase,
     OpenMeteo,
     ReminderRepo,
     Router,
@@ -40,6 +41,7 @@ from intelligent_home_agent.tools import (
     build_general_tools,
     build_github_tools,
     build_home_assistant_tools,
+    build_knowledge_tools,
     build_outdoor_tools,
     build_search_engine,
     build_surf_tools,
@@ -152,6 +154,9 @@ def build_registry(
                 http, token, settings.assistant_reminders_repo, settings.assistant_reminders_path
             )
             registry.extend(build_assistant_reminder_tools(reminders, settings.timezone))
+    if settings.kb_url and settings.kb_token:
+        kb = KnowledgeBase(http, settings.kb_url, settings.kb_token.get_secret_value())
+        registry.extend(build_knowledge_tools(kb))
     if settings.web_search_enabled and settings.web_search_backend == "native":
         registry.extend(
             build_web_tools(
