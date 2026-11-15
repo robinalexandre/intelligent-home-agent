@@ -1,124 +1,265 @@
 # intelligent-home-agent
 
-A self-hosted assistant for the home: a language model as the brain, Home Assistant as
-the hands, and whatever voice or app you already use as the way in (Siri, Home Assistant
-Assist, Google Home or Alexa routines, push notifications, a scheduled task).
+A self-hosted personal assistant for your home and your day. A language model of your
+choice is the brain; Home Assistant, your mailbox, your calendar, your files and the web
+are what it can reach; Siri, a chat in WhatsApp or Telegram, a voice satellite or a push
+notification is how you talk to it. It runs on a machine of yours, and the rules that keep
+it safe are enforced by code, not by the prompt.
 
 ```
-Siri / HA Assist / routine / scheduler ──HTTPS──► intelligent-home-agent ──► LLM provider
-                                                        │
-                                                        ├─► Home Assistant (private network)
-                                                        └─► Open-Meteo, CalDAV, IMAP, OSM, GitHub
+ you                                    your server                          what it reaches
+┌───────────────────────────┐         ┌──────────────────────────┐         ┌─────────────────────────────┐
+│ Siri · HA Assist · Alexa  │──HTTPS─►│                          │────────►│ a model: Claude, OpenAI,    │
+│ Google Home · your client │         │  intelligent-home-agent  │         │ Mistral, Gemini, Ollama...  │
+├───────────────────────────┤         │                          │         ├─────────────────────────────┤
+│ WhatsApp · Telegram       │◄─polls──│  agent loop + tools      │────────►│ Home Assistant, devices     │
+├───────────────────────────┤         │  rules enforced in code  │         │ mail, calendar, drives      │
+│ push (ntfy)               │◄────────│  memory, tasks, journal  │         │ the web, your services      │
+└───────────────────────────┘         └──────────────────────────┘         └─────────────────────────────┘
 ```
 
 Plain commands ("turn off the living room") are best left to your voice assistant's own
 Home Assistant integration: instant and local. This agent handles what needs reasoning:
-multi-step requests, questions about the house, the weather for what you plan to do, and a
-spoken morning briefing and evening recap.
-
-## What it does
-
-- `POST /v1/ask`: one request in, one short reply out, with a few minutes of memory per
-  conversation so follow-ups work ("and the kitchen too"). The reply is written to be
-  spoken, shown as a notification or read in a chat (`display`), and the request can carry
-  files (a PDF, a photo, a text or office document) for the agent to read.
-- `POST /v1/briefing`: the morning briefing or evening recap, written to be read, optionally
-  pushed to your phone and desktop through ntfy. Made for schedulers.
-- A chat with it in WhatsApp (through a WAHA gateway you run) or Telegram (through a
-  bot of your own): write, send files and voice messages, approve what it proposes
-  with a tap, and get its briefings and the tasks it runs by itself there
-  ([docs/chat.md](docs/chat.md)).
-- `POST /v1/departure`: called when you leave home (a phone automation), it says what
-  is still unlocked, on or playing among the devices set up, and turns it off on your
-  yes ([docs/home-devices.md](docs/home-devices.md#leaving-home)).
-- Tools, each one on only when configured:
-  - Home Assistant: find devices, read states, call services, HA weather.
-  - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet
-    speaker, a Google TV / Android TV device (and, with its screen read over ADB,
-    finding and starting a film or an episode inside an app), an Apple TV and HomePods,
-    a Nuki smart lock, Netatmo cameras and sensors, a PetKit feeder and litter box
-    ([docs/home-devices.md](docs/home-devices.md)).
-  - Weigh-ins from a Withings scale, said only when you ask
-    ([docs/health.md](docs/health.md)).
-  - Parcels on their way, noted when a shipping email is read.
-  - Weather at home or anywhere (Open-Meteo, no key).
-  - Outdoor activities: wind sports per spot (strength, gusts, direction), surf per beach
-    (waves, period, wind effect, tides), and weather windows for everything else
-    (cycling, running, hiking, skiing, climbing, golf, or just "I go out a lot"); the
-    wind measured right now near your spots, and a message when a good window is coming
-    for what you do ([docs/outdoor.md](docs/outdoor.md)).
-  - Mailboxes (IMAP), calendars (CalDAV) and contacts' birthdays (CardDAV), with any
-    provider that offers them: read-only by default; when you allow it, email
-    drafts, flags and filing into your folders, and new calendar events. It never
-    sends or deletes an email ([docs/mail-calendar.md](docs/mail-calendar.md)).
-  - When to leave for an appointment (driving time from home, OpenStreetMap).
-  - GitHub pull requests waiting for you, and reminders left with a coding assistant.
-  - Tasks it runs by itself and sends as a push: a reminder at a time, a check every
-    week, the briefing each morning; silent when there is nothing new. And, in a
-    GitHub repository of yours, notes for your coding sessions (reminders, handoff
-    notes), your repositories read-only, and the known flaws in their dependencies
-    ([docs/tasks.md](docs/tasks.md)).
-  - Your servers at a hosting provider (Hostinger, Hetzner Cloud): state, metrics,
-    backups, Docker projects and their logs; a restart, a snapshot or a deployment on
-    your yes ([docs/hosting.md](docs/hosting.md)).
-  - Connectors: any service that has an MCP server, such as your bank or your hosting
-    provider, read freely and changed only on your yes
-    ([docs/connectors.md](docs/connectors.md)).
-  - For people who code, off by default: coding jobs handed to Claude Code, which
-    works on one of your GitHub repositories on its own and opens a pull request
-    ([docs/jobs.md](docs/jobs.md)); and a nightly review of the agent's own requests
-    that proposes fixes on your private copy of this repository
-    ([docs/review.md](docs/review.md)).
-  - Your own notes (a knowledge base in a GitHub repository), searched before it says it
-    doesn't know: see [docs/knowledge.md](docs/knowledge.md).
-  - File drives through rclone (Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, an
-    S3 bucket and more, several at once): browse, search by name and by what the files
-    say, read, and file things away without ever replacing a file: see
-    [docs/drives.md](docs/drives.md).
-  - Web search with any model, in a separate model request that only sees the query.
-  - Documents and pictures ([docs/documents.md](docs/documents.md)): PDFs it writes
-    (a letter, a statement, a summary) on A4 or US Letter, PDF forms filled, pages
-    extracted and merged, diagrams drawn, animations; and, with a key of your own,
-    pictures and clips from an image model, and calculations in a sandbox.
-  - Memory: facts you tell it to remember and the steps of jobs that worked, in Markdown
-    files you can edit (on the agent's disk, or in a GitHub repository of yours); the
-    alerts you turned down; a search of your past conversations
-    ([docs/memory.md](docs/memory.md)).
-  - Public web pages and documents, read from site to site; never an address inside your
-    network, and after private content only your country's public-service sites.
-  - Sites behind your login, in a real Chrome next to the agent: you log in yourself
-    from a link, it then opens pages, clicks and downloads (a certificate, a
-    statement, an invoice); optionally pages as seen from another country, through
-    a VPN subscription ([docs/browser.md](docs/browser.md)).
-  - Investigations of a photo, a document, a link or a site: metadata (EXIF, author,
-    dates), a domain's age and registrar, archives, certificates, places on
-    OpenStreetMap, reverse image search links. Never to identify a private person. See
-    [docs/web.md](docs/web.md) for the three.
-  - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
-  - If you use Apple devices, and only if you want it: your Apple Reminders read, added,
-    changed and ticked (repeating ones too), your Notes searched and read, your devices
-    found, through an iCloud login you type once and renew
-    ([docs/apple.md](docs/apple.md)).
-- The briefing and recap follow your settings: which sections, how detailed the weather,
-  which activities. The language of the replies and of the few fixed strings is a setting
-  (English by default, French supported).
+multi-step requests, questions about the house and your day, a morning briefing, things to
+look up, read, file or prepare, and what you would like to be told without asking.
 
 ## Quick start
 
+With Docker, ten minutes:
+
 ```bash
-python3 scripts/setup.py              # asks a few questions, writes .env
+git clone https://github.com/robinalexandre/intelligent-home-agent.git
+cd intelligent-home-agent
+python3 scripts/setup.py              # a few questions, writes .env
 docker compose up -d --build
 curl -s localhost:8000/health
 ```
 
-**[Setup, step by step](docs/setup.md)** walks through every choice: where it runs (a
-home server, a Raspberry Pi, a VPS, with or without Docker), which model (Claude with an
-API key or on your Claude subscription, OpenAI,
-Mistral, Gemini, a local model with Ollama...), how it reaches Home Assistant, how you
-reach it (home network, Tailscale, Cloudflare Tunnel, your own domain) and how you talk
-to it.
+The wizard asks for the essentials (a name, a model, where you live, Home Assistant or
+not, how you reach it, how you talk to it), then offers the optional features in one menu
+you can leave empty. Run it again later to add one.
 
-### For development
+**[Setup, step by step](docs/setup.md)** walks through every choice with its alternatives:
+where it runs (a home server, a Raspberry Pi, a VPS, with or without Docker), which model
+(Claude with an API key or on your Claude subscription, OpenAI, Mistral, Gemini, a local
+model with Ollama...), how it reaches Home Assistant, how you reach it (home network,
+Tailscale, Cloudflare Tunnel, your own domain) and how you talk to it. Then one line per
+feature you can add.
+
+## What it does
+
+Everything is off until you configure it, and the assistant only knows about what is on.
+
+**The basics**, with nothing but a model:
+
+- Answers questions, with a few minutes of memory per conversation so follow-ups work, and
+  hours in a chat. Replies are written to be spoken, shown as a notification or read in a
+  chat. English by default, French supported.
+- Reads files you send (PDF, photo, text, office documents).
+- Weather at home or anywhere (Open-Meteo, no key), web search, public web pages.
+- A morning briefing and an evening recap, from the sources you set up.
+- Remembers what you tell it to remember, in a Markdown file you can edit.
+
+**Talking to it** ([setup, step 5](docs/setup.md#5-talking-to-it)):
+
+- Siri Shortcuts ([docs/siri-shortcut.md](docs/siri-shortcut.md)), Home Assistant Assist,
+  Google Home and Alexa routines, ntfy push, a scheduler, your own client over HTTP
+  ([docs/integrations.md](docs/integrations.md)).
+- A chat in WhatsApp (through a WAHA gateway you run) or Telegram (a bot of your own):
+  write, send files and voice messages, approve what it proposes with a tap
+  ([docs/chat.md](docs/chat.md)).
+
+**Home devices**
+
+- Home Assistant: find devices, read states, call services.
+- Without Home Assistant: Philips Hue, a Devialet speaker, a Google TV / Android TV
+  device, an Apple TV and HomePods, a Nuki lock, Netatmo cameras and sensors, a PetKit
+  feeder and litter box, a connected car (an Audi so far, through the myAudi app's
+  unofficial API); what is still on or unlocked when you leave home
+  ([docs/home-devices.md](docs/home-devices.md)).
+- Weigh-ins from a Withings scale, said only when you ask ([docs/health.md](docs/health.md)).
+
+**Mail and calendar** ([docs/mail-calendar.md](docs/mail-calendar.md))
+
+- Mailboxes (IMAP), calendars (CalDAV), contacts' birthdays (CardDAV), with any provider
+  that offers them: read-only by default; when you allow it, email drafts, flags, filing,
+  and new events. It never sends or deletes an email.
+- When to leave for an appointment (OpenStreetMap), parcels noted from shipping emails.
+
+**Files and documents**
+
+- File drives through rclone: Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, S3...
+  browsed, searched by name and by content, read and filed, never overwritten
+  ([docs/drives.md](docs/drives.md)).
+- PDFs written, forms filled, pages extracted, diagrams drawn; with a key of your own,
+  pictures from an image model and calculations in a sandbox
+  ([docs/documents.md](docs/documents.md)).
+
+**The web** ([docs/web.md](docs/web.md))
+
+- Search with any model, public pages and documents read from site to site,
+  investigations of a photo, a link or a site from public registries.
+
+**Memory and knowledge**
+
+- Facts, procedures that worked, alerts you turned down, a searchable journal of past
+  conversations ([docs/memory.md](docs/memory.md)).
+- Your own Markdown notes, searched before it says it doesn't know
+  ([docs/knowledge.md](docs/knowledge.md)).
+
+**Tasks and alerts** ([docs/tasks.md](docs/tasks.md))
+
+- Tasks it runs by itself: a reminder at a time, a check every week, the briefing each
+  morning; silent when there is nothing new.
+- GitHub: pull requests waiting for you, your repositories read, notes left for your
+  coding sessions.
+
+**Connectors and hosting**
+
+- Any service with an MCP server (a bank, an accounting tool, a cloud provider), read
+  freely and changed only on your yes ([docs/connectors.md](docs/connectors.md)).
+- Your servers at Hostinger or Hetzner Cloud: state, metrics, logs; a restart or a
+  snapshot on your yes ([docs/hosting.md](docs/hosting.md)).
+
+**Apple apps** ([docs/apple.md](docs/apple.md))
+
+- Apple Reminders read and written, Notes read, devices found with Find My.
+
+**Remote browser** ([docs/browser.md](docs/browser.md))
+
+- Sites behind your login, in a real Chrome next to the agent: you log in yourself from a
+  link, it then opens pages, clicks and downloads (a statement, an invoice).
+
+**Coding jobs and nightly review**, for people who code
+
+- A fix or a feature on one of your repositories, done by Claude Code, ending in a pull
+  request, and every Claude Code session of that container followed and answered
+  through the agent ([docs/jobs.md](docs/jobs.md)); a nightly review of the agent's own
+  requests
+  ([docs/review.md](docs/review.md)).
+
+**Outdoor** ([docs/outdoor.md](docs/outdoor.md))
+
+- Wind per spot, surf per beach, a dry window for a ride, a run or a hike; the wind
+  measured now; a message when a good window is coming.
+
+## Security model
+
+The agent reads text written by other people (emails, web pages, documents) and can act
+(lights, locks, drafts, files). The rules that keep one from driving the other are in the
+code (`tools/base.py`), not only in the prompt, and hold whatever the model is told.
+
+- **Authentication.** Every endpoint needs the bearer token, compared in constant time,
+  except `/health`, a picture's short-lived link (below) and the coder's permission
+  endpoint, which takes the coder's own token.
+- **What the agent sees of the home.** Only Home Assistant entities in
+  `HA_EXPOSED_DOMAINS`, never a denylisted one. A service can only target entities of its
+  own domain, and targets can't be smuggled in through `data`.
+- **Taints.** A request is *tainted* once it has read content written by others: private
+  content (an email, a calendar event, a file from a drive, an account, a note), a web
+  page, a web search answer, or a file you sent. From the next batch of tool calls on,
+  every tool that acts or writes is held back for the rest of that request, so injected
+  text can't trigger an action.
+- **Your go, on exactly what you were shown.** A held-back action is not lost: it is
+  parked with its exact arguments, and the reply ends with a numbered list written by the
+  code, not by the model:
+
+  ```
+  Waiting for your go ("yes", or "yes except 2"):
+  1. Search the web for "bakery opening hours" and carry on
+  2. My Bank: create_client {"name": "Acme"}
+  ```
+
+  It runs only when your next message agrees, in a request that has read nothing else.
+  Nothing read in between can change what it does; what was never listed can't run; it is
+  forgotten with the conversation. In a chat the list is a choice you tick.
+- **Some actions always wait**, even in a clean request: a connector's write, a
+  deployment, opening a door without proof, turning a camera's monitoring off, a plan of
+  several steps. Home Assistant actions on `HA_SENSITIVE_DOMAINS` (locks, alarms, covers)
+  need your yes in a *later* message: the model can't confirm for itself.
+- **What destroys or runs later.** What deletes only happens on your own message. A task
+  is run later with nobody watching, so one is only scheduled in a request that read
+  nothing written by others (else it waits for your go, shown word for word). A
+  repeating task starts as a request that read others' content: it reads and reports,
+  and neither searches the web nor writes unless it runs *fresh*. What a task would do
+  waits for your go in the chat, or is left out when its report goes by push.
+- **What leaves the house.** A web search query, an address opened, a prompt for an image
+  model are text that goes out. After private content was read, a search waits for your
+  go, and only your country's public-service sites and `WEB_TRUSTED_DOMAINS` still open.
+  In any request, a query that repeats a number, an email address, a long token or a run
+  of words from what the request holds is refused. Only public addresses are ever opened
+  (never the home network, a container or cloud metadata, checked after every redirect).
+- **What is kept.** After a tainted request, only the question, the reply and the names
+  of the tools used stay in the conversation; the private content is dropped, so it can't
+  steer later requests. The journal keeps neither the reply nor the tool arguments of
+  such a request. A request that fails is rolled back entirely.
+- **Memory.** A remembered fact comes back in every later request, so nothing is
+  remembered, forgotten or saved as a procedure after a read without your go, shown with
+  every word; passwords, keys and tokens are refused. Facts are given to the model as
+  data, not instructions.
+- **Secrets** stay in `.env` (mode 600 when written by the wizard, which never prints
+  them). Files the agent keeps are readable by its user only. The Siri Shortcut files hold
+  the token: don't share them.
+
+Each feature adds its own rules on top, described on its page:
+
+| Feature | In short |
+|---|---|
+| [Mail and calendar](docs/mail-calendar.md#what-the-agent-does) | Folders are opened read-only and nothing is marked read. Writing is off until you turn it on; even then no email is ever sent or deleted. |
+| [Home devices](docs/home-devices.md#safety) | A door opens only with proof only you have (an authenticator code, letters of a secret phrase) or your yes. What a lock's log, a camera, a scale report is your data: after reading it a search waits. |
+| [File drives](docs/drives.md#what-the-agent-does) | Reading a file taints like an email. No file is ever replaced; a deletion needs your own message and keeps a copy first. A drive can be read-only. |
+| [Web pages and investigations](docs/web.md) | After web content, the agent follows what pages put forward and plain addresses; a page that hides words for an assistant ends free navigation. A photo goes online for a reverse image search only if you sent it, without its metadata, for 15 minutes at an unguessable address. Never to identify a private person. |
+| [Documents](docs/documents.md#what-it-may-and-may-not-do) | PDFs and drawings are rendered from an allowlist that can load nothing. Code runs in the provider's sandbox, never on your machine. |
+| [Chat channels](docs/chat.md) | Only you reach the agent: one WhatsApp chat, or the Telegram private chats you listed. A forwarded or quoted message, a file, a group's messages are others' words. |
+| [Connectors](docs/connectors.md#what-the-agent-may-do) | Reading taints; a write always waits, shown with its exact arguments; with `writes: off` the write tools don't exist. |
+| [Hosting](docs/hosting.md#what-the-agent-may-and-may-not-do) | A fixed list of API paths. A restart needs your own clear request; a deployment always waits, shown whole. No deleting. |
+| [Apple apps](docs/apple.md) | The agent keeps a session, never the password. After a Find My read no new site opens and a search waits, so a position can't leave. |
+| [Remote browser](docs/browser.md#guards) | You type your passwords yourself, in a page only you reach. Clicks only run in a request that read nothing but that same site. Chrome can't reach private addresses. |
+| [Tasks and notes](docs/tasks.md#what-the-assistant-may-do-with-tasks) | Scheduled only in a clean request or on your go; only your own message changes or deletes one. |
+| [Coding jobs](docs/jobs.md#guardrails), [nightly review](docs/review.md) | The coder has none of the agent's secrets and can touch only what its GitHub token can. What its sessions say is data, and only your own message is passed to one. The review hands a day of your conversations to the coder, and only to a private repository. |
+| [Claude subscription](docs/subscription.md#what-claude-code-may-do-here) | Claude Code is used as the model only: its own tools are off, the agent's tools and rules apply. |
+
+What leaves your server, and to whom: [docs/deployment.md](docs/deployment.md#data-that-leaves-the-server).
+
+## Configuration
+
+Environment variables, usually in `.env`. The wizard writes the common ones,
+[.env.example](.env.example) lists all of them with a comment, and
+**[docs/settings.md](docs/settings.md)** is the full reference. The essentials:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `AGENT_API_TOKEN` | required | Bearer token every client sends. |
+| `LLM_PROVIDER` | `anthropic` | `anthropic`, `openai`, `mistral`, `gemini`, `groq`, `openrouter`, `ollama`, `lmstudio`, `openai-compatible`. |
+| `LLM_API_KEY` | required, except local servers and a subscription | The provider's key. |
+| `LLM_MODEL` | `claude-sonnet-5-5` with Anthropic, else required | It must support tool calling. |
+| `LLM_BASE_URL` | the provider's | An OpenAI-compatible server's address. |
+| `ENGINE`, `CLAUDE_CODE_OAUTH_TOKEN` | `api`, unset | `subscription`: Claude answers on your Claude plan ([docs/subscription.md](docs/subscription.md)). |
+| `ASSISTANT_NAME`, `USER_NAME` | `Assistant`, unset | What it calls itself, and you. |
+| `LANGUAGE`, `TIMEZONE` | `en`, `UTC` | `en` or `fr`; an IANA time zone. |
+| `HOME_LATITUDE`, `HOME_LONGITUDE`, `HOME_CITY`, `HOME_COUNTRY` | unset | Home: weather, travel time, local results. |
+| `HA_URL`, `HA_TOKEN` | local URL, unset | Home Assistant; no token means no home tools. |
+| `COMPOSE_FILE`, `EXTRAS` | the agent alone, `documents` | Docker: the files of `compose/` in use, and the optional parts built into the image. |
+| `NTFY_URL` | unset | Push channel. |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS` | unset | A Telegram chat. |
+| `WAHA_API_KEY`, `WHATSAPP_CHAT_ID` | unset | A WhatsApp chat (`compose/waha.yml`). |
+| `DATA_DIR` | `data` | Where the agent keeps what survives a restart (the `agent_data` volume in Docker). |
+
+### Model providers
+
+The agent loop and the tools speak one message format and call the model through a small
+interface (`LLMClient` in `llm.py`). Two clients are shipped: **Anthropic**, and
+**OpenAI-compatible** for every server that speaks the Chat Completions API (OpenAI,
+Mistral, Gemini, Groq, OpenRouter, Ollama, LM Studio, llama.cpp, vLLM, a gateway). With
+`ENGINE=subscription`, Claude Code answers on your Claude plan through the same tools and
+rules. A provider with another API is one class ([AGENTS.md](AGENTS.md)).
+
+A few features need something only some providers have, and say so: web search uses
+Anthropic's own tool with Claude and a search engine of your choice with the others; the
+code sandbox and reading scanned PDFs of a drive need Anthropic's API; coding jobs are run
+by Claude whatever model answers you.
+
+## Development
 
 ```bash
 python3.12 -m venv .venv && . .venv/bin/activate
@@ -131,300 +272,59 @@ curl -s localhost:8000/v1/ask \
   -d '{"text": "Which lights are on?"}'
 ```
 
-Tests and lint: `pytest -q && ruff check . && ruff format --check .` (see
-[AGENTS.md](AGENTS.md)). Before exposing the agent, read [deployment](docs/deployment.md).
-
-## Configuration
-
-Environment variables or `.env`. `scripts/setup.py` writes the common ones;
-[.env.example](.env.example) lists all of them with comments.
-
-| Setting | Default | What it does |
-|---|---|---|
-| `AGENT_API_TOKEN` | required | Bearer token every client sends. |
-| `LLM_PROVIDER` | `anthropic` | Model provider. See "Model providers" below. |
-| `LLM_API_KEY` | required, except local servers | Provider API key (`ANTHROPIC_API_KEY` also accepted). |
-| `LLM_MODEL` | `claude-sonnet-5-5` for Anthropic, else required | Model for the conversation; it must support tool calling. |
-| `LLM_BASE_URL` | the provider's | Address of an OpenAI-compatible server. |
-| `ENGINE`, `CLAUDE_CODE_OAUTH_TOKEN` | `api`, unset | `subscription`: Claude answers through Claude Code on your own Claude plan instead of the API (`LLM_API_KEY` becomes optional). See [docs/subscription.md](docs/subscription.md). |
-| `SUBSCRIPTION_MODEL`, `SUBSCRIPTION_DISPLAYS` | `LLM_MODEL`, `chat` | The model the subscription answers with, and where (`voice`, `notification`, `chat`); the API answers the rest. |
-| `MAX_TOKENS`, `MAX_TOOL_ITERATIONS` | `1024`, `8` | Length of a spoken reply, and how many rounds of tools one request may take. |
-| `MAX_CHAT_TOKENS`, `MAX_CHAT_TOOL_ITERATIONS` | `4096`, `30` | The same for a reply read in a chat (`"display": "chat"`). |
-| `ASSISTANT_NAME` | `Assistant` | What the assistant calls itself; also closes a conversation ("thanks, Assistant"). |
-| `USER_NAME` | unset | What the assistant calls you. |
-| `LANGUAGE` | `en` | `en` or `fr`. |
-| `TIMEZONE` | `UTC` | IANA time zone. |
-| `HOME_LATITUDE`, `HOME_LONGITUDE` | unset | Home, for weather, travel time and outdoor forecasts. |
-| `HOME_CITY`, `HOME_COUNTRY` | unset | Local web search results. |
-| `BRIEF_SECTIONS` | all | Any of `calendar,travel,mail,pull_requests,reminders,weather,activities`. |
-| `WEATHER_DETAIL` | `short` | `off`, `short` (one sentence) or `detailed`. |
-| `OUTDOOR_ACTIVITIES` | none | e.g. `surf,wingfoil,cycling`; names or aliases from `activities.py`. |
-| `WIND_SPOTS`, `SURF_SPOTS`, `WIND_MODEL` | none, none, `best_match` | Spots for the wind and surf tools (JSON); see [docs/outdoor.md](docs/outdoor.md). |
-| `HOME_MOVES` | none | Where home is from a given day, when you move (JSON). |
-| `LIVE_WIND_SOURCES`, `LIVE_WIND_RADIUS_KM`, `METEOFRANCE_APPLICATION_ID` | none, `20`, unset | Wind measured now near the spots: any of `openwindmap`, `metar`, `meteofrance` (France, needs the id). |
-| `ACTIVITY_ALERTS`, `ACTIVITY_ALERTS_LEAD_HOURS`, `ACTIVITY_ALERTS_QUIET_START`, `ACTIVITY_ALERTS_QUIET_END` | none, `24`, `22`, `8` | Activities you are told about when a good window is coming, how early, and the silent hours. They need a chat or `NTFY_URL`. |
-| `HA_URL`, `HA_TOKEN` | local URL, unset | Home Assistant; no token means no home tools. |
-| `HA_EXPOSED_DOMAINS` | common domains | Only these entity domains are visible. |
-| `HA_SENSITIVE_DOMAINS` | `lock,alarm_control_panel,cover` | Need a spoken yes in a later request. |
-| `HA_ENTITY_DENYLIST` | empty | Entities the agent never sees. |
-| `HA_PROXY_URL` | unset | HTTP proxy to reach HA (VPN sidecar). |
-| `HUE_BRIDGE_URL`, `HUE_APP_KEY` | unset | Philips Hue lights, straight from the bridge. |
-| `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | unset, `70` | A Devialet Phantom speaker. |
-| `ANDROID_TV_HOST`, `ANDROID_TV_CLIENT_CERT`, `ANDROID_TV_CLIENT_KEY`, `ANDROID_TV_NAME`, `ANDROID_TV_MAX_VOLUME` | unset | A Google TV / Android TV device (`android-tv` extra); `ANDROID_TV_APPS`, `ANDROID_TV_CHANNEL_APP`, `ANDROID_TV_CHANNELS` add apps and live channels. |
-| `ANDROID_TV_NAVIGATOR`, `ANDROID_TV_NAVIGATOR_MODEL`, `ANDROID_TV_NAVIGATOR_ACTIONS` | `false`, a small model, `25` | Find and start something inside an app of that device: a helper model reads the screen over ADB and presses the remote's keys ([docs/home-devices.md](docs/home-devices.md)). |
-| `APPLE_DEVICES`, `APPLE_TV_COMPANION_CREDENTIALS`, `APPLE_TV_AIRPLAY_CREDENTIALS` | unset | Apple TV and HomePods (`apple` extra). |
-| `NUKI_API_TOKEN`, `UNLOCK_TOTP_SECRET`, `UNLOCK_PHRASE` | unset | A Nuki smart lock; a code or secret phrase asked before it opens. |
-| `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | unset | Netatmo cameras, weather station, thermostat. |
-| `PETKIT_USERNAME`, `PETKIT_PASSWORD`, `PETKIT_REGION`, `PETKIT_ALERTS` | unset, `true` | PetKit feeder and litter box (`petkit` extra); supplies pushed through ntfy. |
-| `DEPARTURE_CHECK` | `true` | `POST /v1/departure`: what is still unlocked or on when you leave. |
-| `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REFRESH_TOKEN` | unset | Weigh-ins from a Withings scale, read-only ([docs/health.md](docs/health.md)). |
-| `DELIVERIES_ENABLED` | `true` | With a mailbox: parcels noted from shipping emails. |
-| `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
-| `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
-| `WEB_PAGES_ENABLED`, `WEB_TRUSTED_DOMAINS` | `true`, empty | Reading public web pages; sites added to the public services of `HOME_COUNTRY`, the only ones opened after private content ([docs/web.md](docs/web.md)). |
-| `INVESTIGATIONS_ENABLED`, `PUBLIC_URL` | `false`, unset | Investigation tools; the agent's public address, for reverse image search. |
-| `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
-| `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
-| `BROWSER_PUBLIC_URL` (+ `compose/browser.yml`) | unset | Remote browser for sites behind your login; `BROWSER_GATE`, `BROWSER_DOMAIN` and the `AUTH_` settings say how its page is reached: [docs/browser.md](docs/browser.md). |
-| `VPN_SERVICE_PROVIDER`, `VPN_CONTROL_KEY` (+ `compose/vpn.yml`) | unset | Pages seen from another country, with any VPN provider gluetun supports. |
-| `ICLOUD_APPLE_ID` | unset | Apple Reminders, Notes and Find My through iCloud's web services, after a login by hand: [docs/apple.md](docs/apple.md). |
-| `ICLOUD_REMINDER_LISTS`, `ICLOUD_REMINDERS_DEFAULT_LIST` | all, the busiest | Reminders lists the agent sees, and where a new reminder goes. |
-| `ICLOUD_NOTES`, `ICLOUD_FIND_MY` | `true` | Set to `false` to leave Notes or Find My out. |
-| `CARDDAV_URL`, `CARDDAV_USERNAME`, `CARDDAV_PASSWORD` | unset | Contacts' birthdays in the agenda; the login defaults to CalDAV's. |
-| `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only; `"write": true` on an account allows drafts, flags and filing there. |
-| `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
-| `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
-| `GITHUB_REPOSITORIES` | `false` | Read the files of your repositories and check their dependencies for known flaws (OSV.dev); read-only. |
-| `NOTES_REPO`, `ASSISTANT_REMINDERS_PATH`, `HANDOFFS_PATH` | unset, `reminders`, `handoffs` | Notes for your coding sessions: `owner/repo` and its folders ([docs/tasks.md](docs/tasks.md)). `ASSISTANT_REMINDERS_REPO` still works. |
-| `NOTES_WRITE` | `false` | Let the agent leave reminders and handoff notes there and close reminders. |
-| `NOTES_CRYPT_KEY` | unset | Optional: the git-crypt key of that repository (`MEMORY_CRYPT_KEY` when it also holds the memory). |
-| `TASKS_STORE` | `local` | Where the tasks the agent runs by itself are kept: `local` (`DATA_DIR/tasks`), `github` (a folder of `NOTES_REPO`) or `off`. They need a chat channel or `NTFY_URL`. |
-| `TASKS_PATH`, `TASKS_POLL_SECONDS` | `tasks`, `60` | The folder (in a repository: `<assistant>/tasks`) and how often it is checked. |
-| `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT` | unset | Send the briefing and the recap every day at that time (`07:30`). |
-| `HOSTING_PROVIDER`, `HOSTING_API_TOKEN` | unset | Your servers at `hostinger` or `hetzner`: read freely, restarted, snapshotted or deployed to on your yes ([docs/hosting.md](docs/hosting.md)). |
-| `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
-| `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR` | `true`, `auto`, DejaVu | PDFs, forms and drawings ([docs/documents.md](docs/documents.md)); paper `a4`, `letter` or by country; a folder of fonts. |
-| `EXERCISE_PHOTOS_ENABLED` | `false` | Exercise photos from a public-domain bank. |
-| `CODE_EXECUTION_ENABLED`, `CODE_EXECUTION_MODEL` | `false`, `LLM_MODEL` | Calculations and charts in the provider's sandbox (Anthropic only). |
-| `GENERATION_GEMINI_API_KEY`, `GENERATION_OPENAI_API_KEY` | unset | Pictures and clips from Google's or OpenAI's models, billed there; models, an OpenAI-compatible address and limits in `.env.example`. |
-| `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
-| `DRIVE_URL`, `DRIVE_PASSWORD`, `DRIVES` | unset, unset, `[]` | File drives through the rclone sidecar (`compose/drive.yml`): the drives as a JSON list of `name`, `remote`, and optionally `label`, `backend`, `read_only`, `content`. See [docs/drives.md](docs/drives.md). |
-| `DRIVE_INDEX_HOURS` | `24` | How old the index of file names may get. |
-| `DRIVE_TRASH_DAYS`, `DRIVE_TRASH_MAX_ITEM_MB`, `DRIVE_TRASH_MAX_TOTAL_MB` | `30`, `1024`, `5120` | The local copies of what the agent deletes from a drive. |
-| `DRIVE_CONTENT`, `DRIVE_OCR`, `DRIVE_OCR_MODEL` | `true`, `off`, a small model | Search inside the files; `DRIVE_OCR=model` also reads scanned PDFs (Anthropic only). |
-| `JOBS_RUNNER`, `CODER_TOKEN`, `JOBS_GITHUB_TOKEN` | `off`, unset, unset | Coding jobs: `claude_code` (the coder container of `compose/coder.yml`, on your Claude subscription) or `managed` (Anthropic Managed Agents, on the API). The other settings are in [docs/jobs.md](docs/jobs.md). They need `NTFY_URL`. |
-| `REVIEW_REPO`, `REVIEW_AT`, `REVIEW_ALLOW_PUBLIC` | unset, `05:30`, `false` | Nightly review: a coding job reads the day's journal and opens a pull request on your own private copy of this repository. Read [docs/review.md](docs/review.md) first. |
-| `REVIEW_LESSONS_REPO`, `REVIEW_LESSONS_PATH` | unset, `knowledge` | Optional: the review's lessons curated into your knowledge base's notes (needs the `curation` extra). |
-| `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`, for the tasks the agent runs by itself and for the activity alerts. |
-| `WAHA_URL`, `WAHA_API_KEY`, `WHATSAPP_CHAT_ID` | unset | WhatsApp chat through a WAHA gateway (`compose/waha.yml`): your number as `<digits>@c.us`. Also `AGENT_WAHA_SESSION` (a number of the agent's own), `WHATSAPP_READABLE_CHATS` (groups it may sum up), `WHATSAPP_MARKER`. See [docs/chat.md](docs/chat.md). |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS` | unset, empty | Telegram chat through a bot of your own; only the listed private chats reach the agent. |
-| `CHAT_VOTE_GRACE_SECONDS` | `5` | How long a one-tap answer in a chat can still be changed. |
-| `WHISPER_MODEL`, `WHISPER_LANGUAGES` | empty, `LANGUAGE` | Voice messages sent in a chat, transcribed on this machine (`voice` extra). |
-| `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
-| `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
-| `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
-| `JOURNAL_KEEP_DAYS` | `365` | Days the journal of requests is kept in `DATA_DIR/journal`; `0` turns it off (and the search of past conversations with it). |
-| `FILES_KEEP_DAYS` | `30` | Days the files of a chat are kept in `DATA_DIR/files`, so they survive a restart; `0`: memory only. |
-| `MEMORY_STORE` | `local` | Where the memory is kept: `local` (files in `DATA_DIR`), `github` (a repository) or `off`. See [docs/memory.md](docs/memory.md). |
-| `MEMORY_REPO` | unset | `owner/repo` for `MEMORY_STORE=github`; `GITHUB_TOKEN` must be allowed to write to it. |
-| `MEMORY_PATH`, `PROCEDURES_PATH` | `memory.md`, `procedures.md` | The two files; in a repository they default to a folder named after the assistant. |
-| `MEMORY_CRYPT_KEY` | unset | Optional: the git-crypt key of a repository that encrypts that folder. |
-
-### Outdoor activities
-
-List what you do (`OUTDOOR_ACTIVITIES`, free text in the setup script) and each activity
-gets the forecast it needs: wind per spot, surf per beach, a weather window for the rest.
-Spots, a home that moves, the wind measured now and its sources, and the alerts ("tell me
-when it's good for a ride") are in [docs/outdoor.md](docs/outdoor.md). To add an activity,
-see [AGENTS.md](AGENTS.md).
-
-### Coding-assistant reminders
-
-`get_assistant_reminders` reads one Markdown file per reminder from a GitHub repo, with a
-front matter of `title`, `on` (when it starts showing), `until` (last day), and optional
-`every`, `where`, `machine` and `group`. Any coding agent can write these files; with
-`NOTES_WRITE` the agent leaves and closes them too. The format, the handoff notes and
-the tasks that share it are in [docs/tasks.md](docs/tasks.md).
-
-### Model providers
-
-The agent loop, memory and tools speak one message format and call the model through a
-small interface (`LLMClient` in `llm.py`). Two clients are shipped:
-
-- **Anthropic** (`LLM_PROVIDER=anthropic`), the default; with `ENGINE=subscription`,
-  Claude Code answers on your Claude plan instead, through the same tools and rules, and
-  the API takes what it can't ([docs/subscription.md](docs/subscription.md));
-- **OpenAI-compatible**, for every server that speaks the Chat Completions API: `openai`,
-  `mistral`, `gemini`, `groq`, `openrouter`, local models with `ollama` or `lmstudio`, and
-  `openai-compatible` with `LLM_BASE_URL` for anything else (llama.cpp, vLLM, a gateway).
-
-[Setup, step 2](docs/setup.md#2-the-model) has the table. A provider with another API is
-one class that converts requests and responses (steps in [AGENTS.md](AGENTS.md)).
-
-Web search works with all of them: Anthropic runs its own server-side search tool; with
-the others the agent queries a search engine (DuckDuckGo, your SearXNG, Brave or Tavily)
-and the model you chose writes the answer from the results, in a request of its own.
-
-## Integrations
-
-Siri Shortcuts, Home Assistant Assist, Google Home and Alexa (through Home Assistant),
-ntfy push, and scheduled tasks (cron, Home Assistant, a chat or coding-assistant app):
-see [docs/integrations.md](docs/integrations.md) and [docs/siri-shortcut.md](docs/siri-shortcut.md).
-A chat in WhatsApp or Telegram: [docs/chat.md](docs/chat.md).
-
-## Security model
-
-The guardrails are enforced in code, not only in the prompt.
-
-- **Authentication**: every endpoint except `/health` (and a picture's short-lived link,
-  below) needs the bearer token, compared in constant time.
-- **Entity policy**: only entities in `HA_EXPOSED_DOMAINS` are visible, denylisted ones
-  never are. A service can only target entities of its own domain (no `light.turn_on` on a
-  lock), and targets can't be smuggled in through `data`.
-- **Confirmation in a later turn**: Home Assistant actions on sensitive domains are parked
-  and only run when the user says yes in a *later* message. The model can't confirm for
-  itself within the same request.
-- **Taints**: tools whose output is written by other people (emails, calendar events, pull
-  requests, assistant reminders, a connected account, a file you send, a web search
-  answer) mark the request as tainted. From the next tool batch on, tools flagged
-  `needs_clean_turn` (home control, any write) don't run for the rest of that request, so
-  injected text can't trigger actions. Travel time, which sends a destination out, then
-  only accepts a place read from the calendar in that request.
-- **Drives**: a file read from a drive, a folder listing or a search taints the request
-  like an email does, so text hidden in a document can't make the agent copy or delete
-  files. It never replaces a file (a taken name gets a numbered copy), deletes only on
-  your own message, and first keeps a copy of what it deletes. A drive can be read-only,
-  and rclone's API has no published port.
-- **Your go, on exactly what you were shown**: an action held back that way is not lost.
-  It is parked with its exact arguments, and the reply ends with a numbered list written
-  by the code, not by the model:
-
-  ```
-  Waiting for your go ("yes", or "yes except 2"):
-  1. Search the web for "bakery opening hours" and carry on
-  2. My Bank: create_client {"name": "Acme"}
-  ```
-
-  It runs only when your next message agrees, in a request that has read nothing else,
-  and never in a scheduled briefing. Nothing read in between can change what it does;
-  what was never listed can't run; it is forgotten with the conversation.
-- **Opening a door**: the model can never open one by itself. `unlock_door` asks for
-  proof only you have (the code of an authenticator app, or letters of a secret phrase
-  at positions drawn by the code, once, with a lockout after five wrong answers); when
-  no proof is set up it always waits for your go, even in a clean request. Turning a
-  camera's monitoring off always waits for your go too.
-- **Your own accounts**: what a lock's log, the cameras, the pet devices or the scale
-  report is yours, not public: after reading it, a web search in that request waits
-  for your go, so no query can carry it out. Weigh-ins are never brought up unasked
-  nor put in a briefing.
-- **iCloud apps**: the agent keeps a session to your iCloud account, never the
-  password; reminders and notes taint a request like an email, a reminder written after
-  a read waits for your go, and after a Find My read no new site opens and a search
-  waits, so a position can't leave.
-- **Web search**: a query is text that leaves the house. After private content was read
-  the search waits for your go like a write; in any request, a query that repeats a
-  number, an email address, a long token or a run of words from what the request holds
-  (earlier replies, tool results) is refused; at most three searches run per request.
-- **Web pages**: only public addresses open (never the home network, a container or
-  cloud metadata, checked again after every redirect and on the address really reached).
-  After web content, the agent follows what pages put forward, and a few sites of its own
-  with a plain address (a site and a short readable path, no parameters); after private content, only your country's
-  public-service sites and `WEB_TRUSTED_DOMAINS`, anything else waits for your go. A page
-  that hides words for an assistant is flagged and ends free navigation.
-- **Remote browser**: you type your passwords yourself, in a page only you reach (a
-  login page with a passkey or a one-time code, or your Tailscale network); the
-  agent never types one. Chrome reaches websites through a proxy that refuses
-  private addresses. Clicks and typing only run in a request that read nothing but
-  that same site; after private content it opens only public-service sites and the
-  sites you logged into.
-- **Investigations**: lookups go to public registries and archives, never to the site
-  investigated; after private content no GPS position and no DNS query goes out. A photo
-  is put online for a reverse image search only if you sent it, stripped of its metadata,
-  for 15 minutes at an unguessable address (the one endpoint besides `/health` that takes
-  no token).
-- **Lockdown of memory**: after a tainted request, only the question, the reply and the
-  names of the tools used stay in conversation memory; the private content is dropped, so
-  it can't steer later requests. A request that fails is rolled back entirely. The
-  journal keeps neither the reply nor the tool arguments of a tainted request.
-- **Tasks**: a task is run later with nobody watching, so the agent only schedules one
-  in a request that read nothing written by others (else it waits for your go, shown
-  word for word), and only your own message changes or deletes one. A repeating task
-  starts as a request that read others' content: it reports, and neither searches the
-  web nor writes, unless it runs *fresh*, without what earlier runs read. Notes left
-  in the notes repository follow the same rule, and closing or deleting one always
-  asks first. Keys and tokens are refused in both.
-- **Memory**: a remembered fact comes back in every later request, so nothing is
-  remembered, forgotten or saved as a procedure after a read or in a reply quoting a
-  message without your go, shown with every word; passwords, keys and tokens are refused.
-  Facts are given to the model as data, not instructions, and are among what a web search
-  query may not repeat. Saved chats and files are written readable by the agent's user
-  only.
-- **Servers**: the provider's token often opens the whole account, so the agent only
-  calls a fixed list of paths (servers, metrics, backups, firewalls, Docker projects).
-  What it reads there (logs, configs) taints the request. A restart or a snapshot runs
-  only on your own clear request and waits for your go after any read; a deployment
-  always waits, shown with its whole compose file and a warning for settings that give
-  a container power over the host. None of it runs from a scheduled task.
-- **Connectors**: reading from a connected service taints the request like an email. A
-  write never runs when asked, even in a clean request: it waits for your go as above,
-  shown with its exact arguments; with `writes: off` the write tools don't exist.
-- **Files**: a file you send is read as data written by someone else (it taints the
-  request), its name is reduced to a safe character set, and an office file that would
-  expand like a zip bomb is not opened.
-- **Documents and pictures**: a PDF or a drawing the agent writes is rendered on the
-  server from an allowlist: only layout tags, and only images already kept in the
-  conversation, so nothing in it can load a file or an address. Opening a kept file or
-  a form taints the request. A prompt for an image model is checked like a search
-  query, only pictures you sent or the agent made go along, and each request makes a
-  few at most. Code runs in the model provider's sandbox, never on your machine.
-- **Mail and calendar**: reading opens IMAP folders read-only and never marks an email
-  as read; CalDAV and CardDAV are only queried. Writing is off until you turn it on
-  (per mail account, and for the calendar). Even then no email is ever sent or
-  deleted: a draft waits in your mail app for you to send, filing only goes to
-  folders of your own, and a replaced draft goes to the trash. Flagging, filing and
-  adding an event wait for your go once the request read anything; changing or
-  removing a draft and creating a folder always do; filing never runs by itself in a
-  scheduled task. Each saved draft is noted under the reply by the code, with a
-  warning when it carries files after content written by others was read.
-- **Chat channels**: only you reach the agent through one. WhatsApp reads the one
-  chat you named; a Telegram bot drops everything that is not a private chat you
-  listed, before reading it. A message that quotes or forwards another, a file and
-  a group's messages are content written by others: what would act then waits for
-  your go, shown as a choice you tick, and only what was shown can run. WhatsApp
-  goes through an unofficial client (WAHA) whose volume is the account itself; the
-  Telegram token is kept out of logs. Voice messages are transcribed on your
-  machine. See [docs/chat.md](docs/chat.md).
-- **Coding jobs** (off by default): only your own message, in a request that read
-  nothing else, starts a job or writes to one; otherwise it waits for your go. The
-  coder runs in a container of its own with none of the agent's secrets, and can
-  touch what its GitHub token can, so scope that token. Its reports are data for the
-  agent. A permission prompt of Claude Code can only be allowed by your own yes.
-- **Nightly review** (off by default): it hands a day of the journal, your
-  conversations, to the coding job, and so to Anthropic and to the pull request it
-  opens. It only runs on a repository GitHub says is private, unless you say
-  otherwise ([docs/review.md](docs/review.md)).
-- **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
-  never prints them. The Siri Shortcut files hold the token: don't share them.
-
-## Project layout
+Tests and lint: `pytest -q && ruff check . && ruff format --check .`. How the code is
+laid out, the tool flags and how to add a feature, a provider or a chat channel:
+[AGENTS.md](AGENTS.md).
 
 ```
-src/intelligent_home_agent/   app, agent loop, prompts, settings, tools/
-scripts/                      setup.py (onboarding), build_shortcuts.py (Siri), mcp_login.py,
+src/intelligent_home_agent/   the app, the agent loop, prompts, settings, tools/
+scripts/                      setup.py (the wizard), build_shortcuts.py (Siri), mcp_login.py,
                               one login or pairing script per device that needs it
-compose/                      one file per way to reach the agent (Caddy, Tailscale...)
+compose/                      one Compose file per optional container or way to reach the agent
 coder/, agents/, environments/  the coding jobs' container, house rules and sandbox
-docs/                         setup step by step, deployment, integrations, Siri Shortcut
+docs/                         setup step by step, one page per feature, settings reference
 tests/                        pytest, no network
 ```
 
+## Not verified yet
+
+Most of the code was ported from a private installation where it runs daily, then made
+general (any provider, any language, any country). The test suite covers it without the
+network; no real service was reachable while porting. What was **never run against the
+real thing** from this repository, collected from the feature pages:
+
+- **Telegram**: written from the Bot API's documentation, tested against a fake only.
+- **WhatsApp**: this version ran only against a fake WAHA; `compose/waha.yml` was not started.
+- **Remote browser**: none of its Compose files (`browser*.yml`, `vpn.yml`, the Caddy and
+  tailnet gates) was started; they were checked as valid YAML only.
+- **Hetzner Cloud**: written from its documentation. Hostinger was used for real.
+- **File drives**: only iCloud Drive was run for real; every other service, several
+  drives at once and copies between drives ran against a simulated rclone.
+- **Mail and calendar**: written against iCloud and Gmail; Fastmail, Nextcloud and other
+  servers were not tried live.
+- **Apple Reminders, Notes, Find My**: not tried against a real iCloud account from this
+  repository.
+- **Measured wind**: the airport-report (METAR) reader is new and has not met the real
+  service.
+- **The TV navigator**: used on one Google TV projector with Claude; other models were
+  not tried on a real screen.
+- **The car**: ported from a setup with one Audi and one account; nothing was run
+  against other models or markets, and no other make exists yet.
+- **Not recorded**: runs against real services of the model providers other than
+  Anthropic, of the search engines (DuckDuckGo, SearXNG, Brave, Tavily), of an
+  OpenAI-compatible image server, of the Home Assistant, Google Home and Alexa recipes,
+  and a start from this repository of `compose/kb.yml`, `compose/drive.yml` and
+  `compose/coder.yml`.
+
+If you run one of these, an issue saying what worked and what didn't is welcome.
+
 ## Roadmap
 
-- [x] A second model provider (OpenAI-compatible endpoint, local models)
-- [x] Web search with providers other than Anthropic
+- [ ] Calendars and mailboxes that need OAuth (Google Calendar, Microsoft 365, Outlook.com)
+- [ ] Connectors for MCP servers that run as a local command
 - [ ] Optional: Home Assistant's MCP server instead of the REST tools
 - [ ] Package as a Home Assistant add-on
-- [ ] Rate limiting and request logs
+- [ ] Rate limiting
 
 ## License
 

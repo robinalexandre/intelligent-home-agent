@@ -29,6 +29,8 @@ services:
       CODER_MAX_BUDGET_USD: ${CODER_MAX_BUDGET_USD:-15}
       # The few words the coder adds to its reports (a restart, an interruption).
       CODER_LANGUAGE: ${LANGUAGE:-en}
+      # The model of the short relay turn that passes your answers to a session.
+      CODER_RELAY_MODEL: ${CODER_RELAY_MODEL:-claude-sonnet-5-5}
       # Remote Control (docs/jobs.md): its name in the Claude app, and whether every
       # repository the token reaches is kept cloned for it.
       CODER_RC_NAME: ${CODER_RC_NAME:-Home agent code}

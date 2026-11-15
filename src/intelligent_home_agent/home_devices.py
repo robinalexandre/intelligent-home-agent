@@ -3,7 +3,7 @@
 Each one is on when its settings are filled in. Devices on the home network are reached
 directly when the agent runs at home, or through ``HOME_PROXY_URL`` (a VPN sidecar's HTTP
 proxy, ``HA_PROXY_URL`` by default) when it runs elsewhere; cloud ones (Nuki, Netatmo,
-PetKit) go out directly.
+PetKit, the car's maker) go out directly.
 
 Three of them rest on unofficial libraries kept in optional extras (``petkit``,
 ``android-tv``, ``apple``): with the settings filled in but the extra missing, the device
@@ -29,6 +29,7 @@ from intelligent_home_agent.engine import NoApi
 from intelligent_home_agent.engines import subscription_engine
 from intelligent_home_agent.llm import LLMClient
 from intelligent_home_agent.tools.base import Tool
+from intelligent_home_agent.tools.car import CarAccount, build_car, build_car_tools
 from intelligent_home_agent.tools.devialet import Devialet, build_devialet_tools
 from intelligent_home_agent.tools.hue import Hue, build_hue_tools
 from intelligent_home_agent.tools.netatmo import Netatmo, NetatmoAuth, build_netatmo_tools
@@ -183,10 +184,23 @@ def build_home_device_tools(
             {k: v.get_secret_value() for k, v in credentials.items() if v},
         )
         tools.extend(build_apple_media_tools(AppleMedia(apple, proxy)))
+    # One proof for the door and the car: a code works once, whichever it opens.
+    codes = unlock_codes(settings)
     if settings.nuki_api_token:
         nuki = Nuki(http, settings.nuki_api_token.get_secret_value())
+        tools.extend(build_nuki_tools(nuki, settings.timezone, codes, language=language))
+    if settings.car_enabled:
+        account = CarAccount(
+            vin=settings.car_vin or "",
+            refresh_token=settings.car_refresh_token.get_secret_value(),
+            client_id=settings.car_client_id,
+            pin=settings.car_pin.get_secret_value() if settings.car_pin else None,
+            # The maker may rotate the refresh token on each use: the current one.
+            store=Path(settings.data_dir) / "car.json",
+        )
+        car = build_car(settings.car_provider, http, account)
         tools.extend(
-            build_nuki_tools(nuki, settings.timezone, unlock_codes(settings), language=language)
+            build_car_tools(car, settings.car_name, codes, settings.timezone, language=language)
         )
     if (
         settings.petkit_username

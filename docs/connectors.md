@@ -1,5 +1,13 @@
 # Connectors: your bank, your hosting provider, any service with an MCP server
 
+| | |
+|---|---|
+| **What it does** | Plugs in any service that has an MCP server (a bank, an accounting tool, a cloud provider): read freely, changed only on your yes. |
+| **What you need** | The server's HTTPS address and a login: an API token, OAuth client credentials, or a browser login done once with `scripts/mcp_login.py`. |
+| **Settings** | `MCP_SERVERS` (one line of JSON). The wizard does not ask for it. |
+| **Check it works** | `<name>_help` and `<name>_read` are in the startup log's tools; ask a question the service can answer. |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+
 Many services now publish an [MCP](https://modelcontextprotocol.io) server: banks and
 accounting tools, hosting and cloud providers, rental or project management, CRMs. The
 agent can use any of them that is reachable over HTTPS, so "what did I spend on hosting

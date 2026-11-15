@@ -38,6 +38,7 @@ src/intelligent_home_agent/
                     calls; engines.py builds one engine per model (docs/subscription.md)
   prompts.py        system prompt, built from what is configured
   i18n.py           every word the code says to the user, per language
+  ha_client.py      the Home Assistant REST client behind tools/home_assistant.py
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
   activity_alerts.py  a message when a good window is coming for an activity: the watch,
                     its tools, what it sends with main.tell_user (docs/outdoor.md)
@@ -63,6 +64,8 @@ src/intelligent_home_agent/
                     the Backend protocol; jobs_claude_code.py (the coder container) and
                     jobs_managed.py (Anthropic Managed Agents) are its two runners
   coder_approvals.py  Claude Code's permission prompts in the coder, asked to the user
+  coder_sessions.py   every Claude Code session of the coder (coder/sessions.py reads
+                    their transcripts): listed, answered, their news told to the user
   review.py         the nightly review: a quiet coding job over the day's journal
                     (docs/review.md); curation.py turns its lessons into notes
   leaks.py          keeps what a request holds out of text the model writes for the outside
@@ -75,7 +78,7 @@ src/intelligent_home_agent/
   notify.py         ntfy push
   shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,
-                    Apple TV and HomePods, Nuki, Netatmo, PetKit), each on with its
+                    Apple TV and HomePods, Nuki, Netatmo, PetKit, a car), each on with its
                     settings; unofficial libraries are optional extras
   departure.py      POST /v1/departure: what is still unlocked or on, fixes parked
   pet_alerts.py     the pet supplies watched and pushed through ntfy
@@ -86,13 +89,27 @@ src/intelligent_home_agent/
                          (TextFile: LocalFile, GitHubFile); procedures.py, turned_down.py
                          and past_conversations.py sit beside it (docs/memory.md)
   tools/            one module per capability, each with a build_*_tools() factory
-scripts/setup.py         interactive .env writer (stdlib only)
-compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE;
-                         browser*.yml, vpn.yml and browser/ are the remote browser
-                         (tools/browser.py, tools/vpn.py, docs/browser.md)
+scripts/setup.py         the wizard: interactive .env writer (stdlib only). A short
+                         essential path, then one menu of optional features (FEATURES,
+                         ask_features); run on an existing .env it adds to it
+scripts/                 build_shortcuts.py (Siri Shortcuts, macOS), mcp_login.py (a
+                         connector's browser login), jobs_setup.py (Managed Agents),
+                         browser-auth.sh (the remote browser's login page), and one login
+                         or pairing script per device that needs it
+compose/                 one Compose file per optional container or way to reach the
+                         agent, picked by COMPOSE_FILE (COMPOSE_ORDER in scripts/setup.py
+                         is their order); browser*.yml, vpn.yml and browser/ are the
+                         remote browser (tools/browser.py, tools/vpn.py, docs/browser.md)
 coder/                   the coder container (its own image, compose/coder.yml): Claude
-                         Code for the coding jobs; agents/coder.md holds its house rules
-scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
+                         Code for the coding jobs; agents/coder.md holds its house rules,
+                         environments/coder.yaml the Managed Agents sandbox
+scripts/update.sh        git pull and rebuild on the server, the coder left running
+                         unless it changed (docs/jobs.md)
+docs/setup.md            the guided path: six steps, then one line per optional feature
+docs/settings.md         every setting, in the order of setup.md and .env.example
+docs/<feature>.md        one page per feature, all starting with the same five-row table
+tests/                   pytest, no network; test_docs.py keeps the docs in step with
+                         config.py (settings, links, the pages' common start)
 ```
 
 ## Conventions
@@ -106,14 +123,19 @@ scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
   or the later-turn confirmation for sensitive domains, without a test that shows why.
 - There is one mechanism for "this waits for the user's go": the registry parks the call
   and `main.with_waiting` lists it under the reply. Don't build another one in a tool.
-- New settings go in `config.py`, `.env.example` (with a comment), and the configuration
-  table in README.md; ask for them in `scripts/setup.py` if a new user needs them.
-- A new way to deploy is a file in `compose/` that adds to `docker-compose.yml`, a choice
-  in `ACCESS` in `scripts/setup.py`, and a row in docs/setup.md.
+- New settings go in `config.py`, `.env.example` (with a comment, in its feature's
+  block) and `docs/settings.md`: `tests/test_docs.py` fails otherwise. Ask for them in
+  `scripts/setup.py` if a new user needs them.
+- A new way to reach the agent is a file in `compose/` that adds to `docker-compose.yml`,
+  its name in `COMPOSE_ORDER` and a choice in `ACCESS` in `scripts/setup.py`, and a row in
+  docs/setup.md, step 4.
 - New user-facing words go through `i18n.py` (English first, French kept up to date).
-- Test data stays fictional: `0.0, 0.0` or famous public places, names like "Alex",
-  `example.com` addresses.
-- Docs: plain and short; say what works and what doesn't.
+- The product is for anyone: nothing may assume one country, language, provider or
+  habit. Where several common ways exist, make it a setting and document the others.
+- Test data stays fictional: `0.0, 0.0` or famous public places, names like "Sam" or
+  "Jo", `example.com` addresses, `192.0.2.x` or `192.168.1.50` and up.
+- Docs: plain and short; say what works and what doesn't, and what was never run
+  against the real service.
 
 ## Tool flags
 
@@ -191,27 +213,42 @@ when it truly doesn't apply, and say so in the pull request.
 6. **`i18n.py`**: every word the code itself says to the user (a `describe` line, a
    message `main` sends), as a field of `Strings`, English first, French kept up to date.
    Text for the model (tool descriptions, `ToolError`, results) stays in English.
-7. **`.env.example`**: the settings with a comment, empty or commented out.
-8. **`README.md`**: a row in the configuration table, a bullet under "What it does", and
-   a bullet under "Security model" when the feature writes, sends data out or reads
-   content written by others.
-9. **`docs/<feature>.md`** when setting it up takes more than two settings: what it does,
-   how to get the credentials, what the agent may and may not do. Link it from the README.
-10. **`scripts/setup.py`**: a question in `ask_sources` (or a new `ask_<feature>` called
-    from `run`), the keys in `GROUPS` (and in `SECRET_KEYS` when secret).
-    `tests/test_setup.py` feeds the answers in order: add yours there.
+7. **`.env.example`** and **`docs/settings.md`**: every setting, with a comment, empty or
+   commented out, in the feature's block (both files follow the order of docs/setup.md).
+8. **`docs/<feature>.md`**: starts with the five-row table every page has (**What it
+   does**, **What you need**, **Settings**, **Check it works**, **Verified**), then how to
+   get the credentials and what the agent may and may not do. "Verified" says plainly
+   what was run against the real service and what was only tested against a fake. Add a
+   row for it in docs/setup.md under "Then add what you want", in its group.
+9. **`README.md`**: a bullet under "What it does", in its group; a row in the security
+   model's table when the feature writes, sends data out or reads content written by
+   others; a line under "Not verified yet" for what was never run for real. Settings do
+   not go in the README: only the essentials are listed there.
+10. **`scripts/setup.py`**, when a new user needs it: an `ask_<feature>(p, env)` function,
+    an entry in `FEATURES` (the one menu of optional features) and in the `steps` of
+    `ask_features`, the keys in `GROUPS` (and in `SECRET_KEYS` when secret). A sidecar is
+    `add_file(env, "<name>")`, an optional library `add_extra(env, "<extra>")`. Don't add
+    a question to the essential path. `tests/test_setup.py` feeds the answers in order
+    (`essentials(features="<feature>")`, then the feature's answers): add yours there.
 11. **`tests/test_<feature>.py`**: no network (`respx` for HTTP, `FakeLLM` for the model).
     Cover the handler, each refusal, and through `ToolRegistry.run` that a write parks
     after a read and runs through `run_proposals`. Add the tool names to
     `test_registry_only_has_configured_tools` in `tests/test_api.py` (absent when not
     configured) and to `ALL_TOOLS` in `tests/test_prompts.py`.
-12. **`pyproject.toml`** for a new dependency (with a comment saying what needs it), and
-    the `Dockerfile` or a file in `compose/` for a system package or a sidecar.
+12. **`pyproject.toml`** for a new dependency (with a comment saying what needs it; an
+    optional extra when it is heavy or niche, the feature staying off without it), and
+    the `Dockerfile` or a file in `compose/` for a system package or a sidecar (then its
+    name in `COMPOSE_ORDER`, `scripts/setup.py`).
 
-When porting from another codebase: rename the package, replace every example with a
-fictional one, translate comments and fixtures to English, move user-facing words to
-`i18n.py`, and call the model only through `LLMClient` (`response.content` is a list of
-dict blocks, never SDK objects).
+When the feature comes from another codebase, the same twelve steps apply, plus: rename
+the package, replace every example with a fictional one, translate comments and fixtures
+to English, move user-facing words to `i18n.py`, call the model only through `LLMClient`
+(`response.content` is a list of dict blocks, never SDK objects), turn what was
+hard-coded for one vendor or one country into a setting, and keep every security rule
+with its tests.
+
+The sections below are the same recipe for four particular kinds of feature: a channel
+for what the agent says by itself, a chat channel, a model provider, an outdoor activity.
 
 ## What survives a restart
 
@@ -223,6 +260,10 @@ Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/`
 `task-outbox.json` (which tasks ran, their last reports, what was sent).
 `jobs.json`, `progress-durations.json` and `review-done.json` (coding jobs, how long
 they took, the last night reviewed).
+`coder-sessions.json` (what was already told of the coder's sessions).
+`pet-alerts.json`, `icloud-web/` (the iCloud session), `whisper/` (the speech model),
+`claude/` (Claude Code's own files with `ENGINE=subscription`), `drive-trash/` (copies of
+what was deleted from a drive). docs/settings.md lists them for the user: add yours there.
 A feature that keeps a file follows the same pattern: written through a temporary file,
 mode 600, named by the code and never by what a client or a model sent. What must reach
 every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is
@@ -257,7 +298,7 @@ for the user go through `i18n.py`, its tests through `respx`.
 
 A server that speaks the OpenAI Chat Completions API needs no code: add it to
 `OPENAI_COMPATIBLE` in `llm.py` and to `MODELS` in `scripts/setup.py` (a test keeps the two
-in step). For another API:
+in step), and a row in the table of docs/setup.md, step 2. For another API:
 
 1. In `llm.py`, write a class with `async def create(self, **kwargs) -> LLMResponse`.
    It receives `model`, `max_tokens`, `system`, `tools` (`name`, `description`,

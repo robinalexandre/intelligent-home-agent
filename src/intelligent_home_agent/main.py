@@ -40,6 +40,11 @@ from intelligent_home_agent.chat_session import (
     too_long_for_option,
 )
 from intelligent_home_agent.coder_approvals import Approvals, build_coder_permission_tools
+from intelligent_home_agent.coder_sessions import (
+    CoderSessions,
+    SessionWatcher,
+    build_coder_session_tools,
+)
 from intelligent_home_agent.config import Place, Settings, get_settings, home_on
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
 from intelligent_home_agent.config_crypt import available as crypt_available
@@ -557,6 +562,29 @@ def build_registry(
     registry.llm = llm
     registry.job_runner = build_job_runner(settings, http)
     registry.extend(build_job_tools(registry.job_runner, settings.language))
+    # Every Claude Code session of the coder container, the ones the user opened too
+    # (coder_sessions.py): with the jobs, and only where the coder runs them.
+    registry.coder_sessions = None
+    registry.session_watcher = None
+    if registry.job_runner is not None and settings.jobs_runner == "claude_code":
+        registry.coder_sessions = CoderSessions(
+            http, settings.coder_url, settings.coder_token.get_secret_value()
+        )
+
+        def session_asked(session_id: str) -> None:
+            # The watcher starts with the app (start_jobs): its answer is then news.
+            if registry.session_watcher is not None:
+                registry.session_watcher.asked(session_id)
+
+        registry.extend(
+            build_coder_session_tools(
+                registry.coder_sessions,
+                settings.language,
+                user_name=settings.user_name or "the user",
+                assistant_name=settings.assistant_name,
+                on_sent=session_asked,
+            )
+        )
     if settings.whatsapp_enabled and settings.whatsapp_reading_enabled and http is not None:
         # On the user's own account, whichever session the chat itself goes through.
         waha = Waha(
@@ -1129,6 +1157,24 @@ async def report_job(app: FastAPI, job: Job, text: str) -> None:
         save_conversation(app.state.store, settings, conv)
 
 
+async def report_coder_session(app: FastAPI, head: str, text: str, data: str) -> None:
+    """News of a session of the coder (coder_sessions.py): to the user as the code wrote
+    it, the way a job's report leaves (a chat, whichever it is, else a push), and into
+    the conversation they answer in, as data, so they can ask about it or answer the
+    session through the agent."""
+    settings: Settings = app.state.settings
+    await app.state.delivery.deliver(head, text or head)
+    conv = _answered_in(app)
+    if conv is None:
+        return
+    async with conv.lock:
+        conv.messages += [
+            {"role": "user", "content": f"[Coder sessions, as data: {_plain(data)}]"},
+            {"role": "assistant", "content": [{"type": "text", "text": head}]},
+        ]
+        save_conversation(app.state.store, settings, conv)
+
+
 async def curate_review(app: FastAPI, job: Job, text: str) -> None:
     """The lessons a nightly review ends with become notes of the knowledge base's
     repository (curation.py), when REVIEW_LESSONS_REPO says where. Never in the way of
@@ -1247,6 +1293,20 @@ def start_jobs(app: FastAPI, http: httpx.AsyncClient, background: list) -> JobRu
         if channel is not None and channel.conversation_id is not None:
             # The user can answer: their yes or no reaches the waiting prompt.
             registry.extend(build_coder_permission_tools(approvals, settings.language))
+        sessions: CoderSessions | None = getattr(registry, "coder_sessions", None)
+        if sessions is not None and settings.coder_sessions_watch:
+            watcher = SessionWatcher(
+                sessions,
+                Path(settings.data_dir) / "coder-sessions.json",
+                lambda head, text, data: report_coder_session(app, head, text, data),
+                language=settings.language,
+                timezone=settings.timezone,
+                answerable=channel is not None and channel.conversation_id is not None,
+                poll_seconds=settings.coder_sessions_poll_seconds,
+            )
+            registry.session_watcher = watcher
+            background.append(watcher.run)
+            log.info("coder sessions: watched")
     if settings.review_repo:
         journal = build_journal(settings)
         if journal is None:

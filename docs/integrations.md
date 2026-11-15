@@ -1,5 +1,13 @@
 # Integrations
 
+| | |
+|---|---|
+| **What it does** | The agent's HTTP API and the clients that talk to it: Siri, Home Assistant Assist, Google Home, Alexa, ntfy push, schedulers. |
+| **What you need** | The agent reachable from the client ([setup.md, step 4](setup.md#4-reaching-the-agent)) and `AGENT_API_TOKEN`. |
+| **Settings** | `AGENT_API_TOKEN`; `NTFY_URL`, `NTFY_TOKEN` for push. A chat in WhatsApp or Telegram is in [chat.md](chat.md). |
+| **Check it works** | The `curl` lines of [setup.md, step 6](setup.md#6-check-update-back-up). |
+| **Verified** | Not recorded: this page does not say which of the recipes below (Home Assistant Assist, Google Home, Alexa, ntfy, schedulers) were run. Treat them as written from each product's documentation. |
+
 The agent is an HTTP API. Every integration below is a client of one of these endpoints,
 all behind `Authorization: Bearer <AGENT_API_TOKEN>`:
 
@@ -10,6 +18,8 @@ all behind `Authorization: Bearer <AGENT_API_TOKEN>`:
 | `GET /v1/files/{name}?conversation_id=...` | | A file of the conversation, e.g. one the agent made. |
 | `GET /v1/tasks/reports?since=...` | | What the tasks the agent ran by itself reported ([tasks.md](tasks.md)): the last 50, oldest first, each with `at`, `title`, `text`, `sent_by`. |
 | `POST /v1/reset?conversation_id=...` | | Forget a conversation now, with its saved copy and files. |
+| `POST /v1/departure` | `{"conversation_id": "...", "push": false}` | You just left home: what is still unlocked, on or playing ([home-devices.md](home-devices.md#leaving-home)). |
+| `GET /health`, `GET /health/ha` | | Is the agent up (no token needed); does it reach Home Assistant. |
 
 Both `ask` and `briefing` return `reply` and `actions` (things the phone should do, such
 as creating a reminder).
@@ -37,6 +47,7 @@ What works today, from most to least direct:
 | Home Assistant Assist | yes | yes | Home Assistant |
 | Google Home / Nest | no (see below) | yes, through Home Assistant | Home Assistant + Google Assistant integration |
 | Alexa | only with your own skill | yes, through Home Assistant | Home Assistant + Alexa integration |
+| WhatsApp, Telegram | yes, in writing | yes, and you can answer it | [chat.md](chat.md): not a client of this API, the agent polls the chat itself |
 | ntfy push | no | yes | ntfy app or web app |
 | Scheduled task (cron, chat app) | n/a | yes | something that can send an HTTPS request on a schedule |
 
@@ -175,7 +186,8 @@ and iOS and a web app with desktop notifications. Self-host it or use the public
 
 ## Scheduled tasks (cron, a chat or coding-assistant app)
 
-The agent can send the briefing by itself (`MORNING_BRIEFING_AT`, with ntfy), and run
+The agent can send the briefing by itself (`MORNING_BRIEFING_AT`, in a chat or through
+ntfy), and run
 other tasks you ask for: see [tasks.md](tasks.md). Without that, anything that can run
 on a schedule and send an HTTPS request can deliver the briefing:
 

@@ -1,5 +1,13 @@
 # Chat channels
 
+| | |
+|---|---|
+| **What it does** | A written conversation with the assistant in WhatsApp or Telegram: questions, files, voice messages, one-tap approvals; its briefings, tasks and alerts arrive there. |
+| **What you need** | Telegram: a bot you create with @BotFather, nothing else. WhatsApp: a WAHA gateway you run (`compose/waha.yml`), an unofficial client that WhatsApp's terms don't allow. |
+| **Settings** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`; `WAHA_API_KEY`, `WHATSAPP_CHAT_ID`; `WHISPER_MODEL` for voice messages; the wizard's question on how you talk to it. All of them: [below](#settings). |
+| **Check it works** | Write "hello" in the chat; the agent answers within a few seconds. The startup log says why a channel is off. |
+| **Verified** | WhatsApp: the code it comes from runs daily; this version only against a simulated WAHA, and `compose/waha.yml` was not started from this repository. Telegram: written from the Bot API's documentation, never run against Telegram ([below](#not-run-against-telegram)). |
+
 Talk to the assistant in writing from a messaging app: ask it things, send it files and
 voice messages, approve what it proposes with a tap, and get its briefings and the tasks
 it runs by itself there. Two apps are supported, both off until configured, and both can
@@ -18,7 +26,8 @@ run at once:
 | Reading your other chats | groups you list, on request | no |
 | Run against the real service | the code it comes from, daily; this version of it, not yet (below) | **no** (below) |
 
-`python scripts/setup.py` asks which one you want and writes the settings.
+`python3 scripts/setup.py` asks which one you want ("how will you talk to it?") and writes
+the settings.
 
 ## What works the same in both
 
@@ -57,7 +66,7 @@ run at once:
   answering when it stopped gets a line asking you to send it again.
 - **What the agent says by itself** goes to the chat first: the tasks it runs
   ([tasks.md](tasks.md)), the briefing and the recap at their hours, pet supplies
-  alerts. There you can answer a report and approve what a task proposes. With several
+  and activity alerts, coding jobs' reports. There you can answer a report and approve what a task proposes. With several
   channels, WhatsApp comes first, then Telegram, then ntfy if the chat can't be reached.
 - **From elsewhere into the chat**: `POST /v1/ask`, `/v1/briefing` and `/v1/departure`
   take `"deliver": "chat"` (the first channel) or a channel's name (`"whatsapp"`,

@@ -1,5 +1,13 @@
 # Scheduled tasks and the notes repository
 
+| | |
+|---|---|
+| **What it does** | Runs things by itself and tells you: a reminder at a time, a check every week, the briefing each morning. And, in a GitHub repository of yours, notes for your coding sessions. |
+| **What you need** | A chat channel or `NTFY_URL`, so it can reach you. For the notes: a GitHub token and a repository. |
+| **Settings** | `TASKS_STORE`, `MORNING_BRIEFING_AT`, `EVENING_RECAP_AT`; `GITHUB_TOKEN`, `NOTES_REPO`, `NOTES_WRITE`; the wizard's `briefing` and `github` items. All of them: [settings.md](settings.md#tasks-and-alerts). |
+| **Check it works** | The task tools are in the startup log's tools; ask "remind me in two minutes to stretch" and wait for the message. |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+
 Two things that go together but work apart:
 
 - **Tasks** the assistant starts by itself: a reminder at a time, a check every morning,
@@ -12,7 +20,7 @@ Two things that go together but work apart:
 Ask "remind me tomorrow at ten to call the plumber", "every Monday, tell me which
 invoices are unpaid" or "check twice a day whether my parcel moved". The assistant writes
 a task; every minute the agent looks at the tasks and runs the ones that are due, as if
-you had just sent the request. The reply goes out as a push notification.
+you had just sent the request. The reply arrives in your chat, or as a push notification.
 
 ### What it needs
 

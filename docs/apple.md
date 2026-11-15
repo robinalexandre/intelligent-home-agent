@@ -1,5 +1,13 @@
 # If you use Apple devices: Reminders, Notes and Find My
 
+| | |
+|---|---|
+| **What it does** | Apple Reminders read, added, changed and ticked; Apple Notes searched and read; your devices found with Find My. |
+| **What you need** | An iCloud account with Advanced Data Protection off, the `icloud` extra, and a login you type once in the agent's container (Apple ID password and 2FA code) and renew when Apple ends it. |
+| **Settings** | `ICLOUD_APPLE_ID`; optional `ICLOUD_REMINDER_LISTS`, `ICLOUD_REMINDERS_DEFAULT_LIST`, `ICLOUD_NOTES`, `ICLOUD_FIND_MY`; the wizard's `apple` item. |
+| **Check it works** | The login command prints `Logged in: N Reminders lists`; then ask "what are my reminders?". |
+| **Verified** | The code is the one that runs in the author's own installation. Nothing was tried against a real iCloud account from this repository ([below](#when-the-login-expires)). |
+
 Optional, and only useful with an iCloud account. Without it the agent still makes
 reminders on an iPhone: the Siri Shortcut creates them from the agent's `actions`
 ([siri-shortcut.md](siri-shortcut.md)) and sends the open ones with the briefing. This page
@@ -66,7 +74,7 @@ break now and then until the pin is raised.
 
 ## Setup
 
-`python scripts/setup.py` asks for this under "other devices" (choose `icloud`). By hand:
+`python3 scripts/setup.py` asks for this when you pick `apple` in its menu. By hand:
 
 1. Install the library. With Docker, add `icloud` to `EXTRAS` in `.env` (e.g.
    `EXTRAS=documents,icloud`) and rebuild; without Docker, `pip install ".[icloud]"`.

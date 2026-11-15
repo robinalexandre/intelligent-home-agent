@@ -292,6 +292,19 @@ class Settings(BaseSettings):
     # for the user's go in a later message.
     unlock_totp_secret: SecretStr | None = None
     unlock_phrase: SecretStr | None = None
+    # A connected car through its maker's cloud (tools/car.py, docs/home-devices.md).
+    # Off by default. CAR_PROVIDER names the make: "audi" (myAudi) is the only one so
+    # far, through the private API of the maker's app: unofficial, it may break, and
+    # the maker's terms may not allow it. scripts/audi_login.py writes the refresh
+    # token, the client id and the VIN. CAR_PIN (Audi: the S-PIN) allows locking and
+    # the heating; unlocking also needs the unlock codes above. CAR_NAME: how you call
+    # the car ("the Audi").
+    car_provider: Literal["", "audi"] = ""
+    car_vin: str | None = None
+    car_refresh_token: SecretStr | None = None
+    car_client_id: str | None = None
+    car_pin: SecretStr | None = None
+    car_name: str = ""
     # Netatmo cameras, weather station, thermostat (scripts/netatmo_login.py).
     netatmo_client_id: str | None = None
     netatmo_client_secret: SecretStr | None = None
@@ -627,6 +640,12 @@ class Settings(BaseSettings):
     jobs_model_simple: str = "claude-sonnet-5-5"
     jobs_model_normal: str = "claude-opus-5-5"
     jobs_model_complex: str = "claude-fable-5-1"
+    # claude_code: every Claude Code session of the coder is listed and can be answered
+    # through the agent (the ones you open through Remote Control too). With the watch
+    # on, you are told when one finished its work or asks something, and when a restart
+    # of the container cut sessions; false keeps the tools and turns the news off.
+    coder_sessions_watch: bool = True
+    coder_sessions_poll_seconds: int = Field(60, ge=10)
 
     # --- Nightly review of the agent's own requests (docs/review.md) --------------------
     # Off by default. Your OWN copy of this repository ("owner/repo", one the jobs' token
@@ -889,6 +908,10 @@ class Settings(BaseSettings):
         if int(hours) > 23 or int(minutes) > 59:
             raise ValueError('a time of day is "HH:MM", e.g. 07:30')
         return f"{int(hours):02d}:{minutes}"
+
+    @property
+    def car_enabled(self) -> bool:
+        return bool(self.car_provider and self.car_vin and self.car_refresh_token)
 
     @model_validator(mode="after")
     def _hosting_is_usable(self) -> "Settings":

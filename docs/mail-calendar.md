@@ -1,11 +1,20 @@
 # Mail, calendar and contacts
 
+| | |
+|---|---|
+| **What it does** | Reads your mailboxes (IMAP), calendars (CalDAV) and contacts' birthdays (CardDAV). When you allow it: email drafts, flags, filing, and new calendar events. It never sends or deletes an email. |
+| **What you need** | A provider that offers these standards with an app password: iCloud, Gmail (mail), Fastmail, Nextcloud, most hosts. Not Outlook.com, Microsoft 365 or Google Calendar, which need OAuth. |
+| **Settings** | `MAIL_ACCOUNTS`, `CALDAV_URL` / `CALDAV_USERNAME` / `CALDAV_PASSWORD`, `CALDAV_WRITE`, `CARDDAV_URL`; the wizard's `mail` and `calendar` items. All of them: [settings.md](settings.md#mail-and-calendar). |
+| **Check it works** | `get_recent_emails` and `get_calendar_events` are in the startup log's tools; ask "what's on today?", "any email from my bank this week?". |
+| **Verified** | Written against iCloud (mail, calendar, contacts) and Gmail (mail). Fastmail, Nextcloud and other servers were not tried against the live services ([below](#what-was-tried)). |
+
 The agent reads your mailboxes over IMAP, your calendars over CalDAV and your contacts'
 birthdays over CardDAV. These are open standards: any provider that offers them with a
 password works. Reading is the default. Writing (drafts, flags, filing, new events) is a
 choice you make per mail account and for the calendar.
 
-`python scripts/setup.py` asks for all of this; the settings are described below for
+`python3 scripts/setup.py` asks for all of this (the `mail` and `calendar` items of its
+menu); the settings are described below for
 doing it by hand.
 
 ## What the agent does

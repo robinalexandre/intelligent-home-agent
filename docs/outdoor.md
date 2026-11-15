@@ -1,5 +1,13 @@
 # Outdoor activities
 
+| | |
+|---|---|
+| **What it does** | Looks at the forecast the way each of your activities needs it (wind per spot, waves per beach, a dry window for a ride or a hike), reads the wind measured now near your spots, and tells you when a good window is coming. |
+| **What you need** | Your home location; spots for wind sports and surf. No account: Open-Meteo. A free id for Météo-France's stations; a chat channel or `NTFY_URL` for alerts. |
+| **Settings** | `OUTDOOR_ACTIVITIES`, `WIND_SPOTS`, `SURF_SPOTS`, `LIVE_WIND_SOURCES`, `ACTIVITY_ALERTS`; the wizard's `outdoor` item. All of them: [settings.md](settings.md#outdoor). |
+| **Check it works** | `get_outdoor_forecast` (or `get_wind_forecast`, `get_surf_forecast`) is in the startup log's tools; ask "is it a good day for a ride?". |
+| **Verified** | Forecasts, beacons and Météo-France stations come from code written against the real services; the airport-report reader is new and has not met the real service ([below](#what-could-not-be-checked)). |
+
 The agent knows what you do outside and looks at the forecast the way that activity
 needs: wind per spot for a wind sport, waves per beach for surf, a dry and mild window
 for a ride, a run or a hike. Nothing here assumes a sport: it all follows the activities

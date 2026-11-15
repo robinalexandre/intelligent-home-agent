@@ -1,5 +1,13 @@
 # Memory
 
+| | |
+|---|---|
+| **What it does** | Keeps what you tell it to remember, the steps of jobs that worked, the alerts you turned down, a journal of requests it can search, and a chat across restarts. |
+| **What you need** | Nothing: files in `DATA_DIR` by default. Optional: a GitHub repository of yours for the two memory files. |
+| **Settings** | `MEMORY_STORE`, `MEMORY_REPO`, `JOURNAL_KEEP_DAYS`, `FILES_KEEP_DAYS`; the wizard's `memory` item. All of them: [settings.md](settings.md#memory-and-knowledge). |
+| **Check it works** | Say "remember that my accountant is Jo Martin", then in a new conversation "who is my accountant?"; the line is in `memory.md`. |
+| **Verified** | Ported from the private installation this project comes from; which parts ran there against the real service is not recorded on this page. In this repository: the test suite only, against simulated services. |
+
 What the agent keeps from one conversation to the next, and where.
 
 | What | Tools | Where |
