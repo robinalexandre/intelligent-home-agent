@@ -966,7 +966,11 @@ def test_departure_is_pushed_to_ntfy(make_client, respx_mock):
 
 
 def subscription_env(monkeypatch, **env):
+    from intelligent_home_agent import engines
+
     base_env(monkeypatch)
+    # As if the "subscription" extra were installed: nothing here starts Claude Code.
+    monkeypatch.setattr(engines, "sdk_installed", lambda: True)
     monkeypatch.setenv("ENGINE", "subscription")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test")
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")

@@ -32,6 +32,10 @@ src/intelligent_home_agent/
                     displays (voice, notification, chat), journal hook
   llm.py            provider interface (LLMClient, LLMResponse), the Anthropic client and
                     the OpenAI-compatible one (OpenAI, Mistral, Ollama...)
+  engine.py         Claude on a Claude subscription (ENGINE=subscription): a turn run by
+                    Claude Code through the Agent SDK, the tools still run by the registry;
+                    subscription_first and SubscriptionFirst for the server's own model
+                    calls; engines.py builds one engine per model (docs/subscription.md)
   prompts.py        system prompt, built from what is configured
   i18n.py           every word the code says to the user, per language
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
@@ -210,6 +214,26 @@ in step). For another API:
    `WEB_SEARCH_PROVIDERS` only if it can run the
    server-side search tool used by `tools/web.py`; otherwise web search stays off.
 3. Add a test with a fake vendor client covering a tool call round trip.
+
+## The subscription engine
+
+With `ENGINE=subscription` a turn runs in Claude Code (`engine.ClaudeCodeEngine`), which
+calls the tools back one at a time through `Agent._run_tool`: the registry and its flags
+decide exactly as on the API, so a tool needs nothing special. Two things to know:
+
+- A model call of the server's own (a search answer, a scan to read, a summary) should go
+  to the plan first: pass `SubscriptionFirst(subscription_engine(settings, model), llm)`
+  where an `LLMClient` is expected (plain prompts go to the plan, anything with tools or
+  files to the API), or call `subscription_first(engine, on_subscription, on_api)` when
+  the run needs one of Claude Code's own tools (`builtin=["WebSearch"]`, `["Read"]` with
+  `files=`). Those are held by `BuiltinGuard`; never allow another one without a guard
+  and a test.
+- Without an API key the API client is `engine.NoApi`, whose `create` raises `NoApiKey`:
+  a tool that calls the model turns it into a `ToolError`, and a tool that only works on
+  the API (it needs `llm.files`, a server-side tool) must stay unregistered then.
+
+Tests use a scripted stand-in for the SDK (`tests/test_engine.py`), so they pass without
+the `subscription` extra installed.
 
 ## Adding an outdoor activity
 

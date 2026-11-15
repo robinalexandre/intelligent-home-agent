@@ -63,6 +63,10 @@ devices = [
     "pyatv==0.18.0",
     "srptools==1.0.1",
 ]
+# Claude on a Claude subscription instead of the API (ENGINE=subscription,
+# docs/subscription.md): Claude Code through the Agent SDK, whose wheel brings the Claude
+# Code binary (some 400 MB). Without it the feature is absent and the API answers.
+subscription = ["claude-agent-sdk>=0.2"]
 # Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
 video = ["av>=11"]
 dev = [

@@ -84,7 +84,8 @@ curl -s localhost:8000/health
 ```
 
 **[Setup, step by step](docs/setup.md)** walks through every choice: where it runs (a
-home server, a Raspberry Pi, a VPS, with or without Docker), which model (Claude, OpenAI,
+home server, a Raspberry Pi, a VPS, with or without Docker), which model (Claude with an
+API key or on your Claude subscription, OpenAI,
 Mistral, Gemini, a local model with Ollama...), how it reaches Home Assistant, how you
 reach it (home network, Tailscale, Cloudflare Tunnel, your own domain) and how you talk
 to it.
@@ -117,6 +118,8 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `LLM_API_KEY` | required, except local servers | Provider API key (`ANTHROPIC_API_KEY` also accepted). |
 | `LLM_MODEL` | `claude-sonnet-5-5` for Anthropic, else required | Model for the conversation; it must support tool calling. |
 | `LLM_BASE_URL` | the provider's | Address of an OpenAI-compatible server. |
+| `ENGINE`, `CLAUDE_CODE_OAUTH_TOKEN` | `api`, unset | `subscription`: Claude answers through Claude Code on your own Claude plan instead of the API (`LLM_API_KEY` becomes optional). See [docs/subscription.md](docs/subscription.md). |
+| `SUBSCRIPTION_MODEL`, `SUBSCRIPTION_DISPLAYS` | `LLM_MODEL`, `chat` | The model the subscription answers with, and where (`voice`, `notification`, `chat`); the API answers the rest. |
 | `MAX_TOKENS`, `MAX_TOOL_ITERATIONS` | `1024`, `8` | Length of a spoken reply, and how many rounds of tools one request may take. |
 | `MAX_CHAT_TOKENS`, `MAX_CHAT_TOOL_ITERATIONS` | `4096`, `30` | The same for a reply read in a chat (`"display": "chat"`). |
 | `ASSISTANT_NAME` | `Assistant` | What the assistant calls itself; also closes a conversation ("thanks, Assistant"). |
@@ -202,7 +205,9 @@ front matter of `title`, `on` (when it starts showing), `until` (last day), and 
 The agent loop, memory and tools speak one message format and call the model through a
 small interface (`LLMClient` in `llm.py`). Two clients are shipped:
 
-- **Anthropic** (`LLM_PROVIDER=anthropic`), the default;
+- **Anthropic** (`LLM_PROVIDER=anthropic`), the default; with `ENGINE=subscription`,
+  Claude Code answers on your Claude plan instead, through the same tools and rules, and
+  the API takes what it can't ([docs/subscription.md](docs/subscription.md));
 - **OpenAI-compatible**, for every server that speaks the Chat Completions API: `openai`,
   `mistral`, `gemini`, `groq`, `openrouter`, local models with `ollama` or `lmstudio`, and
   `openai-compatible` with `LLM_BASE_URL` for anything else (llama.cpp, vLLM, a gateway).

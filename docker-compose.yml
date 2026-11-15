@@ -12,7 +12,8 @@ services:
       args:
         # Optional parts of the agent (the Dockerfile's EXTRAS). In .env, e.g.
         # EXTRAS=documents,devices adds the libraries of some home devices
-        # (docs/home-devices.md).
+        # (docs/home-devices.md), EXTRAS=documents,subscription Claude Code for a
+        # Claude subscription (docs/subscription.md).
         EXTRAS: "${EXTRAS:-documents}"
     env_file: .env
     ports:
