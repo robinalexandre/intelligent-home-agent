@@ -30,7 +30,7 @@ from intelligent_home_agent.home_devices import (
 )
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal
-from intelligent_home_agent.llm import LLMClient, build_llm_client
+from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.tools import (
@@ -42,6 +42,7 @@ from intelligent_home_agent.tools import (
     OpenMeteo,
     ReminderRepo,
     Router,
+    Tool,
     ToolRegistry,
     build_assistant_reminder_tools,
     build_calendar_tools,
@@ -59,7 +60,17 @@ from intelligent_home_agent.tools import (
     build_web_tools,
     build_wind_tools,
 )
+from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
+from intelligent_home_agent.tools.documents import FONT_DIR, build_document_tools, paper_for
+from intelligent_home_agent.tools.generation import (
+    OPENAI_URL,
+    Gemini,
+    OpenAI,
+    Provider,
+    build_generation_tools,
+)
+from intelligent_home_agent.tools.illustrations import build_illustration_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mcp_client import (
     MCPClient,
@@ -68,6 +79,8 @@ from intelligent_home_agent.tools.mcp_client import (
     StaticToken,
     TokenSource,
 )
+from intelligent_home_agent.tools.pdf_forms import build_pdf_form_tools
+from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -248,12 +261,73 @@ def build_registry(
                 language=settings.language,
             )
         )
+    registry.extend(build_document_side_tools(settings, http, llm))
     # The core's own tools, last: the writes waiting for the user's go (the registry parks
     # them whatever is configured) and the long results read part by part.
     registry.extend(build_proposal_tools(registry, language=settings.language))
     registry.extend(build_long_result_tools())
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
+
+
+def build_document_side_tools(
+    settings: Settings, http: httpx.AsyncClient, llm: LLMClient
+) -> list[Tool]:
+    """Documents, PDFs, drawings, generated pictures and the code sandbox
+    (docs/documents.md), each only when it is switched on and can work here."""
+    language = settings.language
+    tools: list[Tool] = []
+    if settings.documents_enabled:
+        fonts = Path(settings.pdf_font_dir) if settings.pdf_font_dir else FONT_DIR
+        paper = paper_for(settings.paper_size, settings.home_country)
+        tools += build_document_tools(
+            fonts, paper=paper, language=language, country=settings.home_country
+        )
+        tools += build_pdf_form_tools(fonts, language=language)
+        tools += build_pdf_page_tools()
+        bank = http if settings.exercise_photos_enabled else None
+        tools += build_illustration_tools(bank, fonts, language=language)
+    providers: list[Provider] = []
+    if key := settings.generation_gemini_api_key:
+        providers.append(
+            Gemini(
+                http,
+                key.get_secret_value(),
+                _model(settings.generation_gemini_image_model),
+                _model(settings.generation_gemini_video_model),
+            )
+        )
+    if settings.generation_openai_api_key or settings.generation_openai_base_url:
+        key = settings.generation_openai_api_key
+        providers.append(
+            OpenAI(
+                http,
+                key.get_secret_value() if key else "",
+                _model(settings.generation_openai_image_model),
+                _model(settings.generation_openai_video_model),
+                settings.generation_openai_base_url or OPENAI_URL,
+            )
+        )
+    providers.sort(key=lambda p: p.name != settings.generation_default_provider)
+    tools += build_generation_tools(
+        providers,
+        settings.generation_max_images,
+        settings.generation_max_videos,
+        language=language,
+    )
+    if settings.code_execution_enabled:
+        # Anthropic only: the other providers have no sandbox, so run_code stays off.
+        files = getattr(llm, "files", None) if settings.llm_provider == ANTHROPIC else None
+        if files is None:
+            log.warning("CODE_EXECUTION_ENABLED needs LLM_PROVIDER=anthropic: run_code is off")
+        model = settings.code_execution_model or settings.llm_model
+        tools += build_code_tools(llm, files, model, language=language)
+    return tools
+
+
+def _model(name: str) -> str:
+    """A model's name, or nothing when the setting switches that kind off."""
+    return "" if name.strip().casefold() in {"off", "none"} else name.strip()
 
 
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:

@@ -36,6 +36,16 @@ class Strings:
     written_line: str
     # Example of offering details in a chat, for the prompt.
     chat_detail_offer: str
+    # Names of the files the agent makes when the model gives none (tools/documents.py,
+    # pdf_forms.py, illustrations.py, generation.py): the user sees them in the chat.
+    document_title: str
+    filled_suffix: str
+    drawing_name: str
+    animation_name: str
+    image_name: str
+    video_name: str
+    # The two photos of an exercise: its start and end positions.
+    exercise_steps: tuple[str, str]
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -60,6 +70,13 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (may delete or overwrite)",
         written_line="Written: {summary}",
         chat_detail_offer='"Want the details?"',
+        document_title="Document",
+        filled_suffix="filled",
+        drawing_name="drawing",
+        animation_name="animation",
+        image_name="image",
+        video_name="video",
+        exercise_steps=("start", "end"),
     ),
     "fr": Strings(
         name="French",
@@ -82,6 +99,13 @@ LANGUAGES: dict[str, Strings] = {
         may_destroy=" (peut supprimer ou écraser)",
         written_line="Écrit : {summary}",
         chat_detail_offer='"Tu veux le détail ?"',
+        document_title="Document",
+        filled_suffix="rempli",
+        drawing_name="schéma",
+        animation_name="animation",
+        image_name="image",
+        video_name="vidéo",
+        exercise_steps=("départ", "arrivée"),
     ),
 }
 

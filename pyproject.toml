@@ -18,14 +18,35 @@ dependencies = [
     "python-pptx>=1.0",
     "python-docx>=1.1",
     "defusedxml>=0.7",
+    # Pictures checked before they go to an image model (tools/generation.py); already
+    # there, as python-pptx needs it.
+    "pillow>=10",
 ]
 
 [project.optional-dependencies]
+# PDFs written, forms filled, pages copied, drawings rendered (docs/documents.md). The
+# Docker image installs it; without it those tools are simply absent.
+documents = [
+    "fpdf2>=2.8.4",
+    # Filling PDF forms: pypdf merges and fills, pdfminer.six gives the text's positions.
+    "pypdf>=6.0",
+    "pdfminer.six>=20250506",
+    # Renders the drawings the agent writes in SVG (Rust, no system library, loads nothing
+    # from the network).
+    "resvg-py>=0.5",
+]
+# Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
+video = ["av>=11"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "respx>=0.21",
     "ruff>=0.6",
+    # The documents extra, so its tests run.
+    "fpdf2>=2.8.4",
+    "pypdf>=6.0",
+    "pdfminer.six>=20250506",
+    "resvg-py>=0.5",
 ]
 
 [build-system]

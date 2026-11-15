@@ -240,6 +240,42 @@ class Settings(BaseSettings):
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
 
+    # --- Documents, PDFs and pictures (docs/documents.md) ------------------------------
+    # The files of the conversation listed and opened, PDFs written, forms filled, pages
+    # copied, drawings rendered. Nothing leaves the machine. What needs the "documents"
+    # extra is simply absent without it.
+    documents_enabled: bool = True
+    # auto: US Letter where it is the usual paper (from HOME_COUNTRY), else A4.
+    paper_size: Literal["auto", "a4", "letter"] = "auto"
+    # A folder with the fonts to write PDFs and drawings in (a Regular and a Bold .ttf or
+    # .otf of one family). Empty: DejaVu Sans, which the Docker image installs.
+    pdf_font_dir: str | None = None
+    # Photos of gym and home exercises from a public-domain bank on GitHub.
+    exercise_photos_enabled: bool = False
+    # Calculations and charts run as Python in the model provider's sandbox, billed there.
+    # Anthropic only (it needs a code execution tool and a Files API).
+    code_execution_enabled: bool = False
+    # Empty: LLM_MODEL.
+    code_execution_model: str = ""
+
+    # --- Pictures and videos made by an AI model, billed by its provider ---------------
+    # Google (AI Studio key): Gemini's image model and Veo.
+    generation_gemini_api_key: SecretStr | None = None
+    generation_gemini_image_model: str = "gemini-2.5-flash-image"
+    generation_gemini_video_model: str = "veo-3.1-lite-generate-001"
+    # OpenAI (gpt-image, Sora), or with GENERATION_OPENAI_BASE_URL any server that speaks
+    # OpenAI's images API (a local one needs no key). A model set to "off": none of that
+    # kind, e.g. GENERATION_OPENAI_VIDEO_MODEL=off for a server that only makes pictures.
+    generation_openai_api_key: SecretStr | None = None
+    generation_openai_base_url: str | None = None
+    generation_openai_image_model: str = "gpt-image-2"
+    generation_openai_video_model: str = "sora-2"
+    # The provider used when the model names none; the first one configured when empty.
+    generation_default_provider: Literal["", "gemini", "openai"] = ""
+    # Most of each a single request may make.
+    generation_max_images: int = Field(6, ge=0)
+    generation_max_videos: int = Field(2, ge=0)
+
     # --- What the agent keeps on disk --------------------------------------------------
     # Where the agent keeps what must survive a restart (the journal, a connector's rotated
     # login); a volume in Docker.
