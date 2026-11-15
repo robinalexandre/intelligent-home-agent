@@ -305,6 +305,16 @@ def ask_search(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
             env["WEB_SEARCH_API_KEY"] = key
 
 
+def ask_web(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# Web pages and investigations (docs/web.md)")
+    if not p.yes("Let the assistant open public web pages (no logins, no account)?", True):
+        env["WEB_PAGES_ENABLED"] = "false"
+    if p.yes(
+        "Let it investigate a photo, a link or a site (public registries and archives)?", False
+    ):
+        env["INVESTIGATIONS_ENABLED"] = "true"
+
+
 def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
     """How clients reach the agent; returns the address they will use, when known."""
     p.say("\n# Where will clients (phone, speaker, Home Assistant) reach the agent from?")
@@ -332,6 +342,9 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
             p.say("  A domain name is needed.")
         env["AGENT_DOMAIN"] = domain
         address = f"https://{domain}"
+        if "INVESTIGATIONS_ENABLED" in env:
+            # Its public address: lets it put a photo online for a reverse image search.
+            env["PUBLIC_URL"] = address
         if access == "traefik":
             env["TRAEFIK_NETWORK"] = p.ask("Docker network Traefik shares with services", "proxy")
             env["TRAEFIK_CERTRESOLVER"] = p.ask("Traefik certificate resolver", "letsencrypt")
@@ -555,6 +568,7 @@ GROUPS = [
             "SEARXNG_SECRET",
         ],
     ),
+    ("Web pages and investigations", ["WEB_PAGES_ENABLED", "INVESTIGATIONS_ENABLED", "PUBLIC_URL"]),
     ("Assistant", ["ASSISTANT_NAME", "LANGUAGE", "TIMEZONE"]),
     ("Home", ["HOME_CITY", "HOME_COUNTRY", "HOME_LATITUDE", "HOME_LONGITUDE"]),
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
@@ -617,6 +631,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     ask_identity(p, env)
     ask_model(p, env, docker=docker)
     ask_search(p, env, docker=docker)
+    ask_web(p, env)
     ask_home(p, env, lookup)
     sections = ask_brief(p, env)
     ask_activities(p, env)

@@ -225,6 +225,21 @@ class Settings(BaseSettings):
     web_search_max_uses: int = 3
     web_search_results: int = 5
 
+    # --- Web pages and investigations (docs/web.md) -------------------------------------
+    # Opening public pages and downloading public documents (no logins). Private and
+    # internal addresses are always refused.
+    web_pages_enabled: bool = True
+    # After a request read emails, files or other private content, the only sites it can
+    # still open (a URL can carry data out) are the public services of HOME_COUNTRY
+    # (tools/web_pages.py, PUBLIC_SERVICES) plus these domains, subdomains included.
+    web_trusted_domains: CsvList = []
+    # Investigating a photo, a document, a link or a site from public registries and
+    # archives (RDAP, the Wayback Machine, crt.sh, OpenStreetMap, DNS): no key needed.
+    investigations_enabled: bool = False
+    # The agent's own public address (https://agent.example.com), when it has one: lets
+    # it put a photo the user sent online for a few minutes, for a reverse image search.
+    public_url: str | None = None
+
     # --- Calendar (CalDAV) -------------------------------------------------------------
     caldav_url: str | None = None
     caldav_username: str | None = None
@@ -285,6 +300,7 @@ class Settings(BaseSettings):
         "caldav_calendars",
         "brief_sections",
         "outdoor_activities",
+        "web_trusted_domains",
         mode="before",
     )
     @classmethod

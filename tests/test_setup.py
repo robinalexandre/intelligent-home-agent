@@ -15,6 +15,8 @@ ANSWERS = [
     "Europe/Paris",  # time zone
     "",  # provider: anthropic
     "claude-test",  # model
+    "",  # open public web pages
+    "",  # no investigations
     "Springfield",  # city
     "y",  # look it up
     "y",  # use it
@@ -99,6 +101,7 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
         assert secret not in output
     assert "LLM_API_KEY = (set)" in output
     assert "COMPOSE_FILE" not in env and "http://127.0.0.1:8000" in output
+    assert "WEB_PAGES_ENABLED" not in env and "INVESTIGATIONS_ENABLED" not in env
 
 
 def run_with(tmp_path, answers, secrets_typed):
@@ -114,9 +117,10 @@ def run_with(tmp_path, answers, secrets_typed):
     return env, "\n".join(printed)
 
 
-# Name, language, time zone; then after the model: no city, no sections, no activities.
+# Name, language, time zone; then after the model and the search: web pages, no
+# investigations, no city, no sections, no activities.
 START = ["", "en", "UTC"]
-NOTHING_ELSE = ["", "weather", "short", ""]
+NOTHING_ELSE = ["", "", "", "weather", "short", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
@@ -146,8 +150,11 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "", "", "caddy", "", "agent.example.com", "siri"]
+    # No web pages, investigations: with a domain, the agent knows its public address.
+    answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
+    assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
+    assert env["PUBLIC_URL"] == "https://agent.example.com"
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"

@@ -15,6 +15,7 @@ from intelligent_home_agent.tools.home_assistant import EntityPolicy, build_home
 from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledge_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mail import ImapMailbox, build_draft_tools, build_email_tools
+from intelligent_home_agent.tools.osint import Investigator, build_osint_tools
 from intelligent_home_agent.tools.outdoor import build_outdoor_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.surf import build_surf_tools
@@ -25,6 +26,11 @@ from intelligent_home_agent.tools.web import (
     build_search_engine,
     build_web_tools,
 )
+from intelligent_home_agent.tools.web_pages import (
+    WebPages,
+    build_web_page_tools,
+    trusted_domains,
+)
 
 __all__ = [
     "CalDavCalendar",
@@ -32,6 +38,7 @@ __all__ = [
     "EntityPolicy",
     "GitHub",
     "ImapMailbox",
+    "Investigator",
     "KnowledgeBase",
     "MergedCalendar",
     "OpenMeteo",
@@ -41,6 +48,7 @@ __all__ = [
     "ToolContext",
     "ToolError",
     "ToolRegistry",
+    "WebPages",
     "build_assistant_reminder_tools",
     "build_calendar_tools",
     "build_calendar_write_tools",
@@ -52,12 +60,15 @@ __all__ = [
     "build_home_assistant_tools",
     "build_knowledge_tools",
     "build_long_result_tools",
+    "build_osint_tools",
     "build_outdoor_tools",
     "build_proposal_tools",
     "build_search_engine",
     "build_surf_tools",
     "build_travel_tools",
     "build_weather_tools",
+    "build_web_page_tools",
     "build_web_tools",
     "build_wind_tools",
+    "trusted_domains",
 ]

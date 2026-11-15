@@ -21,6 +21,11 @@ dependencies = [
     "python-pptx>=1.0",
     "python-docx>=1.1",
     "defusedxml>=0.7",
+    # Investigations (tools/osint.py): a photo's metadata and the copy put online for a
+    # reverse image search, a PDF's author and dates, a site's DNS records.
+    "pillow>=10",
+    "pypdf>=6.0",
+    "dnspython>=2.6",
 ]
 
 [project.optional-dependencies]

@@ -44,6 +44,12 @@ spoken morning briefing and evening recap.
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - Web search with any model, in a separate model request that only sees the query.
+  - Public web pages and documents, read from site to site; never an address inside your
+    network, and after private content only your country's public-service sites.
+  - Investigations of a photo, a document, a link or a site: metadata (EXIF, author,
+    dates), a domain's age and registrar, archives, certificates, places on
+    OpenStreetMap, reverse image search links. Never to identify a private person. See
+    [docs/web.md](docs/web.md) for the three.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
@@ -112,6 +118,8 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | unset, `70` | A Devialet Phantom speaker. |
 | `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
 | `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
+| `WEB_PAGES_ENABLED`, `WEB_TRUSTED_DOMAINS` | `true`, empty | Reading public web pages; sites added to the public services of `HOME_COUNTRY`, the only ones opened after private content ([docs/web.md](docs/web.md)). |
+| `INVESTIGATIONS_ENABLED`, `PUBLIC_URL` | `false`, unset | Investigation tools; the agent's public address, for reverse image search. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
 | `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
 | `CARDDAV_URL`, `CARDDAV_USERNAME`, `CARDDAV_PASSWORD` | unset | Contacts' birthdays in the agenda; the login defaults to CalDAV's. |
@@ -175,8 +183,8 @@ see [docs/integrations.md](docs/integrations.md) and [docs/siri-shortcut.md](doc
 
 The guardrails are enforced in code, not only in the prompt.
 
-- **Authentication**: every endpoint except `/health` needs the bearer token, compared in
-  constant time.
+- **Authentication**: every endpoint except `/health` (and a picture's short-lived link,
+  below) needs the bearer token, compared in constant time.
 - **Entity policy**: only entities in `HA_EXPOSED_DOMAINS` are visible, denylisted ones
   never are. A service can only target entities of its own domain (no `light.turn_on` on a
   lock), and targets can't be smuggled in through `data`.
@@ -206,6 +214,17 @@ The guardrails are enforced in code, not only in the prompt.
   the search waits for your go like a write; in any request, a query that repeats a
   number, an email address, a long token or a run of words from what the request holds
   (earlier replies, tool results) is refused; at most three searches run per request.
+- **Web pages**: only public addresses open (never the home network, a container or
+  cloud metadata, checked again after every redirect and on the address really reached).
+  After web content, the agent follows what pages put forward, and a few sites of its own
+  with a plain address (a site and a short readable path, no parameters); after private content, only your country's
+  public-service sites and `WEB_TRUSTED_DOMAINS`, anything else waits for your go. A page
+  that hides words for an assistant is flagged and ends free navigation.
+- **Investigations**: lookups go to public registries and archives, never to the site
+  investigated; after private content no GPS position and no DNS query goes out. A photo
+  is put online for a reverse image search only if you sent it, stripped of its metadata,
+  for 15 minutes at an unguessable address (the one endpoint besides `/health` that takes
+  no token).
 - **Lockdown of memory**: after a tainted request, only the question, the reply and the
   names of the tools used stay in conversation memory; the private content is dropped, so
   it can't steer later requests. A request that fails is rolled back entirely. The

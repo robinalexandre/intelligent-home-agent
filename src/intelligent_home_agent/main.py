@@ -33,18 +33,21 @@ from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
+from intelligent_home_agent.shared_links import LINKS
 from intelligent_home_agent.tools import (
     CalDavCalendar,
     CardDavBirthdays,
     EntityPolicy,
     GitHub,
     ImapMailbox,
+    Investigator,
     KnowledgeBase,
     MergedCalendar,
     OpenMeteo,
     ReminderRepo,
     Router,
     ToolRegistry,
+    WebPages,
     build_assistant_reminder_tools,
     build_calendar_tools,
     build_calendar_write_tools,
@@ -55,13 +58,16 @@ from intelligent_home_agent.tools import (
     build_github_tools,
     build_home_assistant_tools,
     build_knowledge_tools,
+    build_osint_tools,
     build_outdoor_tools,
     build_search_engine,
     build_surf_tools,
     build_travel_tools,
     build_weather_tools,
+    build_web_page_tools,
     build_web_tools,
     build_wind_tools,
+    trusted_domains,
 )
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
@@ -276,6 +282,12 @@ def build_registry(
                 language=settings.language,
             )
         )
+    if settings.web_pages_enabled:
+        trusted = trusted_domains(settings.home_country, settings.web_trusted_domains)
+        registry.extend(build_web_page_tools(WebPages(trusted), language=settings.language))
+    if settings.investigations_enabled:
+        investigator = Investigator(http, nominatim_url=settings.nominatim_url)
+        registry.extend(build_osint_tools(investigator, settings.public_url))
     # The core's own tools, last: the writes waiting for the user's go (the registry parks
     # them whatever is configured) and the long results read part by part.
     registry.extend(build_proposal_tools(registry, language=settings.language))
@@ -465,6 +477,20 @@ def require_token(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
+
+
+@app.get("/s/{token}/{name}", include_in_schema=False)
+async def shared_image(token: str, name: str) -> Response:
+    """A picture put online for a reverse image search, while its link lasts: no bearer
+    token, as the search engines fetch it; the address itself is the secret."""
+    shared = LINKS.get(token)
+    if shared is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return Response(
+        shared.data,
+        media_type=shared.mimetype,
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, noarchive"},
+    )
 
 
 @app.get("/health/ha", dependencies=[Depends(require_token)])

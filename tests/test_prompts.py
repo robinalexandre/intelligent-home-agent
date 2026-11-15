@@ -25,6 +25,11 @@ ALL_TOOLS = {
     "get_outdoor_forecast",
     "create_reminder",
     "web_search",
+    "open_web_page",
+    "inspect_file",
+    "domain_lookup",
+    "osm_lookup",
+    "reverse_image_search",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 
@@ -81,6 +86,18 @@ def test_no_activities_and_no_tools_means_no_activity_paragraph():
     assert "Outdoor activities" not in text
     assert "Controlling the home" not in text
     assert "switched off" not in text
+
+
+def test_pages_and_investigations_are_only_mentioned_when_there():
+    text = prompt()
+    assert "open_web_page reads a public page" in text and "web_search or a site" in text
+    assert "work like an investigator" in text and "reverse_image_search puts it" in text
+    assert "putting a name on an unknown private person" in text
+    text = prompt(tools=ALL_TOOLS - {"reverse_image_search", "web_search"})
+    assert "reverse_image_search" not in text and "web_search" not in text
+    assert "open_web_page and the archives" in text
+    text = prompt(tools={"get_weather", "web_search"})
+    assert "open_web_page" not in text and "investigator" not in text
 
 
 def test_french_prompt():

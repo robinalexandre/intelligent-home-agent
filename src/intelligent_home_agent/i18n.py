@@ -30,6 +30,7 @@ class Strings:
     # How a parked action reads in that list (tools pass their own values in).
     plan_summary: str
     search_summary: str
+    open_page_summary: str
     connector_write_summary: str
     may_destroy: str
     # A write that ran without a go, noted under the reply so it never goes unseen.
@@ -79,6 +80,7 @@ LANGUAGES: dict[str, Strings] = {
         waiting_header='Waiting for your go ("yes", or "yes except 2"):',
         plan_summary="Plan: {plan}",
         search_summary='Search the web for "{query}" and carry on',
+        open_page_summary="Open the page {url} and carry on with what it says",
         connector_write_summary="{label}{warning}: {tool} {arguments}",
         may_destroy=" (may delete or overwrite)",
         written_line="Written: {summary}",
@@ -128,6 +130,7 @@ LANGUAGES: dict[str, Strings] = {
         waiting_header="En attente de ton accord (« oui », ou « oui sauf 2 ») :",
         plan_summary="Plan : {plan}",
         search_summary="Chercher sur le web « {query} » et reprendre",
+        open_page_summary="Ouvrir la page {url} et reprendre avec ce qu'elle dit",
         connector_write_summary="{label}{warning} : {tool} {arguments}",
         may_destroy=" (peut supprimer ou écraser)",
         written_line="Écrit : {summary}",
