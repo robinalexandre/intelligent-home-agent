@@ -23,7 +23,8 @@ dependencies = [
     "defusedxml>=0.7",
     # Investigations (tools/osint.py): a photo's metadata and the copy put online for a
     # reverse image search, a PDF's author and dates, a site's DNS records. Pillow and pypdf
-    # also serve the documents the agent makes (tools/documents.py, pdf_pages.py).
+    # also serve the documents the agent makes (tools/documents.py, pdf_pages.py), and pypdf
+    # the text of the PDFs in a drive (drive_content.py).
     "pillow>=10",
     "pypdf>=6.0",
     "dnspython>=2.6",
@@ -47,6 +48,27 @@ documents = [
     # from the network).
     "resvg-py>=0.5",
 ]
+# Home devices that rest on unofficial libraries (docs/home-devices.md). Each is pinned,
+# since the vendor's side changes without notice; without its extra the device stays off.
+# PetKit feeder and litter box, through the signed calls of PetKit's phone app.
+petkit = ["pypetkitapi==1.31.1"]
+# Google TV / Android TV devices, through the protocol of Google's TV remote app; Pillow
+# for the screen read over ADB (tools/adb.py).
+android-tv = ["androidtvremote2==0.3.3", "pillow>=10"]
+# Apple TV and HomePods. srptools 2 changed the SRP session's signature pyatv 0.18 calls,
+# so the AirPlay remote control channel fails with it.
+apple = ["pyatv==0.18.0", "srptools==1.0.1"]
+devices = [
+    "pypetkitapi==1.31.1",
+    "androidtvremote2==0.3.3",
+    "pillow>=10",
+    "pyatv==0.18.0",
+    "srptools==1.0.1",
+]
+# Claude on a Claude subscription instead of the API (ENGINE=subscription,
+# docs/subscription.md): Claude Code through the Agent SDK, whose wheel brings the Claude
+# Code binary (some 400 MB). Without it the feature is absent and the API answers.
+subscription = ["claude-agent-sdk>=0.2"]
 # Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
 video = ["av>=11"]
 dev = [

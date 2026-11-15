@@ -19,13 +19,18 @@ from typing import Any, Literal
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from intelligent_home_agent import __version__
 from intelligent_home_agent.activities import CATALOG
-from intelligent_home_agent.agent import Agent
+from intelligent_home_agent.agent import REPEATING_TAG, TASK_TAG, Agent
 from intelligent_home_agent.chat import ChatChannel
-from intelligent_home_agent.chat_session import PLAN_TAG, ChatSession, too_long_for_option
+from intelligent_home_agent.chat_session import (
+    PLAN_TAG,
+    ChatReports,
+    ChatSession,
+    too_long_for_option,
+)
 from intelligent_home_agent.config import Settings, get_settings
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
 from intelligent_home_agent.config_crypt import available as crypt_available
@@ -35,6 +40,16 @@ from intelligent_home_agent.conversations import (
     ConversationStore,
     FileStore,
 )
+from intelligent_home_agent.deliver import Delivery, NtfyReports, Outbox, ReportChannel
+from intelligent_home_agent.departure import Departure
+from intelligent_home_agent.departure import record as record_departure
+from intelligent_home_agent.drive_content import (
+    build_drive_content_tools,
+    build_drive_contents,
+    model_ocr,
+)
+from intelligent_home_agent.engine import NoApi, SubscriptionFirst
+from intelligent_home_agent.engines import check_subscription, subscription_engine
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.home_devices import (
     build_home_device_tools,
@@ -45,9 +60,16 @@ from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
+from intelligent_home_agent.pet_alerts import PetAlerts
 from intelligent_home_agent.progress import Tracker
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.shared_links import LINKS
+from intelligent_home_agent.tasks import (
+    TaskReports,
+    TaskRunner,
+    built_in_tasks,
+    says_nothing,
+)
 from intelligent_home_agent.telegram import TelegramApi, TelegramBot
 from intelligent_home_agent.tools import (
     CalDavCalendar,
@@ -59,6 +81,7 @@ from intelligent_home_agent.tools import (
     Investigator,
     KnowledgeBase,
     LocalFile,
+    LocalTrash,
     Memory,
     MergedCalendar,
     OpenMeteo,
@@ -72,6 +95,8 @@ from intelligent_home_agent.tools import (
     build_calendar_tools,
     build_calendar_write_tools,
     build_draft_tools,
+    build_drive_tools,
+    build_drives,
     build_email_tools,
     build_engine_web_tools,
     build_general_tools,
@@ -93,8 +118,16 @@ from intelligent_home_agent.tools import (
     build_wind_tools,
     trusted_domains,
 )
+from intelligent_home_agent.tools.assistant_notes import (
+    LocalFolder,
+    NoteFolder,
+    NotesRepo,
+    RepoFolder,
+    build_assistant_note_tools,
+)
 from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
+from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
 from intelligent_home_agent.tools.documents import FONT_DIR, build_document_tools, paper_for
 from intelligent_home_agent.tools.generation import (
     OPENAI_URL,
@@ -117,7 +150,14 @@ from intelligent_home_agent.tools.memory import folder_name
 from intelligent_home_agent.tools.pdf_forms import build_pdf_form_tools
 from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
+from intelligent_home_agent.tools.repos import Repositories, build_repository_tools
+from intelligent_home_agent.tools.scheduled_tasks import build_task_tools
+from intelligent_home_agent.tools.vulnerabilities import (
+    Vulnerabilities,
+    build_vulnerability_tools,
+)
 from intelligent_home_agent.tools.whatsapp_chats import build_whatsapp_chat_tools
+from intelligent_home_agent.tools.withings import Withings, WithingsAuth, build_withings_tools
 from intelligent_home_agent.transcription import Transcriber, shared_transcriber
 from intelligent_home_agent.transcription import available as voice_available
 from intelligent_home_agent.whatsapp import Waha, WhatsAppChannel
@@ -209,6 +249,25 @@ class BriefingResponse(BaseModel):
     delivered: bool = False
 
 
+class DepartureRequest(BaseModel):
+    # The conversation the user answers in: their yes there runs the fixes.
+    conversation_id: str = Field(default=DEFAULT_CONVERSATION, max_length=64)
+    # Also send the message as a push notification (needs NTFY_URL).
+    push: bool = False
+    # "chat" (or a channel's name) says it in the chat channel instead, where each fix is
+    # a tick away (docs/chat.md); conversation_id is then that chat's.
+    deliver: str = Field(default="response", max_length=64)
+
+
+class DepartureResponse(BaseModel):
+    # Empty when everything is locked and off: say nothing then.
+    reply: str
+    conversation_id: str
+    pushed: bool = False
+    # Fixes wait for the user's yes in this conversation.
+    follow_up: bool | None = None
+
+
 def closes_conversation(text: str, language: str = "en", assistant_name: str = "") -> bool:
     """True when the message only says thanks or goodbye ("no thanks", "that's all")."""
     closing = strings(language).closing_words | strings("en").closing_words
@@ -229,6 +288,8 @@ def build_registry(
         settings.ha_exposed_domains, settings.ha_sensitive_domains, settings.ha_entity_denylist
     )
     meteo = OpenMeteo(http, settings.timezone)
+    # The client for the home network; `home` is the home's coordinates from here on.
+    home_network = home
     home = None
     if settings.home_latitude is not None and settings.home_longitude is not None:
         home = (settings.home_latitude, settings.home_longitude)
@@ -237,7 +298,19 @@ def build_registry(
     registry.extend(build_general_tools(settings.timezone))
     if ha is not None:
         registry.extend(build_home_assistant_tools(ha, policy))
-    registry.extend(build_home_device_tools(settings, home))
+    # The clients others share (the pet supplies watch) and those to close at the end.
+    registry.devices = {}
+    registry.extend(build_home_device_tools(settings, home_network, http, registry.devices))
+    if settings.withings_client_id and settings.withings_client_secret:
+        token = settings.withings_refresh_token
+        auth = WithingsAuth(
+            http,
+            settings.withings_client_id,
+            settings.withings_client_secret.get_secret_value(),
+            token.get_secret_value() if token else None,
+            Path(settings.data_dir) / "withings.json",
+        )
+        registry.extend(build_withings_tools(Withings(http, auth), settings.timezone))
     registry.extend(build_weather_tools(meteo, home=home, language=settings.language))
     registry.extend(build_wind_tools(meteo, settings.wind_spots, model=settings.wind_model))
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
@@ -277,6 +350,9 @@ def build_registry(
     mailboxes = [ImapMailbox(account) for account in settings.mail_accounts]
     registry.extend(build_email_tools(mailboxes, settings.timezone))
     registry.extend(build_draft_tools([m for m in mailboxes if m.writable], settings.language))
+    if mailboxes and settings.deliveries_enabled:
+        deliveries = Deliveries(Path(settings.data_dir) / "deliveries.json")
+        registry.extend(build_delivery_tools(deliveries))
     if settings.travel_enabled:
         router = Router(
             http,
@@ -295,15 +371,27 @@ def build_registry(
     if settings.github_token:
         token = settings.github_token.get_secret_value()
         registry.extend(build_github_tools(GitHub(http, token)))
-        if settings.assistant_reminders_repo:
-            reminders = ReminderRepo(
-                http, token, settings.assistant_reminders_repo, settings.assistant_reminders_path
+        add_notes(registry, settings, http, token)
+    if reaches := reports_reach(settings):
+        registry.extend(
+            build_task_tools(
+                build_task_folder(settings, http),
+                settings.timezone,
+                settings.language,
+                built_in_tasks(
+                    strings(settings.language),
+                    settings.morning_briefing_at,
+                    settings.evening_recap_at,
+                ),
+                reaches,
             )
-            registry.extend(build_assistant_reminder_tools(reminders, settings.timezone))
+        )
     registry.extend(build_connector_tools(build_connectors(settings, http)))
     if settings.kb_url and settings.kb_token:
         kb = KnowledgeBase(http, settings.kb_url, settings.kb_token.get_secret_value())
         registry.extend(build_knowledge_tools(kb))
+    if settings.drives_enabled:
+        add_drives(registry, settings, http, llm)
     if settings.web_search_enabled and settings.web_search_backend == "native":
         registry.extend(
             build_web_tools(
@@ -314,6 +402,7 @@ def build_registry(
                 country=settings.home_country,
                 timezone=settings.timezone,
                 language=settings.language,
+                engine=subscription_engine(settings, settings.web_search_model),
             )
         )
     elif settings.web_search_enabled:
@@ -328,7 +417,8 @@ def build_registry(
         )
         registry.extend(
             build_engine_web_tools(
-                llm,
+                # The answer written from the results: on the Claude subscription first.
+                SubscriptionFirst(subscription_engine(settings, settings.web_search_model), llm),
                 engine,
                 model=settings.web_search_model,
                 max_results=settings.web_search_results,
@@ -437,6 +527,52 @@ def _model(name: str) -> str:
     return "" if name.strip().casefold() in {"off", "none"} else name.strip()
 
 
+def add_drives(
+    registry: ToolRegistry, settings: Settings, http: httpx.AsyncClient, llm: LLMClient
+) -> None:
+    """The file drives of the rclone sidecar: their tools, and the jobs that keep the
+    index of names and the index of contents fresh."""
+    data = Path(settings.data_dir)
+    assert settings.drive_url and settings.drive_password
+    trash = LocalTrash(
+        data / "drive-trash",
+        keep_days=settings.drive_trash_days,
+        max_item_bytes=settings.drive_trash_max_item_mb * 1024**2,
+        max_total_bytes=settings.drive_trash_max_total_mb * 1024**2,
+    )
+    drives = build_drives(
+        http,
+        settings.drive_url,
+        settings.drive_user,
+        settings.drive_password.get_secret_value(),
+        settings.drives,
+        data_dir=data,
+        trash=trash,
+        index_max_age=settings.drive_index_hours * 3600,
+    )
+    registry.extend(build_drive_tools(drives, language=settings.language))
+    registry.jobs += [drive.keep_index_fresh for drive in drives]
+    if not settings.drive_content:
+        return
+    if settings.drive_ocr == "model" and not settings.drive_ocr_enabled:
+        log.warning(
+            "DRIVE_OCR=model needs a provider that reads PDFs, not %s: scanned PDFs stay "
+            "listed by name, only text layers are indexed.",
+            settings.llm_provider,
+        )
+    ocr = None
+    if settings.drive_ocr_enabled:
+        plan = subscription_engine(settings, settings.drive_ocr_model)
+        ocr = model_ocr(llm, settings.drive_ocr_model, plan)
+    contents = build_drive_contents(drives, data, ocr)
+    registry.extend(build_drive_content_tools(contents, ocr=ocr is not None))
+    for drive in drives:
+        if drive.name in contents:
+            registry.jobs.append(
+                lambda d=drive: contents[d.name].keep_fresh(lambda: d.index)  # type: ignore[misc]
+            )
+
+
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
     connectors = []
     for server in settings.mcp_servers:
@@ -484,6 +620,24 @@ def prompt_config(settings: Settings) -> PromptConfig:
     )
 
 
+def build_pet_alerts(settings: Settings, devices: dict) -> PetAlerts | None:
+    """The pet supplies watch, when the PetKit tools and a push channel are set up."""
+    reached = settings.ntfy_url or settings.chat_enabled
+    if not (settings.petkit_alerts and reached and "petkit" in devices):
+        return None
+    return PetAlerts(
+        devices["petkit"].status,
+        Path(settings.data_dir) / "pet-alerts.json",
+        settings.timezone,
+        language=settings.language,
+        litter_percent=settings.petkit_litter_alert_percent,
+        food_percent=settings.petkit_food_alert_percent,
+        remind_minutes=settings.petkit_bin_remind_minutes,
+        check_minutes=settings.petkit_check_minutes,
+        quiet=(settings.petkit_quiet_start, settings.petkit_quiet_end),
+    )
+
+
 def build_journal(settings: Settings) -> Journal | None:
     if not settings.journal_keep_days:
         return None
@@ -523,53 +677,85 @@ def memory_paths(settings: Settings) -> tuple[str, str]:
     )
 
 
-def build_crypt(settings: Settings) -> ConfigCrypt | None:
-    """The memory repository's git-crypt codec, when it has a key; its perimeter is read
-    from the repository's .gitattributes at startup (load_crypt_patterns)."""
-    if settings.memory_store != "github" or not settings.memory_crypt_key:
+def tasks_path(settings: Settings) -> str:
+    """Where the tasks are: a folder of DATA_DIR, or of the notes repository, there in a
+    folder named after the assistant."""
+    if settings.tasks_store == "local":
+        return str(Path(settings.data_dir) / (settings.tasks_path.strip("/") or "tasks"))
+    return (settings.tasks_path or f"{folder_name(settings.assistant_name)}/tasks").strip("/")
+
+
+def _crypt_repos(settings: Settings) -> dict[str, tuple[SecretStr, list[str]]]:
+    """Each repository the agent has a git-crypt key for, with the paths it writes there."""
+    repos: dict[str, tuple[SecretStr, list[str]]] = {}
+    if settings.memory_store == "github" and settings.memory_repo and settings.memory_crypt_key:
+        repos[settings.memory_repo] = (settings.memory_crypt_key, list(memory_paths(settings)))
+    if settings.notes_repo:
+        key = settings.notes_crypt_key
+        if key is None and settings.notes_repo in repos:
+            key = repos[settings.notes_repo][0]
+        if key is not None:
+            paths = repos.get(settings.notes_repo, (key, []))[1]
+            paths += [
+                f"{settings.assistant_reminders_path.strip('/')}/x",
+                f"{settings.handoffs_path.strip('/')}/x",
+            ]
+            if settings.tasks_store == "github":
+                paths.append(f"{tasks_path(settings)}/x")
+            repos[settings.notes_repo] = (key, paths)
+    return repos
+
+
+def build_crypt(settings: Settings, repo: str | None = None) -> ConfigCrypt | None:
+    """The git-crypt codec of a repository the agent has a key for (the memory's by
+    default, or the notes repository); its perimeter is read from the repository's
+    .gitattributes at startup (load_crypt_patterns)."""
+    if repo is None:
+        repo = settings.memory_repo if settings.memory_store == "github" else None
+    if repo is None or repo not in (repos := _crypt_repos(settings)):
         return None
+    key, paths = repos[repo]
     # Until the repository's .gitattributes is read, the agent's own folders count as
     # encrypted: a write made before that, or after a failed read, is never in clear by
     # default.
-    own = dict.fromkeys(
-        f"{path.rsplit('/', 1)[0]}/**" if "/" in path else path for path in memory_paths(settings)
-    )
-    return _crypt_for(settings.memory_crypt_key.get_secret_value(), tuple(own))
+    own = dict.fromkeys(f"{path.rsplit('/', 1)[0]}/**" if "/" in path else path for path in paths)
+    return _crypt_for(key.get_secret_value(), tuple(own))
 
 
 @lru_cache
 def _crypt_for(key: str, own: tuple[str, ...]) -> ConfigCrypt | None:
     if not crypt_available():
-        log.error('MEMORY_CRYPT_KEY needs the cryptography package: pip install ".[crypt]"')
+        log.error('A git-crypt key needs the cryptography package: pip install ".[crypt]"')
         return None
     try:
         return ConfigCrypt.from_base64(key, list(own))
     except CryptError as exc:
-        log.error("MEMORY_CRYPT_KEY is not a git-crypt key (%s)", exc)
+        log.error("MEMORY_CRYPT_KEY or NOTES_CRYPT_KEY is not a git-crypt key (%s)", exc)
         return None
 
 
 async def load_crypt_patterns(settings: Settings, http: httpx.AsyncClient) -> None:
-    crypt = build_crypt(settings)
-    if crypt is None or not settings.github_token:
-        return
-    try:
-        resp = await http.get(
-            f"{API_URL}/repos/{settings.memory_repo}/contents/.gitattributes",
-            headers={
-                "Authorization": f"Bearer {settings.github_token.get_secret_value()}",
-                "Accept": "application/vnd.github.raw+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
-        resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        log.warning("could not read the memory repository's .gitattributes (%s)", exc)
-        return
-    patterns = patterns_from_attributes(resp.text)
-    if patterns:
-        crypt.patterns = patterns
-    log.info("encrypted folders of the memory repository: %s", ", ".join(crypt.patterns))
+    for repo in _crypt_repos(settings):
+        crypt = build_crypt(settings, repo)
+        if crypt is None or not settings.github_token:
+            continue
+        try:
+            resp = await http.get(
+                f"{API_URL}/repos/{repo}/contents/.gitattributes",
+                headers={
+                    "Authorization": f"Bearer {settings.github_token.get_secret_value()}",
+                    "Accept": "application/vnd.github.raw+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            log.warning("could not read the .gitattributes of %s (%s)", repo, exc)
+            continue
+        patterns = patterns_from_attributes(resp.text)
+        if patterns:
+            crypt.patterns = patterns
+        log.info("encrypted folders of %s: %s", repo, ", ".join(crypt.patterns))
 
 
 def build_kept(settings: Settings, http: httpx.AsyncClient) -> Kept:
@@ -598,6 +784,313 @@ def build_kept(settings: Settings, http: httpx.AsyncClient) -> Kept:
     return kept
 
 
+def add_notes(
+    registry: ToolRegistry, settings: Settings, http: httpx.AsyncClient, token: str
+) -> None:
+    """The notes repository (reminders and handoff notes for the user's coding sessions)
+    and, when asked for, the user's repositories read-only."""
+    repo = settings.notes_repo
+    crypt = build_crypt(settings, repo) if repo else None
+    if repo and crypt is None and repo in _crypt_repos(settings):
+        # A key that can't be used: nothing is read as ciphertext nor written in clear.
+        log.error("the notes repository is off: its git-crypt key cannot be used")
+        repo = None
+    if repo:
+        reminders = ReminderRepo(http, token, repo, settings.assistant_reminders_path, crypt=crypt)
+        registry.extend(build_assistant_reminder_tools(reminders, settings.timezone))
+        if settings.notes_write:
+            registry.extend(
+                build_assistant_note_tools(
+                    notes_repo(settings, http),
+                    settings.timezone,
+                    settings.language,
+                    settings.assistant_reminders_path,
+                    settings.handoffs_path,
+                )
+            )
+    if settings.github_repositories:
+        repos = Repositories(http, token, repo, crypt=crypt)
+        registry.extend(build_repository_tools(repos))
+        registry.extend(build_vulnerability_tools(Vulnerabilities(http, repos)))
+
+
+def notes_repo(settings: Settings, http: httpx.AsyncClient) -> NotesRepo | None:
+    if not (settings.github_token and settings.notes_repo):
+        return None
+    return NotesRepo(
+        http,
+        settings.github_token.get_secret_value(),
+        settings.notes_repo,
+        crypt=build_crypt(settings, settings.notes_repo),
+        author=folder_name(settings.assistant_name),
+    )
+
+
+def reports_reach(settings: Settings) -> str | None:
+    """How a report the agent writes by itself reaches the user, in a few words for the
+    model; None when nothing does, and then there are no tasks. A new channel
+    (deliver.ReportChannel) is named here and added in build_delivery."""
+    if settings.tasks_store == "off":
+        return None
+    if settings.chat_enabled:
+        return ChatReports.reaches
+    return NtfyReports.reaches if settings.ntfy_url else None
+
+
+def build_delivery(
+    settings: Settings, ntfy: Ntfy | None, chats: dict[str, ChatSession] | None = None
+) -> Delivery:
+    """A chat first, where the user can answer and approve; ntfy after it, for a report
+    the chat could not take."""
+    channels: list[ReportChannel] = [ChatReports(session) for session in (chats or {}).values()]
+    if ntfy is not None:
+        channels.append(NtfyReports(ntfy, settings.assistant_name))
+    return Delivery(channels, Outbox(Path(settings.data_dir) / "task-outbox.json"))
+
+
+async def tell_user(app: FastAPI, title: str, text: str) -> None:
+    """A line the code writes by itself (an alert): in the chat when there is one, else
+    as a push notification."""
+    for session in app.state.chats.values():
+        try:
+            await session.channel.send(text)
+            return
+        except httpx.HTTPError as exc:
+            log.warning("Could not say it in the chat (%s): %s", session.name, exc)
+    if app.state.ntfy is not None:
+        await app.state.ntfy.send(title, text)
+
+
+def build_task_folder(settings: Settings, http: httpx.AsyncClient) -> NoteFolder | None:
+    if settings.tasks_store == "local":
+        return LocalFolder(Path(tasks_path(settings)))
+    repo = notes_repo(settings, http) if settings.tasks_store == "github" else None
+    if repo is None:
+        return None
+    crypt = build_crypt(settings, settings.notes_repo)
+    if crypt is None and settings.notes_repo in _crypt_repos(settings):
+        log.error("tasks are off: the notes repository's git-crypt key cannot be used")
+        return None
+    reader = ReminderRepo(
+        http,
+        settings.github_token.get_secret_value(),
+        settings.notes_repo,
+        tasks_path(settings),
+        crypt=crypt,
+    )
+    return RepoFolder(repo, reader, tasks_path(settings))
+
+
+def build_task_runner(app: FastAPI, http: httpx.AsyncClient) -> TaskRunner | None:
+    settings: Settings = app.state.settings
+    if reports_reach(settings) is None:
+        return None
+    folder = build_task_folder(settings, http)
+    if folder is None:
+        return None
+    return TaskRunner(
+        folder,
+        lambda title, body, repeating, fresh=False: run_task(
+            app, title, body, repeating, fresh=fresh
+        ),
+        Path(settings.data_dir) / "tasks-done.json",
+        settings.timezone,
+        settings.tasks_poll_seconds,
+        folder.close,
+        folder.close_for_day,
+        lambda title, body, gathered: run_digest(app, title, body, gathered),
+        built_in_tasks(
+            strings(settings.language), settings.morning_briefing_at, settings.evening_recap_at
+        ),
+    )
+
+
+def task_reports_file(settings: Settings) -> Path:
+    return Path(settings.data_dir) / "tasks-reports.json"
+
+
+async def answer_task(
+    app: FastAPI,
+    text: str,
+    *,
+    quiet: bool = False,
+    held: list[dict] | None = None,
+    may_be_silent: bool = False,
+    wants_clean: list[bool] | None = None,
+) -> str | None:
+    """Answer a task the user left, as if they had just asked; the reply is written for
+    the channel it leaves through (deliver.py).
+
+    ``quiet`` (a repeating task) returns None, leaving no trace, when the agent answers
+    SILENT_REPLY. Such a run only finds and proposes: it starts tainted, as it carries its
+    last report, written from what an earlier run read, so no write can happen in it, let
+    alone one hidden by its silence.
+    ``held`` collects the drafts and waiting writes instead of listing them in the reply,
+    for a digest that lists them once under its own message.
+    ``may_be_silent``: a SILENT_REPLY leaves no trace, as in a quiet run, but the turn is
+    not tainted for it (a fresh task).
+    ``wants_clean`` gets True when a repeating run was refused a tool that the task's
+    clean runs would get (tasks.py).
+    """
+    settings: Settings = app.state.settings
+    store: ConversationStore = app.state.store
+    channel = app.state.delivery.channel
+    # Where the user can answer the report, what waits for their go is parked in that
+    # conversation; through a one-way channel nothing is parked, and each run starts from
+    # a conversation of its own, as a scheduler's briefing does.
+    conversation_id = channel.conversation_id if channel is not None else None
+    if conversation_id is not None:
+        conv = store.get(conversation_id, settings.chat_conversation_ttl_seconds)
+    else:
+        conv = Conversation(id="task")
+    async with conv.lock:
+        if conversation_id is not None:
+            conv.kept = True
+            keep_files(settings, conv)
+        before = list(conv.messages)
+        try:
+            reply = await app.state.agent.ask(
+                conv,
+                text,
+                display=channel.display if channel is not None else "notification",
+                scheduled=True,
+                tainted=quiet,
+                answerable=conversation_id is not None,
+            )
+        except Exception:
+            log.exception("A task's answer failed")
+            conv.drop_unshown()
+            return strings(settings.language).fallback_reply
+        if wants_clean is not None and reply.wants_clean_runs:
+            wants_clean.append(True)
+        if (quiet or may_be_silent) and says_nothing(reply.text) and not reply.actions:
+            conv.messages = before
+            return None
+        # A quiet run with nothing to say still lists what it did or asks: never the
+        # silent marker itself.
+        said = "" if says_nothing(reply.text) and reply.actions else reply.text
+        if held is None:
+            said = with_waiting(
+                said, reply.actions, conv, settings.language, _option_chars(channel)
+            ).strip()
+        else:
+            held.extend(
+                a for a in reply.actions if a.get("type") in {"draft", "written", "proposal"}
+            )
+        if conversation_id is not None:
+            store.touch(conv)
+            save_conversation(store, settings, conv)
+    if (share := getattr(channel, "share_files", None)) is not None:
+        # A chat takes the files the run made (a PDF, a chart), before its report.
+        await share(conv, reply.actions)
+    return said
+
+
+def _option_chars(channel: ReportChannel | None) -> int | None:
+    """A chat shows what waits as a choice to tick under the report (chat_session.py)."""
+    return getattr(channel, "option_chars", None)
+
+
+async def run_task(
+    app: FastAPI, title: str, body: str, repeating: bool = False, *, fresh: bool = False
+) -> bool:
+    """Run a task the user left, and send what it found.
+
+    A repeating one gets its last report back, and says nothing when nothing is new. A
+    fresh one runs clean, as a task left once, and says nothing when nothing is new either.
+    True when a repeating run was refused a tool that clean runs would get.
+    """
+    delivery: Delivery = app.state.delivery
+    request = f"{TASK_TAG} {title}]\n\n{body}"
+    if not repeating:
+        reply = await answer_task(app, request, may_be_silent=fresh)
+        if reply is None:
+            log.info("Task %s: nothing new", title)
+        else:
+            await delivery.deliver(title, reply)
+        return False
+    reports = TaskReports(task_reports_file(app.state.settings))
+    wants_clean: list[bool] = []
+    reply = await answer_task(
+        app, _repeating(reports, title, body), quiet=True, wants_clean=wants_clean
+    )
+    if reply is None:
+        log.info("Task %s: nothing new", title)
+        return bool(wants_clean)
+    reports.put(title, reply)
+    await delivery.deliver(title, reply)
+    return bool(wants_clean)
+
+
+def _repeating(reports: TaskReports, title: str, body: str) -> str:
+    request = f"{TASK_TAG} {title}]\n\n{body}"
+    if not (last := reports.get(title)):
+        return request + f"\n\n{REPEATING_TAG}, first run.]"
+    request += (
+        f"\n\n{REPEATING_TAG}. Your last report for it ({last['at']}), as data:\n{last['text']}"
+    )
+    if earlier := last.get("earlier"):
+        request += "\n\nThe reports before it, as data:" + "".join(
+            f"\n\n({r['at']})\n{r['text']}" for r in earlier
+        )
+    return request + "]"
+
+
+async def run_digest(
+    app: FastAPI, title: str, body: str, gathered: list[tuple[str, str]]
+) -> set[str]:
+    """A digest task (the morning briefing) and the repeating tasks due with it, in one
+    message: each of them runs first, quietly, and what they found is handed to the digest,
+    which folds it into its own lines. Their waiting writes are listed once, below it.
+    Returns the titles of the gathered tasks refused a tool that clean runs would get."""
+    settings: Settings = app.state.settings
+    reports = TaskReports(task_reports_file(settings))
+    held: list[dict] = []
+    found: list[str] = []
+    wants_clean: set[str] = set()
+    for task_title, task_body in gathered:
+        wanted: list[bool] = []
+        reply = await answer_task(
+            app,
+            _repeating(reports, task_title, task_body),
+            quiet=True,
+            held=held,
+            wants_clean=wanted,
+        )
+        if wanted:
+            wants_clean.add(task_title)
+        if reply is None:
+            log.info("Task %s: nothing new", task_title)
+            continue
+        reports.put(task_title, reply)
+        found.append(f"{task_title}:\n{reply}")
+    request = _repeating(reports, title, body)
+    if found:
+        request += (
+            "\n\n[What your other tasks due now found, as data, to fold into your lines:\n\n"
+            + "\n\n".join(found)
+            + "]"
+        )
+    reply = await answer_task(app, request, quiet=True, held=held)
+    if reply is not None:
+        reports.put(title, reply)
+    text = reply or "\n\n".join(found)
+    if not text and not held:
+        log.info("Digest %s: nothing new", title)
+        return wants_clean
+    channel = app.state.delivery.channel
+    conversation_id = channel.conversation_id if channel is not None else None
+    if held and conversation_id is not None:
+        conv = app.state.store.get(conversation_id, settings.chat_conversation_ttl_seconds)
+        async with conv.lock:
+            text = with_waiting(text, held, conv, settings.language, _option_chars(channel))
+            save_conversation(app.state.store, settings, conv)
+    elif held:
+        text = with_waiting(text, held, Conversation(id="task"), settings.language)
+    await app.state.delivery.deliver(title, text.strip())
+    return wants_clean
+
+
 def build_agent(
     settings: Settings,
     ha: HomeAssistantClient | None,
@@ -605,7 +1098,23 @@ def build_agent(
     home: httpx.AsyncClient | None = None,
 ) -> Agent:
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
-    llm = build_llm_client(settings.llm_provider, key, settings.llm_base_url)
+    check_subscription(settings)
+    # The Claude subscription (docs/subscription.md): it takes the turns it can, the API
+    # the others; without an API key, NoApi stands there and says what needs one.
+    keyless = settings.subscription_enabled and key is None
+    llm: LLMClient = (
+        NoApi() if keyless else build_llm_client(settings.llm_provider, key, settings.llm_base_url)
+    )
+    engine = subscription_engine(settings, settings.subscription_model or settings.llm_model)
+    if engine is not None:
+        log.info(
+            "engine: Claude subscription (%s) for %s, %s",
+            settings.subscription_model or settings.llm_model,
+            "every display" if keyless else ", ".join(settings.subscription_displays),
+            "no API key for the rest"
+            if keyless
+            else f"the API ({settings.llm_model}) for the rest",
+        )
     kept = build_kept(settings, http)
     registry = build_registry(settings, ha, http, llm, home, kept)
     return Agent(
@@ -620,6 +1129,9 @@ def build_agent(
         max_history_messages=settings.max_history_messages,
         memory=kept.prompt_text,
         journal=kept.journal,
+        engine=engine,
+        engine_displays=frozenset(settings.subscription_displays),
+        api_fallback=not keyless,
     )
 
 
@@ -891,23 +1403,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except OSError as exc:
         log.warning("Could not restore the saved conversations: %s", exc)
     app.state.ntfy = None
-    built = build_channels(settings, http)
-    app.state.chats = build_sessions(app, built.channels)
-    background = [asyncio.create_task(loop) for loop in built.loops]
-    for session in app.state.chats.values():
-        background.append(asyncio.create_task(session.tracker.run()))
-    if app.state.chats:
-        log.info("chat channels: %s", ", ".join(app.state.chats))
     if settings.ntfy_url:
         token = settings.ntfy_token.get_secret_value() if settings.ntfy_token else None
         app.state.ntfy = Ntfy(http, settings.ntfy_url, token)
+    # The chat channels (docs/chat.md): each listens for the user's messages, and is where
+    # what the agent says by itself goes first.
+    built = build_channels(settings, http)
+    app.state.chats = build_sessions(app, built.channels)
+    listening = [asyncio.create_task(loop) for loop in built.loops]
+    listening += [asyncio.create_task(s.tracker.run()) for s in app.state.chats.values()]
+    if app.state.chats:
+        log.info("chat channels: %s", ", ".join(app.state.chats))
+    app.state.delivery = build_delivery(settings, app.state.ntfy, app.state.chats)
+    # What the tools keep doing in the background (a drive's index kept fresh), and the
+    # tasks the agent starts by itself.
+    registry = getattr(app.state.agent, "tools", None)
+    background = list(getattr(registry, "jobs", []))
+    if (runner := build_task_runner(app, http)) is not None:
+        background.append(runner.run)
+    jobs = [asyncio.create_task(job()) for job in background]
+    # Home devices: the departure check and the pet supplies watch (docs/home-devices.md).
+    devices = getattr(registry, "devices", {})
+    app.state.departure = None
+    if settings.departure_check and isinstance(registry, ToolRegistry):
+        check = Departure(registry, language=settings.language, tv_name=settings.android_tv_name)
+        app.state.departure = check if check.watches_something else None
+    if (pets := build_pet_alerts(settings, devices)) is not None:
+        title = strings(settings.language).pet_alert_title
+        jobs.append(asyncio.create_task(pets.watch(lambda text: tell_user(app, title, text))))
     try:
         yield
     finally:
         # First, while the channels can still say an answer was cut short.
-        for task in background:
+        for task in listening:
             task.cancel()
-        await asyncio.gather(*background, return_exceptions=True)
+        await asyncio.gather(*listening, return_exceptions=True)
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
+        if "petkit" in devices:
+            await devices["petkit"].aclose()
         if ha is not None:
             await ha.aclose()
         if home is not None:
@@ -1056,6 +1591,68 @@ async def briefing(body: BriefingRequest, request: Request) -> BriefingResponse:
             log.warning("briefing push failed: %s", exc)
     reminders = [a for a in reply.actions if a.get("type") == "reminder"]
     return BriefingResponse(reply=reply.text, actions=reminders, pushed=pushed)
+
+
+@app.get("/v1/tasks/reports", dependencies=[Depends(require_token)])
+async def task_reports(request: Request, since: str | None = None) -> dict[str, list]:
+    """What the tasks the agent ran by itself reported, the last ones, oldest first; with
+    ``since`` (the ``at`` of the last one already fetched), only the later ones."""
+    outbox = request.app.state.delivery.outbox
+    return {"reports": outbox.since(since) if outbox else []}
+
+
+@app.post(
+    "/v1/departure",
+    response_model=DepartureResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_token)],
+)
+async def left_home(body: DepartureRequest, request: Request) -> DepartureResponse:
+    """The user left home (a phone automation calls this): what is still unlocked, on or
+    playing, written by the code, each fix waiting for their yes in the conversation."""
+    check: Departure | None = request.app.state.departure
+    if check is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Departure check is off")
+    settings: Settings = request.app.state.settings
+    ntfy: Ntfy | None = request.app.state.ntfy
+    if body.push and ntfy is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
+    store: ConversationStore = request.app.state.store
+    chat = chat_session(request, body.deliver)
+    conv = chat.conversation() if chat is not None else store.get(body.conversation_id)
+    option_chars = chat.channel.option_chars if chat is not None else None
+    async with conv.lock:
+        report = await check.check(conv)
+        if not report.text:
+            return DepartureResponse(reply="", conversation_id=conv.id)
+        text = with_waiting(report.text, report.actions, conv, settings.language, option_chars)
+        record_departure(conv, text)
+        # The answer may come a while after leaving: kept as long as a chat, and
+        # across a restart like one.
+        conv.ttl_seconds = settings.chat_conversation_ttl_seconds
+        conv.kept = True
+        store.touch(conv)
+        save_conversation(store, settings, conv)
+    if chat is not None:
+        try:
+            await chat.channel.send(text)
+            await chat.after_reply()
+        except httpx.HTTPError as exc:
+            log.warning("Could not say the departure check in the chat: %s", exc)
+    pushed = False
+    if body.push and ntfy is not None:
+        title = strings(settings.language).departure_title
+        try:
+            await ntfy.send(f"{settings.assistant_name} · {title}", text)
+            pushed = True
+        except NotifyError as exc:
+            log.warning("departure push failed: %s", exc)
+    return DepartureResponse(
+        reply=text,
+        conversation_id=conv.id,
+        pushed=pushed,
+        follow_up=True if report.actions else None,
+    )
 
 
 @app.post("/v1/reset", status_code=204, dependencies=[Depends(require_token)])

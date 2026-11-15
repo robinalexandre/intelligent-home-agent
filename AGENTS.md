@@ -32,6 +32,10 @@ src/intelligent_home_agent/
                     displays (voice, notification, chat), journal hook
   llm.py            provider interface (LLMClient, LLMResponse), the Anthropic client and
                     the OpenAI-compatible one (OpenAI, Mistral, Ollama...)
+  engine.py         Claude on a Claude subscription (ENGINE=subscription): a turn run by
+                    Claude Code through the Agent SDK, the tools still run by the registry;
+                    subscription_first and SubscriptionFirst for the server's own model
+                    calls; engines.py builds one engine per model (docs/subscription.md)
   prompts.py        system prompt, built from what is configured
   i18n.py           every word the code says to the user, per language
   activities.py     outdoor activity catalog (stdlib only, used by scripts/setup.py)
@@ -39,13 +43,24 @@ src/intelligent_home_agent/
   conversations.py  conversation state: messages, files (Attachment), writes waiting for
                     the user's go (Proposal), pending Home Assistant confirmations; what
                     of a chat is saved in DATA_DIR (ConversationStore.save, FileStore)
-  config_crypt.py   git-crypt as a codec, for a memory kept in an encrypted repository
+  config_crypt.py   git-crypt as a codec, for a memory or notes kept in an encrypted
+                    repository
+  tasks.py          tasks the agent starts by itself: TaskRunner (a job of the app),
+                    TaskReports; main.run_task and run_digest answer them (docs/tasks.md)
+  deliver.py        where a report written with nobody asking goes: ReportChannel
+                    (ntfy; add a chat here), Delivery, Outbox (GET /v1/tasks/reports)
   leaks.py          keeps what a request holds out of text the model writes for the outside
   journal.py        one line per request, per day, in DATA_DIR/journal
+  drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
+                    for search; scanned PDFs read by the model where the provider can
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
   notify.py         ntfy push
   shared_links.py   short-lived public links to a picture (reverse image search)
-  home_devices.py   devices driven without Home Assistant (Hue, Devialet)
+  home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,
+                    Apple TV and HomePods, Nuki, Netatmo, PetKit), each on with its
+                    settings; unofficial libraries are optional extras
+  departure.py      POST /v1/departure: what is still unlocked or on, fixes parked
+  pet_alerts.py     the pet supplies watched and pushed through ntfy
   tools/base.py     Tool and its flags, ToolContext, ToolRegistry (the rules live here)
   tools/proposals.py     run_proposals, propose_action, propose_plan...: the user's go
   tools/long_results.py  read_result_part, for results too long for one read
@@ -145,7 +160,8 @@ when it truly doesn't apply, and say so in the pull request.
 4. **`main.py`, `build_registry`**: `registry.extend(build_<feature>_tools(...))`, behind
    the `if settings...` that says it is configured, before the core tools at the end
    (`build_proposal_tools`, `build_long_result_tools`). Something to open and close goes
-   in `lifespan`.
+   in `lifespan`; something to keep doing in the background (an index kept fresh) is a
+   coroutine function appended to `registry.jobs`, which `lifespan` runs and cancels.
 5. **`prompts.py`**: one `lines.append(...)` in `_daily_help`, behind
    `if "<a tool name>" in t`, saying when to use the tools; add the tool to
    `_PRIVATE_SOURCES` when it has `taints`. A briefing section goes in `BRIEF_SECTIONS`
@@ -180,10 +196,21 @@ dict blocks, never SDK objects).
 Everything kept is under `Path(settings.data_dir)`: `journal/`, `conversations/` and
 `files/` (chats only: `main.save_conversation`, `restore_conversations`, `file_store`),
 `memory.md` and `procedures.md` (unless `MEMORY_STORE=github`), `turned-down-alerts.json`.
+`tasks/` (unless `TASKS_STORE=github`), `tasks-done.json`, `tasks-reports.json` and
+`task-outbox.json` (which tasks ran, their last reports, what was sent).
 A feature that keeps a file follows the same pattern: written through a temporary file,
 mode 600, named by the code and never by what a client or a model sent. What must reach
 every request's prompt (as the memory does) is added to `main.Kept.prompt_text`, which is
 the `memory=` hook of `Agent`; that text is also registered with the leak guard.
+
+## Adding a channel for what the agent says by itself
+
+A task's report leaves through `app.state.delivery` (`deliver.Delivery`). A new channel
+(a chat) is a class with the attributes of `deliver.ReportChannel` (`name`, `display`,
+`conversation_id`, `reaches`) and `async send(title, text)`. Put it first in
+`main.build_delivery` and name it in `main.reports_reach`, which is what turns the
+tasks on. With a `conversation_id`, tasks run in that conversation and may park writes
+for the user's go there (`main.answer_task`); with `None` (ntfy) nothing is parked.
 
 ## Adding an LLM provider
 
@@ -203,6 +230,26 @@ in step). For another API:
    `WEB_SEARCH_PROVIDERS` only if it can run the
    server-side search tool used by `tools/web.py`; otherwise web search stays off.
 3. Add a test with a fake vendor client covering a tool call round trip.
+
+## The subscription engine
+
+With `ENGINE=subscription` a turn runs in Claude Code (`engine.ClaudeCodeEngine`), which
+calls the tools back one at a time through `Agent._run_tool`: the registry and its flags
+decide exactly as on the API, so a tool needs nothing special. Two things to know:
+
+- A model call of the server's own (a search answer, a scan to read, a summary) should go
+  to the plan first: pass `SubscriptionFirst(subscription_engine(settings, model), llm)`
+  where an `LLMClient` is expected (plain prompts go to the plan, anything with tools or
+  files to the API), or call `subscription_first(engine, on_subscription, on_api)` when
+  the run needs one of Claude Code's own tools (`builtin=["WebSearch"]`, `["Read"]` with
+  `files=`). Those are held by `BuiltinGuard`; never allow another one without a guard
+  and a test.
+- Without an API key the API client is `engine.NoApi`, whose `create` raises `NoApiKey`:
+  a tool that calls the model turns it into a `ToolError`, and a tool that only works on
+  the API (it needs `llm.files`, a server-side tool) must stay unregistered then.
+
+Tests use a scripted stand-in for the SDK (`tests/test_engine.py`), so they pass without
+the `subscription` extra installed.
 
 ## Adding an outdoor activity
 

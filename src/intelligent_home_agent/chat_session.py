@@ -26,8 +26,10 @@ import httpx
 from intelligent_home_agent.agent import AgentReply
 from intelligent_home_agent.chat import DONE, FAILED, ChatChannel, same_message
 from intelligent_home_agent.conversations import MAX_OPEN_QUESTIONS, Attachment, Conversation
+from intelligent_home_agent.deliver import DeliveryError
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.progress import Tracker
+from intelligent_home_agent.tasks import SILENT_REPLY, says_nothing
 from intelligent_home_agent.tools.base import ToolContext, ToolError, ToolRegistry
 
 log = logging.getLogger(__name__)
@@ -43,13 +45,6 @@ PLAN_TAG = "[Plan you proposed and the user approved as shown; do it now as thei
 # How the agent learns that the writes it waited for ran on the user's go.
 RESUME_TAG = "[The user gave their go in the chat:"
 MAX_RESUME_CHARS = 30_000
-# What the agent answers when picking up after a go leaves nothing to do or say: the
-# chat then gets no message.
-SILENT_REPLY = "NOTHING_LEFT"
-
-
-def says_nothing(text: str) -> bool:
-    return any(line.strip() == SILENT_REPLY for line in text.splitlines())
 
 
 class AgentLike(Protocol):
@@ -525,3 +520,35 @@ def resume_text(result: dict, summaries: dict[int, str]) -> str:
         "the user just approved. If nothing is left to do, answer exactly "
         f"{SILENT_REPLY}."
     )
+
+
+class ChatReports:
+    """What the agent says by itself (a task's report, the briefing), sent in a chat: a
+    ``deliver.ReportChannel``. The user can answer there, so a task runs in the chat's
+    conversation and what it parks for their go is offered as a choice under the report."""
+
+    display = "chat"
+    reaches = "a message in the chat they talk to you in"
+
+    def __init__(self, session: ChatSession) -> None:
+        self._session = session
+        self.name = session.name
+        self.option_chars = session.channel.option_chars
+
+    @property
+    def conversation_id(self) -> str:
+        return self._session.conversation().id
+
+    async def send(self, title: str, text: str) -> None:
+        try:
+            await self._session.channel.send(f"⏰ {title}\n\n{text}".strip())
+        except httpx.HTTPError as exc:
+            raise DeliveryError(str(exc)) from exc
+        try:
+            await self._session.after_reply()
+        except httpx.HTTPError as exc:
+            # The report went out; what waits can still be approved in writing.
+            log.warning("Could not send the choices of a report (%s): %s", self.name, exc)
+
+    async def share_files(self, conv: Conversation, actions: list[dict]) -> None:
+        await self._session.share_files(conv, actions)

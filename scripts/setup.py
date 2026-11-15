@@ -15,6 +15,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import secrets
 import sys
 import urllib.parse
@@ -46,6 +47,17 @@ MODELS = {
     "openai-compatible": "any other server that speaks the OpenAI chat API (give its URL)",
 }
 KEYLESS = {"ollama", "lmstudio", "openai-compatible"}
+# Not a provider of its own: Claude (anthropic), answered by Claude Code on a Claude plan
+# instead of the API (ENGINE=subscription, docs/subscription.md).
+SUBSCRIPTION = "claude-subscription"
+SUBSCRIPTION_HELP = (
+    "Claude, on your Claude subscription through Claude Code: no API bill, slower replies"
+)
+DISPLAYS = {
+    "chat": "replies read in a chat: the wait is fine",
+    "notification": "briefings and other notifications: a few seconds more",
+    "voice": "spoken replies: a few seconds more of silence before each answer",
+}
 SEARCH = {
     "duckduckgo": "DuckDuckGo: no account, best effort (it limits automated searches)",
     "searxng": "your own SearXNG search engine: no account, dependable",
@@ -70,6 +82,8 @@ COMPOSE_FILES = {
     "traefik": "traefik",
 }
 
+# A short name suggested for a drive, by rclone type, when the type itself reads badly.
+DRIVE_NAMES = {"drive": "gdrive", "iclouddrive": "icloud", "google photos": "photos"}
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 COMPASS = "N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW".split()
 SECTIONS = {
@@ -131,8 +145,12 @@ SECRET_KEYS = {
     "SEARXNG_SECRET",
     "KB_TOKEN",
     "KB_GITHUB_TOKEN",
+    "DRIVE_PASSWORD",
     "HUE_APP_KEY",
+    "NUKI_API_TOKEN",
+    "PETKIT_PASSWORD",
     "LLM_API_KEY",
+    "CLAUDE_CODE_OAUTH_TOKEN",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
     "MAIL_ACCOUNTS",
@@ -278,7 +296,12 @@ def ask_home(p: Prompter, env: dict[str, str], lookup: Callable[[str, str], dict
 
 def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     p.say("\n# Language model: who answers?")
-    provider = p.pick("Provider", MODELS, "anthropic")
+    # The subscription right after the API: the two ways to Claude side by side.
+    choices = {"anthropic": MODELS["anthropic"], SUBSCRIPTION: SUBSCRIPTION_HELP, **MODELS}
+    provider = p.pick("Provider", choices, "anthropic")
+    if provider == SUBSCRIPTION:
+        ask_subscription(p, env, docker=docker)
+        return
     env["LLM_PROVIDER"] = provider
     if provider == "openai-compatible":
         env["LLM_BASE_URL"] = p.ask("Server URL, usually ending in /v1")
@@ -298,6 +321,31 @@ def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     while not (model := p.ask("Model name, as the provider spells it")):
         p.say("  A model name is needed.")
     env["LLM_MODEL"] = model
+
+
+def ask_subscription(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
+    env["LLM_PROVIDER"] = "anthropic"
+    env["ENGINE"] = "subscription"
+    p.say("  Claude Code answers, signed in to your own Claude plan. On a computer with a")
+    p.say("  browser, install Claude Code, run `claude setup-token` and paste the token it")
+    p.say("  prints (valid a year). Each reply starts a Claude Code process: a few seconds")
+    p.say("  more than the API, fine in a chat, slow for a voice. The plan's usage limits")
+    p.say("  are shared with your own Claude Code sessions. See docs/subscription.md.")
+    if token := p.secret("Token from `claude setup-token`"):
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    p.say("  An Anthropic API key as well is optional. With one, the API answers what the")
+    p.say("  subscription can't (a file you send, a usage limit, an error) and the replies")
+    p.say("  you'd rather not wait for. Without one, the subscription answers everything")
+    p.say("  and says so when it can't.")
+    if key := p.secret("Anthropic API key, to take what the subscription can't"):
+        env["LLM_API_KEY"] = key
+        displays = p.choose("The subscription answers (the API the rest)", DISPLAYS, ["chat"])
+        if displays != ["chat"]:
+            env["SUBSCRIPTION_DISPLAYS"] = ",".join(displays)
+    env["LLM_MODEL"] = p.ask("Model", "claude-sonnet-5-5")
+    if docker:
+        # The image leaves Claude Code out unless asked (some 400 MB).
+        env["EXTRAS"] = "documents,subscription"
 
 
 def ask_search(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
@@ -378,6 +426,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
         files.append("compose/searxng.yml")
     if env.pop("_COMPOSE_KB", None):
         files.append("compose/kb.yml")
+    if env.pop("_COMPOSE_DRIVE", None):
+        files.append("compose/drive.yml")
     if len(files) > 1:
         # ":" on every system, Windows included.
         env["COMPOSE_PATH_SEPARATOR"] = ":"
@@ -471,7 +521,11 @@ def ask_documents(p: Prompter, env: dict[str, str]) -> None:
     provider = p.pick("Generated pictures", GENERATORS, "none")
     if provider != "none" and (key := p.secret(f"API key for {provider}")):
         env[f"GENERATION_{provider.upper()}_API_KEY"] = key
-    if env.get("LLM_PROVIDER") == "anthropic" and p.yes(
+    # The sandbox is the API's: not with a Claude subscription alone.
+    sandbox = env.get("LLM_PROVIDER") == "anthropic" and (
+        "ENGINE" not in env or "LLM_API_KEY" in env
+    )
+    if sandbox and p.yes(
         "Exact calculations and charts in Anthropic's code sandbox (billed with the model)?",
         False,
     ):
@@ -544,7 +598,61 @@ def ask_sources(p: Prompter, env: dict[str, str], sections: list[str]) -> None:
             if "reminders" in sections:
                 repo = p.ask("Repo with the coding-assistant reminders, owner/repo (empty: none)")
                 if repo:
-                    env["ASSISTANT_REMINDERS_REPO"] = repo
+                    env["NOTES_REPO"] = repo
+                    if p.yes(
+                        "  Let the agent leave reminders and handoff notes there for your "
+                        "coding sessions, and close reminders (the token must write to it)?",
+                        False,
+                    ):
+                        env["NOTES_WRITE"] = "true"
+            if p.yes(
+                "Let the agent read the files of your repositories and check their "
+                "dependencies for known flaws (read-only)?",
+                False,
+            ):
+                env["GITHUB_REPOSITORIES"] = "true"
+
+
+# Devices and services set up beyond the wizard: what each needs once .env is written.
+DEVICES = {
+    "nuki": "a Nuki smart lock (a Nuki Web API token)",
+    "petkit": "a PetKit feeder or litter box (a second PetKit account)",
+    "netatmo": "Netatmo cameras, weather station or thermostat",
+    "android-tv": "a Google TV / Android TV device: a TV, a projector, a box",
+    "apple": "an Apple TV, HomePods",
+    "withings": "a Withings scale (weigh-ins, read-only)",
+}
+DEVICE_STEPS = {
+    "petkit": 'install the library: pip install ".[petkit]" (Docker: docs/home-devices.md)',
+    "netatmo": "run python scripts/netatmo_login.py and add the lines it writes to .env",
+    "android-tv": "on the home network, run python scripts/android_tv_pair.py <address>",
+    "apple": "on the home network, run python scripts/apple_devices.py profile <addresses>",
+    "withings": "run python scripts/withings_login.py and add the lines it writes to .env",
+}
+
+
+def ask_devices(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# More of the home, without Home Assistant (docs/home-devices.md, docs/health.md)")
+    if not p.yes("Set up a lock, cameras, a pet feeder, a TV, Apple devices or a scale?", False):
+        return
+    picked = p.choose("Which ones", DEVICES, [])
+    if "nuki" in picked:
+        if token := p.secret("Nuki Web API token (web.nuki.io > API)"):
+            env["NUKI_API_TOKEN"] = token
+        p.say("  Opening the door then waits for your yes each time; for a code or a secret")
+        p.say("  phrase instead, run python scripts/unlock_codes_setup.py --totp --phrase.")
+    if "petkit" in picked:
+        env["PETKIT_USERNAME"] = p.ask("  PetKit account shared with the devices (email)")
+        if password := p.secret("  Its password"):
+            env["PETKIT_PASSWORD"] = password
+        region = p.ask("  Country code of the PetKit account", env.get("HOME_COUNTRY", ""))
+        if region:
+            env["PETKIT_REGION"] = region
+    steps = [(name, DEVICE_STEPS[name]) for name in picked if name in DEVICE_STEPS]
+    if steps:
+        p.say("  Once .env is written:")
+        for name, step in steps:
+            p.say(f"  - {name}: {step}.")
 
 
 MEMORY = {
@@ -587,6 +695,41 @@ def ask_knowledge(p: Prompter, env: dict[str, str]) -> None:
     env["_COMPOSE_KB"] = "1"
 
 
+def ask_drives(p: Prompter, env: dict[str, str]) -> None:
+    p.say("\n# File drives: the assistant finds, reads and files your documents")
+    p.say("  Google Drive, iCloud Drive, OneDrive, Dropbox, a NAS, S3...: anything rclone")
+    p.say("  reaches, several at once. docs/drives.md lists them and how each one logs in.")
+    if not p.yes("Use one?", False):
+        return
+    drives: list[dict[str, object]] = []
+    while True:
+        backend = p.ask(
+            "Service, by its rclone type (drive = Google Drive, iclouddrive, onedrive, "
+            "dropbox, box, pcloud, webdav, smb, sftp, s3...; empty: another one)"
+        )
+        suggested = DRIVE_NAMES.get(backend, re.sub(r"[^a-z0-9_]", "", backend.lower()))
+        taken = {d["name"] for d in drives}
+        while not re.fullmatch(r"[a-z][a-z0-9_]{0,19}", name := p.ask("Short name", suggested)) or (
+            name in taken
+        ):
+            p.say("  A new name of lowercase letters, digits or _, starting with a letter.")
+        drive: dict[str, object] = {"name": name, "remote": f"{name}:"}
+        if backend:
+            drive["backend"] = backend
+        if not p.yes("May the assistant add, move and delete files there (no: read only)?", True):
+            drive["read_only"] = True
+        drives.append(drive)
+        if not p.yes("Another drive?", False):
+            break
+    env["DRIVES"] = json.dumps(drives, separators=(",", ":"))
+    env["DRIVE_PASSWORD"] = secrets.token_hex(24)
+    env["_COMPOSE_DRIVE"] = "1"
+    if env["LLM_PROVIDER"] == "anthropic" and p.yes(
+        "Have the model read scanned PDFs so they can be searched (a paid request each)?", False
+    ):
+        env["DRIVE_OCR"] = "model"
+
+
 def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
     p.say("\n# How will you reach the assistant?")
     channels = p.choose("Channels", CHANNELS, ["siri"])
@@ -598,6 +741,35 @@ def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
     return channels
 
 
+def ask_time(p: Prompter, question: str) -> str:
+    while True:
+        answer = p.ask(question)
+        hours, _, minutes = answer.partition(":")
+        if not answer:
+            return ""
+        if hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60:
+            return f"{int(hours):02d}:{int(minutes):02d}"
+        p.say("  A time of day as HH:MM, e.g. 07:30; empty for none.")
+
+
+def ask_tasks(p: Prompter, env: dict[str, str]) -> None:
+    """Tasks the assistant runs by itself reach the user as a push: asked only with one."""
+    if "NTFY_URL" not in env:
+        return
+    p.say("\n# Tasks the assistant runs by itself, sent as a push (docs/tasks.md)")
+    p.say("  You can then ask it to check or remind you of something later, or every week.")
+    if at := ask_time(p, "Send the morning briefing every day at (HH:MM, empty: only when asked)"):
+        env["MORNING_BRIEFING_AT"] = at
+    if at := ask_time(p, "Send the evening recap every day at (HH:MM, empty: only when asked)"):
+        env["EVENING_RECAP_AT"] = at
+    if "NOTES_REPO" in env and p.yes(
+        f"Keep the tasks in {env['NOTES_REPO']} rather than on this machine, so you (and "
+        "your coding assistant) can write some there?",
+        False,
+    ):
+        env["TASKS_STORE"] = "github"
+
+
 GROUPS = [
     ("API", ["AGENT_API_TOKEN"]),
     (
@@ -605,6 +777,7 @@ GROUPS = [
         [
             "COMPOSE_PATH_SEPARATOR",
             "COMPOSE_FILE",
+            "EXTRAS",
             "AGENT_BIND",
             "AGENT_DOMAIN",
             "TRAEFIK_NETWORK",
@@ -616,6 +789,7 @@ GROUPS = [
         ],
     ),
     ("Language model", ["LLM_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"]),
+    ("Claude subscription", ["ENGINE", "CLAUDE_CODE_OAUTH_TOKEN", "SUBSCRIPTION_DISPLAYS"]),
     (
         "Web search",
         [
@@ -632,7 +806,17 @@ GROUPS = [
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
     ("Outdoor activities", ["OUTDOOR_ACTIVITIES", "WIND_SPOTS", "SURF_SPOTS"]),
     ("Home Assistant", ["HA_URL", "HA_TOKEN"]),
-    ("Home devices", ["HUE_BRIDGE_URL", "HUE_APP_KEY"]),
+    (
+        "Home devices",
+        [
+            "HUE_BRIDGE_URL",
+            "HUE_APP_KEY",
+            "NUKI_API_TOKEN",
+            "PETKIT_USERNAME",
+            "PETKIT_PASSWORD",
+            "PETKIT_REGION",
+        ],
+    ),
     (
         "Calendar",
         [
@@ -645,7 +829,7 @@ GROUPS = [
         ],
     ),
     ("Mail", ["MAIL_ACCOUNTS"]),
-    ("GitHub", ["GITHUB_TOKEN", "ASSISTANT_REMINDERS_REPO"]),
+    ("GitHub", ["GITHUB_TOKEN", "GITHUB_REPOSITORIES", "NOTES_REPO", "NOTES_WRITE"]),
     (
         "Documents and pictures",
         [
@@ -657,7 +841,9 @@ GROUPS = [
     ),
     ("Memory", ["MEMORY_STORE", "MEMORY_REPO"]),
     ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
+    ("File drives", ["DRIVE_PASSWORD", "DRIVES", "DRIVE_OCR"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
+    ("Tasks", ["TASKS_STORE", "MORNING_BRIEFING_AT", "EVENING_RECAP_AT"]),
 ]
 
 
@@ -705,14 +891,18 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     ask_activities(p, env)
     ask_documents(p, env)
     ask_sources(p, env, sections)
+    ask_devices(p, env)
     ask_memory(p, env)
     if docker:
         ask_knowledge(p, env)
+        ask_drives(p, env)
     address = ask_access(p, env) if docker else None
     env.pop("_COMPOSE_KB", None)
+    env.pop("_COMPOSE_DRIVE", None)
     env.pop("_COMPOSE_OLLAMA", None)
     env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
+    ask_tasks(p, env)
 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -723,7 +913,8 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     missing = [
         key
         for key, needed in (
-            ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS),
+            ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS and "ENGINE" not in env),
+            ("CLAUDE_CODE_OAUTH_TOKEN", "ENGINE" in env),
             ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
             ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),
@@ -740,8 +931,11 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         if "compose/ollama.yml" in env.get("COMPOSE_FILE", ""):
             p.say(f"  Then: docker compose exec ollama ollama pull {env['LLM_MODEL']}")
         p.say(f"  The agent will answer at {address}")
+        if "DRIVES" in env:
+            p.say("  Drives: log each one in before asking about your files (docs/drives.md).")
     else:
-        p.say("  Start: pip install -e . && uvicorn intelligent_home_agent.main:app")
+        extra = '".[subscription]"' if "ENGINE" in env else "."
+        p.say(f"  Start: pip install -e {extra} && uvicorn intelligent_home_agent.main:app")
     p.say("  Check: docs/setup.md, step 6. Clients authenticate with AGENT_API_TOKEN from .env.")
     for channel in channels:
         p.say(f"  {NEXT_STEPS[channel]}")

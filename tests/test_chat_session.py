@@ -10,13 +10,13 @@ from intelligent_home_agent.chat import DONE, FAILED
 from intelligent_home_agent.chat_session import (
     PLAN_TAG,
     RESUME_TAG,
-    SILENT_REPLY,
     ChatSession,
     choice_options,
 )
 from intelligent_home_agent.conversations import Attachment, Conversation
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.main import with_waiting
+from intelligent_home_agent.tasks import SILENT_REPLY
 from intelligent_home_agent.tools import Tool, ToolRegistry, build_proposal_tools
 from intelligent_home_agent.tools.base import ToolContext, ToolError, park
 
@@ -517,7 +517,7 @@ def test_options_are_numbered_only_when_two_read_the_same():
     assert choice_options([(7, "x" * 60)], 48, "fr") == ["7. → détail n°7 ci-dessus"]
 
 
-@pytest.mark.parametrize("silent", ["NOTHING_LEFT", "All done.\n\nNOTHING_LEFT"])
+@pytest.mark.parametrize("silent", [SILENT_REPLY, f"All done.\n\n{SILENT_REPLY}"])
 async def test_a_silent_answer_with_something_to_show_never_shows_the_marker(silent):
     chat = Chat()
 

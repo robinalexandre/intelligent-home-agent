@@ -5,7 +5,7 @@ setting with a comment.
 """
 
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -16,6 +16,7 @@ from intelligent_home_agent.llm import (
     CUSTOM,
     DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_ANTHROPIC_SEARCH_MODEL,
+    DOCUMENT_PROVIDERS,
     PROVIDERS,
     WEB_SEARCH_PROVIDERS,
     needs_key,
@@ -109,6 +110,27 @@ class McpServer(BaseModel):
         return self
 
 
+class Drive(BaseModel):
+    """A file drive: one remote of the rclone sidecar (docs/drives.md)."""
+
+    # Short name the tools take, e.g. "gdrive", "nas".
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,19}$")
+    # What the user calls it ("Google Drive", "Home NAS"); the service's name when empty.
+    label: str = ""
+    # The remote as rclone's config names it, with an optional folder: "gdrive:",
+    # "nas:Documents", or a view made with rclone's combine or alias.
+    remote: str = Field(pattern=r"^[\w][\w .+@-]*:[^\x00-\x1f]*$")
+    # rclone's type of the storage behind it (drive, iclouddrive, onedrive, dropbox,
+    # webdav, sftp, s3...): only used to say what to do when its login fails, and where
+    # the service keeps what is deleted. Empty: general advice.
+    backend: str = ""
+    # The agent only lists, searches and reads there.
+    read_only: bool = False
+    # Index the text inside its files for search_drive_content (every readable file is
+    # downloaded once): false for a drive too big or billed by the download.
+    content: bool = True
+
+
 class Settings(BaseSettings):
     # Empty values (HOME_LATITUDE=) mean "not set", as in .env.example.
     model_config = SettingsConfigDict(
@@ -138,6 +160,22 @@ class Settings(BaseSettings):
     # than a spoken one: the user can wait for it.
     max_chat_tokens: int = 4096
     max_chat_tool_iterations: int = 30
+
+    # --- Claude on a Claude subscription instead of the API (docs/subscription.md) -----
+    # Who answers. "api": the provider's API with the key above. "subscription", only
+    # with LLM_PROVIDER=anthropic: Claude Code through the Agent SDK (the "subscription"
+    # extra), signed in with CLAUDE_CODE_OAUTH_TOKEN, on the user's Claude plan. The API
+    # takes what the subscription can't (a file to read, a usage limit, an error) when
+    # LLM_API_KEY is set; without a key those turns get a reply that says so.
+    engine: Literal["api", "subscription"] = "api"
+    # The token `claude setup-token` prints (valid a year).
+    claude_code_oauth_token: SecretStr | None = None
+    # Empty: LLM_MODEL.
+    subscription_model: str = ""
+    # Where the subscription answers, among voice, notification, chat: it starts a Claude
+    # Code process per turn, a few seconds a chat can wait for and a voice hardly can. The
+    # API answers the others; without LLM_API_KEY the subscription answers everywhere.
+    subscription_displays: CsvList = ["chat"]
 
     # --- Home Assistant (optional: without a token, the home tools are off) ------------
     ha_url: str = "http://homeassistant.local:8123"
@@ -177,6 +215,57 @@ class Settings(BaseSettings):
     # Devialet Phantom speaker: its address; no login. Volumes are capped.
     devialet_url: str | None = None
     devialet_max_volume: int = Field(70, ge=0, le=100)
+    # A Google TV / Android TV device (a TV, a projector, a box): its address, and the
+    # client certificate scripts/android_tv_pair.py had it accept. Needs the android-tv
+    # extra. ANDROID_TV_NAME is what the user calls it ("TV", "projector").
+    android_tv_host: str | None = None
+    android_tv_client_cert: SecretStr | None = None
+    android_tv_client_key: SecretStr | None = None
+    android_tv_max_volume: int = Field(70, ge=0, le=100)
+    android_tv_name: str = "TV"
+    # Apps besides the built-in ones (netflix, youtube, prime video, disney+), as JSON:
+    # {"name": {"package": "...", "link": "deep link, or null"}}; "name": null drops one.
+    android_tv_apps: dict[str, Any] = {}
+    # The live TV app (one of the apps) that takes a channel number typed on the remote,
+    # and names for those numbers, as JSON: {"news one": 1}. Empty: no live channels.
+    android_tv_channel_app: str | None = None
+    android_tv_channels: dict[str, Any] = {}
+    # Apple TV and HomePods through pyatv (the apple extra): the profile JSON that
+    # `scripts/apple_devices.py profile` prints on the home network, and the Apple TV's
+    # pairing from `scripts/apple_devices.py pair`. Empty profile: no tool.
+    apple_devices: str = ""
+    apple_tv_companion_credentials: SecretStr | None = None
+    apple_tv_airplay_credentials: SecretStr | None = None
+    # Nuki smart lock through the Nuki Web API (token from web.nuki.io > API).
+    nuki_api_token: SecretStr | None = None
+    # Proof only the user has, asked before a door opens (scripts/unlock_codes_setup.py):
+    # an authenticator app's secret and/or a secret phrase. Neither: opening always waits
+    # for the user's go in a later message.
+    unlock_totp_secret: SecretStr | None = None
+    unlock_phrase: SecretStr | None = None
+    # Netatmo cameras, weather station, thermostat (scripts/netatmo_login.py).
+    netatmo_client_id: str | None = None
+    netatmo_client_secret: SecretStr | None = None
+    netatmo_refresh_token: SecretStr | None = None
+    # PetKit feeder and litter box (cloud, unofficial API: the petkit extra), through a
+    # second PetKit account the devices are shared with. PETKIT_REGION: a country code
+    # PetKit routes to its regional server; HOME_COUNTRY when empty.
+    petkit_username: str | None = None
+    petkit_password: SecretStr | None = None
+    petkit_region: str | None = None
+    # With NTFY_URL: a push when the litter or the food gets under these levels (%), and
+    # when the waste bin is full, again every PETKIT_BIN_REMIND_MINUTES; nothing between
+    # PETKIT_QUIET_START and PETKIT_QUIET_END (hours of the day).
+    petkit_alerts: bool = True
+    petkit_litter_alert_percent: int = Field(50, ge=0, le=100)
+    petkit_food_alert_percent: int = Field(45, ge=0, le=100)
+    petkit_bin_remind_minutes: int = Field(120, ge=1)
+    petkit_check_minutes: int = Field(180, ge=1)
+    petkit_quiet_start: int = Field(22, ge=0, le=23)
+    petkit_quiet_end: int = Field(8, ge=0, le=23)
+    # Leaving home (POST /v1/departure, departure.py): what is still unlocked, on or
+    # playing among the devices set up, each fix waiting for the user's go.
+    departure_check: bool = True
 
     # --- Assistant persona -------------------------------------------------------------
     assistant_name: str = "Assistant"
@@ -268,10 +357,48 @@ class Settings(BaseSettings):
 
     # --- GitHub (token that can read the user's repositories) --------------------------
     github_token: SecretStr | None = None
-    # Reminders left with a coding assistant, one Markdown file each in a repo the token
-    # can read: "owner/repo". Empty: no assistant reminders.
-    assistant_reminders_repo: str | None = None
+    # Let the agent list the user's repositories, read and search their files, and check
+    # their dependencies for known flaws (OSV.dev). Read-only.
+    github_repositories: bool = False
+
+    # --- Notes repository (docs/tasks.md): reminders and handoff notes for coding sessions
+    # A repository of notes the token can read, "owner/repo": reminders left with a coding
+    # assistant, one Markdown file each. Empty: no assistant reminders.
+    # ASSISTANT_REMINDERS_REPO is its former name.
+    notes_repo: str | None = Field(
+        None, validation_alias=AliasChoices("notes_repo", "assistant_reminders_repo")
+    )
     assistant_reminders_path: str = "reminders"
+    handoffs_path: str = "handoffs"
+    # Let the agent leave reminders and handoff notes there and close reminders (the token
+    # must be allowed to write the repository's contents). Off: the repository is only read.
+    notes_write: bool = False
+    # Optional, for a repository that encrypts folders with git-crypt: the key it exported
+    # (git-crypt export-key), as one base64 line. Empty: MEMORY_CRYPT_KEY when the memory
+    # is in the same repository.
+    notes_crypt_key: SecretStr | None = None
+
+    # --- Tasks the agent runs by itself (docs/tasks.md) ---------------------------------
+    # They need a way to reach the user (NTFY_URL); without one, there are none.
+    # local: Markdown files in DATA_DIR/tasks. github: a folder of NOTES_REPO (the token
+    # must be allowed to write its contents). off: none.
+    tasks_store: Literal["local", "github", "off"] = "local"
+    # Where the folder is. Empty: tasks, in DATA_DIR (local) or in a folder named after
+    # the assistant (github: "Nova" keeps nova/tasks).
+    tasks_path: str = ""
+    tasks_poll_seconds: float = Field(60, gt=0)
+    # The briefing and the recap, sent every day at that local time ("07:30"). Empty: only
+    # when asked.
+    morning_briefing_at: str | None = None
+    evening_recap_at: str | None = None
+
+    # --- Health: Withings scale (weigh-ins, read-only; docs/health.md) -----------------
+    withings_client_id: str | None = None
+    withings_client_secret: SecretStr | None = None
+    withings_refresh_token: SecretStr | None = None
+
+    # --- Parcels the agent notes when it reads a shipping email (needs MAIL_ACCOUNTS) ---
+    deliveries_enabled: bool = True
 
     # --- Connectors: remote MCP servers (a bank, a hosting provider...), JSON list ------
     mcp_servers: list[McpServer] = []
@@ -340,6 +467,31 @@ class Settings(BaseSettings):
     # --- Knowledge base (the kb container of compose/kb.yml, docs/knowledge.md) --------
     kb_url: str | None = None
     kb_token: SecretStr | None = None
+
+    # --- File drives through an rclone sidecar (compose/drive.yml, docs/drives.md) -----
+    # Where the sidecar's API is (set by compose/drive.yml) and the password both share.
+    # Tools exist once the URL, the password and at least one drive are set.
+    drive_url: str | None = None
+    drive_user: str = "agent"
+    drive_password: SecretStr | None = None
+    # The drives, a JSON list: name, remote, and optionally label, backend, read_only,
+    # content.
+    drives: list[Drive] = []
+    # How old the index of file names may get before it is rebuilt.
+    drive_index_hours: float = Field(24, gt=0)
+    # Copies of what the agent deletes, in DATA_DIR/drive-trash: how long they are kept,
+    # the biggest item copied and the most the trash may hold. Beyond that, a deletion
+    # waits for the user to accept it without a copy.
+    drive_trash_days: float = Field(30, gt=0)
+    drive_trash_max_item_mb: int = Field(1024, ge=0)
+    drive_trash_max_total_mb: int = Field(5120, ge=0)
+    # Index the text inside the files (PDF, office, text) for search by content.
+    drive_content: bool = True
+    # Scanned PDFs: "model" has the model read them (a few per hour, each a paid request;
+    # needs a provider that takes PDFs, anthropic today), "off" lists them by name only.
+    drive_ocr: Literal["off", "model"] = "off"
+    # Empty: a small Claude model with anthropic.
+    drive_ocr_model: str = ""
 
     # --- Push notifications (ntfy, optional) -------------------------------------------
     # Full topic URL, e.g. https://ntfy.sh/some-long-random-topic or a self-hosted server.
@@ -431,6 +583,7 @@ class Settings(BaseSettings):
         "whatsapp_readable_chats",
         "telegram_chat_ids",
         "whisper_languages",
+        "subscription_displays",
         mode="before",
     )
     @classmethod
@@ -472,6 +625,28 @@ class Settings(BaseSettings):
             raise ValueError("two MCP_SERVERS entries share a name")
         return value
 
+    @field_validator("drives")
+    @classmethod
+    def _distinct_drives(cls, value: list[Drive]) -> list[Drive]:
+        names = [drive.name for drive in value]
+        if len(set(names)) != len(names):
+            raise ValueError("two DRIVES entries share a name")
+        return value
+
+    @property
+    def drives_enabled(self) -> bool:
+        return bool(self.drives and self.drive_url and self.drive_password)
+
+    @property
+    def subscription_enabled(self) -> bool:
+        return self.engine == "subscription" and self.claude_code_oauth_token is not None
+
+    @property
+    def drive_ocr_enabled(self) -> bool:
+        """Scans are only read where the provider takes a PDF as a document; elsewhere
+        DRIVE_OCR=model falls back to the text layers alone (main logs it)."""
+        return self.drive_ocr == "model" and self.llm_provider in DOCUMENT_PROVIDERS
+
     @field_validator("llm_provider")
     @classmethod
     def _known_provider(cls, value: str) -> str:
@@ -482,7 +657,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _model_is_usable(self) -> "Settings":
-        if needs_key(self.llm_provider) and self.llm_api_key is None:
+        if self.engine == "subscription":
+            # Checked first: with it, Claude needs no API key.
+            if self.llm_provider != ANTHROPIC:
+                raise ValueError(
+                    "ENGINE=subscription is Claude on a Claude plan: it needs "
+                    f"LLM_PROVIDER=anthropic, not {self.llm_provider}"
+                )
+            if self.claude_code_oauth_token is None:
+                raise ValueError(
+                    "ENGINE=subscription needs CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token`)"
+                )
+            unknown = set(self.subscription_displays) - {"voice", "notification", "chat"}
+            if unknown:
+                raise ValueError(
+                    f"SUBSCRIPTION_DISPLAYS: unknown {sorted(unknown)}; known: voice, "
+                    "notification, chat"
+                )
+        elif needs_key(self.llm_provider) and self.llm_api_key is None:
             raise ValueError(f"LLM_PROVIDER={self.llm_provider} needs LLM_API_KEY")
         if self.llm_provider == CUSTOM and not self.llm_base_url:
             raise ValueError("LLM_PROVIDER=openai-compatible needs LLM_BASE_URL")
@@ -490,6 +682,28 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        if not self.drive_ocr_model:
+            self.drive_ocr_model = (
+                DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
+            )
+        return self
+
+    @field_validator("morning_briefing_at", "evening_recap_at")
+    @classmethod
+    def _a_time_of_day(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        hours, sep, minutes = value.strip().partition(":")
+        if not (sep and hours.isdigit() and minutes.isdigit() and len(minutes) == 2):
+            raise ValueError('a time of day is "HH:MM", e.g. 07:30')
+        if int(hours) > 23 or int(minutes) > 59:
+            raise ValueError('a time of day is "HH:MM", e.g. 07:30')
+        return f"{int(hours):02d}:{minutes}"
+
+    @model_validator(mode="after")
+    def _tasks_are_usable(self) -> "Settings":
+        if self.tasks_store == "github" and not (self.github_token and self.notes_repo):
+            raise ValueError("TASKS_STORE=github needs GITHUB_TOKEN and NOTES_REPO")
         return self
 
     @model_validator(mode="after")

@@ -45,11 +45,16 @@ ANSWERS = [
     "y",  # the agent may add events
     "",  # to the server's default calendar
     "y",  # contacts' birthdays
+    "",  # no other devices
     "",  # memory: local files
     "",  # no knowledge base
+    "",  # no file drives
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
+    "7h",  # the briefing by itself: not a time, asked again
+    "7:30",
+    "",  # no recap by itself
 ]
 SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
@@ -100,6 +105,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
     assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
+    assert env["MORNING_BRIEFING_AT"] == "07:30" and "EVENING_RECAP_AT" not in env
+    assert "TASKS_STORE" not in env  # files on this machine, the default
     assert "HA_TOKEN" not in env and "NTFY_TOKEN" not in env
     assert len(env["AGENT_API_TOKEN"]) >= 40
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -134,9 +141,11 @@ NOTHING_ELSE = ["", "", "", "weather", "short", "", "", ""]
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
-    # No Home Assistant, Hue, memory in local files, a knowledge base, access, node name,
-    # channel.
-    answers += ["n", "y", "http://192.168.1.20", "", "y", "someone/notes", "funnel", "agent"]
+    # No Home Assistant, Hue, no other devices, memory in local files, a knowledge base, no
+    # file drives,
+    # access, node name, channel.
+    answers += ["n", "y", "http://192.168.1.20", "", "", "y", "someone/notes", ""]
+    answers += ["funnel", "agent"]
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
     assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
@@ -161,9 +170,10 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
     # No web pages, investigations: with a domain, the agent knows its public address.
-    # Then no Home Assistant, no Hue, no memory.
-    answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "off"]
-    answers += ["", "caddy", "", "agent.example.com", "siri"]
+    # Then no Home Assistant, no Hue, no other devices, no memory.
+    answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "", "off"]
+    # No knowledge base, no file drives.
+    answers += ["", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
     assert env["PUBLIC_URL"] == "https://agent.example.com"
@@ -182,7 +192,9 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         *NOTHING_ELSE,
         "n",
         "",
+        "",  # no other devices
         "",  # memory: local files
+        "",
         "",
         "cloudflare",
         "siri",
@@ -192,10 +204,34 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     assert "LLM_API_KEY, TUNNEL_TOKEN, WEB_SEARCH_API_KEY." in output
 
 
+def test_file_drives_get_a_sidecar_a_password_and_their_list(tmp_path, monkeypatch):
+    # Anthropic, nothing else; then two drives (one read-only) and scans read by the model.
+    answers = ["", *START, "", "claude-test", *NOTHING_ELSE, "", "n", "", "", "", ""]
+    answers += ["y", "drive", "", "", "y", "sftp", "Bad Name", "nas", "n", "n", "y"]
+    answers += ["", "siri"]
+    env, output = run_with(tmp_path, answers, ["sk-secret"])
+    assert json.loads(env["DRIVES"]) == [
+        {"name": "gdrive", "remote": "gdrive:", "backend": "drive"},
+        {"name": "nas", "remote": "nas:", "backend": "sftp", "read_only": True},
+    ]
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/drive.yml"
+    assert len(env["DRIVE_PASSWORD"]) == 48 and env["DRIVE_PASSWORD"] not in output
+    assert env["DRIVE_OCR"] == "model" and "docs/drives.md" in output
+
+    from intelligent_home_agent.config import Settings
+
+    for name in ("GITHUB_TOKEN", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    settings = Settings(_env_file=tmp_path / ".env")
+    assert [d.name for d in settings.drives] == ["gdrive", "nas"] and settings.drives[1].read_only
+    assert not settings.drives_enabled  # compose/drive.yml sets DRIVE_URL
+
+
 def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
-    # No Home Assistant, no Hue, memory in a repository (asked twice: owner/repo), channel.
-    answers += [*NOTHING_ELSE, "n", "", "github", "notes", "someone/config", "siri"]
+    # No Home Assistant, no Hue, no other devices, memory in a repository (asked twice:
+    # owner/repo), channel.
+    answers += [*NOTHING_ELSE, "n", "", "", "github", "notes", "someone/config", "siri"]
     env, output = run_with(tmp_path, answers, ["", "gh-write-secret"])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
     # Not Anthropic: the code sandbox is not offered. No country: A4.
@@ -206,13 +242,28 @@ def test_without_docker_no_compose_question(tmp_path):
     assert "uvicorn intelligent_home_agent.main:app" in output
 
 
+def test_other_devices_ask_what_the_wizard_can_take_and_say_the_rest(tmp_path):
+    answers = ["n", *START, "lmstudio", "m", "off", *NOTHING_ELSE, "n", ""]
+    # Other devices: yes; which; the PetKit account and its country.
+    answers += ["y", "nuki, petkit, netatmo, android-tv, withings", "pets@example.com", "GB"]
+    answers += ["", "siri"]  # memory in local files, channel
+    env, output = run_with(tmp_path, answers, ["", "nuki-secret", "petkit-secret"])
+    assert env["NUKI_API_TOKEN"] == "nuki-secret" and env["PETKIT_PASSWORD"] == "petkit-secret"
+    assert (env["PETKIT_USERNAME"], env["PETKIT_REGION"]) == ("pets@example.com", "GB")
+    assert "nuki-secret" not in output and "petkit-secret" not in output
+    for script in ("unlock_codes_setup", "netatmo_login", "android_tv_pair", "withings_login"):
+        assert f"scripts/{script}.py" in output
+        assert (SCRIPT.parent / f"{script}.py").is_file()
+    assert "apple_devices" not in output
+
+
 def test_wizard_offers_every_provider_and_every_compose_file():
     from intelligent_home_agent import llm
 
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive"}
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
@@ -282,3 +333,65 @@ def test_a_calendar_on_another_server_asks_for_both_addresses():
     assert queue == [] and "CALDAV_WRITE" not in env
     assert env["CALDAV_URL"] == "https://dav.example.com/"
     assert env["CARDDAV_URL"] == "https://dav.example.com/c/"
+
+
+def test_a_notes_repository_may_be_written_to_and_hold_the_tasks():
+    answers = ["n", "n", "me/notes", "y", "y"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["ghp-secret"])
+    env = {}
+    prompter = setup.Prompter(read, read_secret, lambda _line: None)
+    setup.ask_sources(prompter, env, ["reminders"])
+    assert queue == []
+    assert env == {
+        "GITHUB_TOKEN": "ghp-secret",
+        "NOTES_REPO": "me/notes",
+        "NOTES_WRITE": "true",
+        "GITHUB_REPOSITORIES": "true",
+    }
+
+    # Without a push nothing is asked: a task would have no way to reach the user.
+    setup.ask_tasks(setup.Prompter(*scripted([])[:1], read_secret, lambda _line: None), env)
+    env["NTFY_URL"] = "https://ntfy.example.com/topic"
+    read, queue = scripted(["", "19:00", "y"])
+    setup.ask_tasks(setup.Prompter(read, read_secret, lambda _line: None), env)
+    assert queue == []
+    assert env["EVENING_RECAP_AT"] == "19:00" and "MORNING_BRIEFING_AT" not in env
+    assert env["TASKS_STORE"] == "github"
+
+
+def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
+    # Docker; the subscription with an API key beside it: where it answers, the model.
+    answers = ["", *START, "claude-subscription", "chat, notification", ""]
+    # A4, no pictures, no code sandbox; then nothing else, as in the tests above.
+    # No Home Assistant, Hue, other devices; memory in local files; no knowledge base, no
+    # drives; this machine only.
+    answers += [*NOTHING_ELSE, "", "n", "", "", "", "", "", "", "siri"]
+    env, output = run_with(tmp_path, answers, ["oat-secret", "sk-secret"])
+    assert (env["LLM_PROVIDER"], env["ENGINE"]) == ("anthropic", "subscription")
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "oat-secret" and env["LLM_API_KEY"] == "sk-secret"
+    assert env["SUBSCRIPTION_DISPLAYS"] == "chat,notification"
+    assert env["LLM_MODEL"] == "claude-sonnet-5-5"
+    # The image is built with Claude Code in it.
+    assert env["EXTRAS"] == "documents,subscription"
+    assert "oat-secret" not in output and "sk-secret" not in output
+    assert "claude setup-token" in output and "Still empty" not in output
+    # Claude searches the web itself: no search engine was asked for.
+    assert "WEB_SEARCH_BACKEND" not in env
+
+    # Without Docker and without a key: no display to choose, no sandbox to offer, and the
+    # extra to install.
+    (tmp_path / "alone").mkdir()
+    answers = ["n", *START, "claude-subscription", "claude-test"]
+    answers += [*NOTHING_ELSE, "n", "", "", "", "siri"]
+    env, output = run_with(tmp_path / "alone", answers, ["oat-secret", ""])
+    assert env["ENGINE"] == "subscription" and "LLM_API_KEY" not in env
+    assert "SUBSCRIPTION_DISPLAYS" not in env and "EXTRAS" not in env
+    assert env["LLM_MODEL"] == "claude-test" and "CODE_EXECUTION_ENABLED" not in env
+    assert "Still empty" not in output
+    assert 'pip install -e ".[subscription]"' in output
+
+    # The token left for later is named among what is still missing; the API key is not.
+    (tmp_path / "later").mkdir()
+    env, output = run_with(tmp_path / "later", answers, ["", ""])
+    assert "Still empty, add to .env before starting: CLAUDE_CODE_OAUTH_TOKEN." in output

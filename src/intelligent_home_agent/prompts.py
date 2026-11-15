@@ -13,6 +13,10 @@ from zoneinfo import ZoneInfo
 
 from intelligent_home_agent.activities import FORECASTS, Activity
 from intelligent_home_agent.i18n import strings
+from intelligent_home_agent.tasks import SILENT_REPLY
+
+# agent.TASK_TAG, which can't be imported from here (a test keeps the two the same).
+TASK_TAG = "[Scheduled task the user left you:"
 
 _SPOKEN = """Your replies are read aloud by a voice assistant (Siri, a smart speaker...), so:
 - Answer in {lang}, in one to three short spoken sentences.
@@ -90,6 +94,12 @@ _PRIVATE_SOURCES = {
     "get_github_pull_requests": "GitHub",
     "get_assistant_reminders": "assistant reminders",
     "read_whatsapp_chats": "WhatsApp chats",
+    "list_repositories": "your repositories",
+    "browse_repository": "your repositories",
+    "search_repository": "your repositories",
+    "check_dependencies": "your repositories",
+    "list_deliveries": "the parcels noted from emails",
+    "read_drive_file": "files of a drive",
     "read_saved_file": "kept files",
     "read_pdf_layout": "kept files",
     "fill_pdf": "kept files",
@@ -188,7 +198,8 @@ def _daily_help(cfg: PromptConfig) -> str:
     if "save_email_draft" in t:
         lines.append(
             "- To write an email, use save_email_draft: it puts a draft, with files attached "
-            "by name (sent by the user or kept from an email), in their drafts folder and "
+            "by name (sent by the user, kept from an email or read from a drive), in their "
+            "drafts folder and "
             "never sends it. Write it as the user, in their language, then tell them it "
             "waits in their drafts. A draft already there (to finish it, add a file, fix its "
             "text): list_email_drafts finds it, update_email_draft changes it in place (only "
@@ -294,6 +305,49 @@ def _daily_help(cfg: PromptConfig) -> str:
             "- The speaker: control_speaker for volume, play, pause, mute or an input; "
             "get_speaker_state for what it is doing."
         )
+    if "control_tv" in t:
+        lines.append(
+            "- The TV device (Google TV / Android TV): control_tv to turn it on or off, open "
+            "an app, set the volume, play or pause; get_tv_state for what it is doing."
+        )
+    if "control_apple_media" in t:
+        lines.append(
+            "- Apple TV and HomePods: get_apple_media_state for what plays where; "
+            "control_apple_media to pause, play, or turn the Apple TV off."
+        )
+    if "lock_door" in t:
+        lines.append(
+            "- The door lock: get_lock_state for whether it is locked, lock_door to lock it, "
+            "get_lock_activity for who came and went. unlock_door never opens on your word "
+            "alone: either it waits for the user's go, or it asks for proof; then relay the "
+            "tool's question word for word, stop, and pass the user's answer back exactly as "
+            "they wrote it. Never repeat such an answer later, in a summary or another message."
+        )
+    if "get_home_security_status" in t:
+        lines.append(
+            "- Netatmo: get_home_security_status for the cameras and who they saw at home, "
+            "get_camera_events for what happened, get_netatmo_measures for the weather "
+            "station and the thermostat. set_camera_monitoring waits for the user's go."
+        )
+    if "get_pet_devices_status" in t:
+        lines.append(
+            "- The pet feeder and litter box: get_pet_devices_status for food, meals, litter "
+            "and visits; feed_pet_now and clean_litter_box_now only when the user asks."
+        )
+    if "get_body_measurements" in t:
+        lines.append(
+            "- Health: get_body_measurements gives the user's weigh-ins and how they changed "
+            "over 7 and 30 days. Never bring them up unasked, nor in the briefing or the "
+            "recap. When the user asks, give a few rounded figures and the trend, never the "
+            "whole list."
+        )
+    if "note_delivery" in t:
+        lines.append(
+            "- Parcels: whenever you read an order, shipping or delivery email, note_delivery "
+            "right away (the email may be gone tomorrow), and update it as news comes. "
+            "list_deliveries says what is coming; mention a parcel on the day it arrives or "
+            "when it waits at a pickup point, with the place."
+        )
     connectors = sorted(name[:-5] for name in t if name.endswith("_help"))
     if connectors:
         lines.append(
@@ -338,6 +392,8 @@ def _daily_help(cfg: PromptConfig) -> str:
             "don't remember; read_day_journal for a day's requests and replies (today by "
             "default), or to find where a job stopped."
         )
+    if "list_drive_folder" in t:
+        lines.append(_drives(t))
     if "get_travel_time" in t:
         lines.append(
             "- When to leave: get_travel_time with the event's coordinates (or its address) "
@@ -353,6 +409,7 @@ def _daily_help(cfg: PromptConfig) -> str:
             "- get_assistant_reminders: what the user asked their coding assistant to remind "
             "them of; say each title in a few words, and its last day when it is today."
         )
+    lines.extend(_notes_and_tasks(t))
     lines.extend(_documents(t))
     return "\n".join(lines)
 
@@ -416,6 +473,149 @@ def _documents(t: set[str]) -> list[str]:
             "dates, a budget, a table of numbers from a kept CSV or Excel file) and draws "
             "charts, handed to the user. Use it instead of computing in your head whenever "
             "a number matters."
+        )
+    return lines
+
+
+def _filing(t: set[str]) -> str:
+    """Filing into a drive what came by email, when mail is set up too."""
+    if "read_email" not in t:
+        return ""
+    flag = (
+        ", and flag_email, so the user sees which emails you handled" if "flag_email" in t else ""
+    )
+    made = "; never write one yourself with create_pdf" if "create_pdf" in t else ""
+    return (
+        "\n- Filing from emails (invoices, payslips, tax notices): read_email keeps the "
+        "documents attached. For each one, call create_drive_folder when needed and "
+        f"save_file_to_drive with the exact destination{flag}: they wait for the user's go "
+        "as above, one go for the whole list. Never delete or move an email for filing its "
+        "documents. An invoice that is only behind a link or on the vendor's site: say so"
+        f"{made}."
+    )
+
+
+def _drives(t: set[str]) -> str:
+    """The file drives: finding and reading, then what may be written, by what is on (a
+    read-only setup has no write tool, a setup without a text index no content search)."""
+    by_content = (
+        " search_drive_content finds them by what they say (a contract number, a name, an amount);"
+        if "search_drive_content" in t
+        else ""
+    )
+    text = (
+        "- File drives (the folders the user shared; each tool's drive argument says which "
+        "one when there are several): search_drive_files finds files by name or folder;"
+        f"{by_content} if no search can, browse with list_drive_folder. read_drive_file "
+        "reads one. recent_drive_files lists what changed lately; drive_folder_size says "
+        "how much a folder holds."
+    )
+    if "create_drive_folder" not in t:
+        return text + " The drives are read-only: nothing can be written or deleted there."
+    return text + (
+        "\n- Putting files together in a drive (e.g. the papers for a loan): "
+        "create_drive_folder, then copy_drive_file for drive files and save_file_to_drive "
+        "for files sent, fetched or made in the conversation. Gathering files is always a "
+        "copy: the originals stay where they are. move_drive_file only when the user "
+        "explicitly says to move a file; copy_drive_folder and move_drive_folder handle a "
+        "whole folder (move or rename only when explicitly asked), always into a new "
+        "folder. None of them replaces a file. Once the request read something (finding "
+        "or listing files counts), they don't run: call them anyway with the exact paths, "
+        "they wait for the user's go. Before proposing a path, list the folder and follow "
+        f"the names already in it; create the folder that is missing.{_filing(t)}\n"
+        "- Deleting from a drive: delete_drive_file, one file at a time, or "
+        "delete_drive_folder, only when the user's own message clearly asks to delete that "
+        "file or folder; for a folder with files, say how many it holds first. When "
+        "anything is unsure (which file, whether they really want it gone), or after a "
+        "search, ask with propose_action. Every deletion first keeps a copy on the "
+        "agent's disk (list_drive_trash, restore_from_drive_trash); purge_drive_trash "
+        "deletes a copy for good, only when the user asks. Something too big to keep a "
+        "copy of is refused: then propose delete_drive_without_copy and let the user "
+        "decide."
+    )
+
+
+def _notes_and_tasks(t: set[str] | frozenset[str]) -> list[str]:
+    """The notes left for the user's coding sessions, their repositories, and the tasks
+    the agent runs by itself (docs/tasks.md)."""
+    lines = []
+    if "create_assistant_reminder" in t:
+        lines.append(
+            "- create_assistant_reminder: a reminder for the user's coding sessions, for work "
+            "on code or projects. create_handoff: a note to pick a piece of work up in "
+            "their next coding session. Write both in the user's language, concrete enough "
+            "for a session days later; never put passwords, tokens or keys in them. When "
+            "the user says an assistant reminder is done, or no longer wanted: "
+            "close_assistant_reminder (stop for a repeating one they want gone) or, only "
+            "when they say delete, delete_assistant_reminder, with the id "
+            "get_assistant_reminders gave. Both always wait for their go, even after "
+            "reading the reminders.\n"
+            "- When the user asks for something none of your tools can do, say so plainly "
+            "in one sentence, then offer to leave a request in their assistant reminders "
+            "(create_assistant_reminder) so it can be built. Never pretend you did it."
+        )
+    if "browse_repository" in t:
+        lines.append(
+            "- The user's GitHub repositories, read-only: list_repositories, "
+            "browse_repository, search_repository. Their notes repository, when there is "
+            "one, is the default: look there first for anything about their work, projects, "
+            "servers, tools or plans before saying you don't know. Start from a folder "
+            "listing and open only the files you need."
+        )
+    if "check_dependencies" in t:
+        search = (
+            " web_search finds news of compromised packages in the tech the user runs; it "
+            "only runs at once before the request reads anything (repositories, "
+            "check_dependencies, emails): search first, then read."
+            if "web_search" in t
+            else ""
+        )
+        lines.append(
+            "- Security watch: check_dependencies lists the known flaws in a repository's "
+            "exact dependency versions (from its lockfiles). Report only what matters "
+            "(malicious, critical or high), each with its minimal fix: the version to "
+            f"upgrade to.{search}"
+        )
+    if "schedule_task" in t:
+        reminder = (
+            " A plain reminder goes to the phone with create_reminder; schedule_task when "
+            "you must look something up or write to the user at that time."
+            if "create_reminder" in t
+            else ' It is also how you remind the user of something at a time ("remind me '
+            'tomorrow at ten to call the plumber").'
+        )
+        lines.append(
+            "- schedule_task: something you will do by yourself later (a check, a piece of "
+            'work, a message at a time: "tomorrow morning, check whether the plumber '
+            f'answered").{reminder} Resolve relative times into a local date-time yourself. '
+            "list_scheduled_tasks shows your tasks (briefing, recap, checks). When the user "
+            "asks to change one (what it does, its time, its days), update_scheduled_task "
+            "with its id, never a second task; delete_scheduled_task only when they ask to "
+            "remove one. One thing covered by both a reminder and a task you scheduled is "
+            "said once, and never scheduled again.\n"
+            f'- A message starting with "{TASK_TAG}" is a request the user wrote earlier '
+            "for you to start on your own at that time: do it as if they had just asked, "
+            "and end with what they must check or answer. A repeating one comes with your "
+            "last report for it, and the ones before it: what you already said is in all "
+            "of them, since a report that only said what changed leaves the rest to the "
+            "earlier ones.\n"
+            "- Recurring tasks (repeating, fresh, a digest such as the briefing or the "
+            "recap when it runs by itself) are silent about nothing. Say only what is "
+            "useful: something new, something to do or decide, a real problem. A section "
+            'with nothing useful is left out entirely, never a line about it: no "no '
+            'parcel", "no wind", "nothing new", "the same as last time", "all fine". When '
+            "nothing at all is useful (nothing found, all fine, or only what you already "
+            f"said and the user has not answered), reply {SILENT_REPLY} alone, with no "
+            "sentence around it: the user gets no message. Otherwise say only what is new, "
+            "then what still waits for their answer in one line. A check you could not do "
+            "(a tool down) is one short line, said once: when one of your reports already "
+            f"said it, that is {SILENT_REPLY}. Only the user's own message gets an answer "
+            "however little there is.\n"
+            "- A task may come with what your other tasks due at the same time found: fold "
+            "each into one short line of your reply under a short label of its subject, "
+            "most urgent first, with what the user must do; leave out those that need "
+            f"nothing. When neither they nor your own sections hold anything useful, that "
+            f"is {SILENT_REPLY} too."
         )
     return lines
 

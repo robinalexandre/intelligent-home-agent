@@ -20,6 +20,18 @@ ALL_TOOLS = {
     "get_travel_time",
     "get_github_pull_requests",
     "get_assistant_reminders",
+    "create_assistant_reminder",
+    "create_handoff",
+    "close_assistant_reminder",
+    "delete_assistant_reminder",
+    "list_repositories",
+    "browse_repository",
+    "search_repository",
+    "check_dependencies",
+    "schedule_task",
+    "list_scheduled_tasks",
+    "update_scheduled_task",
+    "delete_scheduled_task",
     "get_wind_forecast",
     "get_surf_forecast",
     "get_outdoor_forecast",
@@ -53,6 +65,21 @@ ALL_TOOLS = {
     "read_whatsapp_chats",
     "mark_whatsapp_chats_read",
     "ask_in_poll",
+    "list_drive_folder",
+    "search_drive_files",
+    "search_drive_content",
+    "read_drive_file",
+    "create_drive_folder",
+    "save_file_to_drive",
+    "delete_drive_file",
+    "control_tv",
+    "control_apple_media",
+    "lock_door",
+    "get_home_security_status",
+    "get_pet_devices_status",
+    "get_body_measurements",
+    "note_delivery",
+    "list_deliveries",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 
@@ -222,3 +249,45 @@ def test_the_chat_channel_rules_come_only_with_a_channel_and_only_in_the_chat():
     # A client that only says display "chat" (no channel set up) has no polls to offer.
     bare = shown("chat", ALL_TOOLS - {"ask_in_poll", "read_whatsapp_chats"})
     assert "ask_in_poll" not in bare and "read_whatsapp_chats" not in bare
+
+
+def test_drives_are_described_by_what_is_on():
+    full = prompt()
+    assert "search_drive_content finds them by what they say" in full
+    assert "Gathering files is always a copy" in full and "delete_drive_without_copy" in full
+    assert "files of a drive, kept files were read" in full
+    read_only = prompt(tools={"list_drive_folder", "search_drive_files", "read_drive_file"})
+    assert "The drives are read-only" in read_only
+    assert "search_drive_content" not in read_only and "create_drive_folder" not in read_only
+    assert "drive" not in prompt(tools={"get_weather"}).split("Untrusted")[0]
+
+
+def test_filing_from_emails_into_a_drive_needs_both():
+    both = ALL_TOOLS | {"read_email", "flag_email", "save_email_draft"}
+    text = prompt(tools=both)
+    assert "Filing from emails" in text and "and flag_email, so the user sees" in text
+    assert "never write one yourself with create_pdf" in text
+    assert "kept from an email or read from a drive" in text
+    assert "Filing from emails" not in prompt(tools=ALL_TOOLS - {"read_email"})
+    plain = prompt(tools={"list_drive_folder", "create_drive_folder", "read_email"})
+    assert "Filing from emails" in plain and "flag_email" not in plain
+    assert "create_pdf" not in plain
+
+
+def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
+    without = prompt(
+        tools=ALL_TOOLS
+        - {"schedule_task", "create_assistant_reminder", "browse_repository", "check_dependencies"}
+    )
+    for words in ("schedule_task", "NOTHING_NEW", "create_handoff", "list_repositories", "OSV"):
+        assert words not in without
+    text = prompt(tools=set(ALL_TOOLS))
+    assert "[Scheduled task the user left you:" in text
+    assert "reply NOTHING_NEW alone" in text
+    assert "A plain reminder goes to the phone with create_reminder" in text
+    assert "create_handoff: a note to pick a piece of work up" in text
+    assert "check_dependencies lists the known flaws" in text and "search first" in text
+    assert "your repositories" in text  # what was read there is data, never orders
+    # Without phone reminders, a task is how the user is reminded of something.
+    alone = prompt(tools={"schedule_task"})
+    assert "how you remind the user" in alone and "create_reminder" not in alone
