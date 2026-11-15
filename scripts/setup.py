@@ -46,6 +46,13 @@ MODELS = {
     "openai-compatible": "any other server that speaks the OpenAI chat API (give its URL)",
 }
 KEYLESS = {"ollama", "lmstudio", "openai-compatible"}
+SEARCH = {
+    "duckduckgo": "DuckDuckGo: no account, best effort (it limits automated searches)",
+    "searxng": "your own SearXNG search engine: no account, dependable",
+    "brave": "Brave Search, with an API key",
+    "tavily": "Tavily, with an API key",
+    "off": "no web search",
+}
 ACCESS = {
     "local": "this machine only (127.0.0.1:8000): to try it, or behind your own proxy",
     "lan": "the home network, plain HTTP on port 8000: clients at home only",
@@ -86,6 +93,8 @@ SECRET_KEYS = {
     "AGENT_API_TOKEN",
     "TS_AUTHKEY",
     "TUNNEL_TOKEN",
+    "WEB_SEARCH_API_KEY",
+    "SEARXNG_SECRET",
     "LLM_API_KEY",
     "HA_TOKEN",
     "CALDAV_PASSWORD",
@@ -250,6 +259,26 @@ def ask_model(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
     env["LLM_MODEL"] = model
 
 
+def ask_search(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
+    if env["LLM_PROVIDER"] == "anthropic":
+        return  # Claude searches the web with its own tool.
+    p.say("\n# Web search: your model writes the answer, a search engine finds the pages")
+    backend = p.pick("Search with", SEARCH, "duckduckgo")
+    if backend == "off":
+        env["WEB_SEARCH_ENABLED"] = "false"
+        return
+    env["WEB_SEARCH_BACKEND"] = backend
+    if backend == "searxng":
+        if docker and p.yes("Run SearXNG in Docker next to the agent?", True):
+            env["_COMPOSE_SEARXNG"] = "1"
+            env["SEARXNG_SECRET"] = secrets.token_hex(32)
+        else:
+            env["WEB_SEARCH_URL"] = p.ask("SearXNG address (JSON format enabled)")
+    elif backend in {"brave", "tavily"}:
+        if key := p.secret(f"{backend.capitalize()} API key"):
+            env["WEB_SEARCH_API_KEY"] = key
+
+
 def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
     """How clients reach the agent; returns the address they will use, when known."""
     p.say("\n# Where will clients (phone, speaker, Home Assistant) reach the agent from?")
@@ -291,6 +320,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
         files.append("compose/tailscale.yml")
     if env.pop("_COMPOSE_OLLAMA", None):
         files.append("compose/ollama.yml")
+    if env.pop("_COMPOSE_SEARXNG", None):
+        files.append("compose/searxng.yml")
     if len(files) > 1:
         # ":" on every system, Windows included.
         env["COMPOSE_PATH_SEPARATOR"] = ":"
@@ -437,6 +468,16 @@ GROUPS = [
         ],
     ),
     ("Language model", ["LLM_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"]),
+    (
+        "Web search",
+        [
+            "WEB_SEARCH_ENABLED",
+            "WEB_SEARCH_BACKEND",
+            "WEB_SEARCH_URL",
+            "WEB_SEARCH_API_KEY",
+            "SEARXNG_SECRET",
+        ],
+    ),
     ("Assistant", ["ASSISTANT_NAME", "LANGUAGE", "TIMEZONE"]),
     ("Home", ["HOME_CITY", "HOME_COUNTRY", "HOME_LATITUDE", "HOME_LONGITUDE"]),
     ("Briefing", ["BRIEF_SECTIONS", "WEATHER_DETAIL"]),
@@ -486,11 +527,14 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     docker = p.yes("Will the agent run with Docker Compose (no: straight with Python)?", True)
     ask_identity(p, env)
     ask_model(p, env, docker=docker)
+    ask_search(p, env, docker=docker)
     ask_home(p, env, lookup)
     sections = ask_brief(p, env)
     ask_activities(p, env)
     ask_sources(p, env, sections)
     address = ask_access(p, env) if docker else None
+    env.pop("_COMPOSE_OLLAMA", None)
+    env.pop("_COMPOSE_SEARXNG", None)
     channels = ask_channels(p, env)
 
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -505,6 +549,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
             ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS),
             ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
+            ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),
         )
         if needed and key not in env
     ]

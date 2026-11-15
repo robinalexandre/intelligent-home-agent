@@ -31,7 +31,7 @@ spoken morning briefing and evening recap.
   - Calendar (CalDAV) and mailboxes (IMAP), both read-only.
   - When to leave for an appointment (driving time from home, OpenStreetMap).
   - GitHub pull requests waiting for you, and reminders left with a coding assistant.
-  - Web search, in a separate model request that only sees the query.
+  - Web search with any model, in a separate model request that only sees the query.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
@@ -93,7 +93,8 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `HA_SENSITIVE_DOMAINS` | `lock,alarm_control_panel,cover` | Need a spoken yes in a later request. |
 | `HA_ENTITY_DENYLIST` | empty | Entities the agent never sees. |
 | `HA_PROXY_URL` | unset | HTTP proxy to reach HA (VPN sidecar). |
-| `WEB_SEARCH_ENABLED`, `WEB_SEARCH_MODEL` | `true`, `claude-haiku-5-5` | Web search. |
+| `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
+| `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
 | `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only. |
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
@@ -134,8 +135,11 @@ small interface (`LLMClient` in `llm.py`). Two clients are shipped:
   `openai-compatible` with `LLM_BASE_URL` for anything else (llama.cpp, vLLM, a gateway).
 
 [Setup, step 2](docs/setup.md#2-the-model) has the table. A provider with another API is
-one class that converts requests and responses (steps in [AGENTS.md](AGENTS.md)). Web
-search uses Anthropic's server-side search tool and is off for other providers.
+one class that converts requests and responses (steps in [AGENTS.md](AGENTS.md)).
+
+Web search works with all of them: Anthropic runs its own server-side search tool; with
+the others the agent queries a search engine (DuckDuckGo, your SearXNG, Brave or Tavily)
+and the model you chose writes the answer from the results, in a request of its own.
 
 ## Integrations
 
@@ -182,7 +186,7 @@ tests/                        pytest, no network
 ## Roadmap
 
 - [x] A second model provider (OpenAI-compatible endpoint, local models)
-- [ ] Web search with providers other than Anthropic
+- [x] Web search with providers other than Anthropic
 - [ ] Optional: Home Assistant's MCP server instead of the REST tools
 - [ ] Package as a Home Assistant add-on
 - [ ] Rate limiting and request logs

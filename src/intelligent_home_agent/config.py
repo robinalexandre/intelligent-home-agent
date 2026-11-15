@@ -15,7 +15,9 @@ from intelligent_home_agent.llm import (
     ANTHROPIC,
     CUSTOM,
     DEFAULT_ANTHROPIC_MODEL,
+    DEFAULT_ANTHROPIC_SEARCH_MODEL,
     PROVIDERS,
+    WEB_SEARCH_PROVIDERS,
     needs_key,
 )
 
@@ -142,10 +144,20 @@ class Settings(BaseSettings):
     wind_spots: list[WindSpot] = []
     surf_spots: list[SurfSpot] = []
 
-    # --- Web search (a separate model request with the provider's search tool) ---------
+    # --- Web search (a separate model request that only sees the query) ----------------
     web_search_enabled: bool = True
-    web_search_model: str = "claude-haiku-5-5"
+    # native: the provider's own search tool (anthropic). duckduckgo (no key), searxng
+    # (WEB_SEARCH_URL), brave or tavily (WEB_SEARCH_API_KEY): results fetched by the
+    # agent, answer written by the model. auto: native where it exists, else duckduckgo.
+    web_search_backend: Literal["auto", "native", "duckduckgo", "searxng", "brave", "tavily"] = (
+        "auto"
+    )
+    web_search_url: str | None = None
+    web_search_api_key: SecretStr | None = None
+    # Empty: a small Claude model with anthropic, LLM_MODEL with the other providers.
+    web_search_model: str = ""
     web_search_max_uses: int = 3
+    web_search_results: int = 5
 
     # --- Calendar (CalDAV, read-only) --------------------------------------------------
     caldav_url: str | None = None
@@ -233,6 +245,32 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        return self
+
+    @model_validator(mode="after")
+    def _search_is_usable(self) -> "Settings":
+        native = self.llm_provider in WEB_SEARCH_PROVIDERS
+        if self.web_search_backend == "auto":
+            self.web_search_backend = "native" if native else "duckduckgo"
+        if not self.web_search_enabled:
+            return self
+        if self.web_search_backend == "native" and not native:
+            raise ValueError(
+                f"WEB_SEARCH_BACKEND=native needs a provider with its own search tool "
+                f"({', '.join(sorted(WEB_SEARCH_PROVIDERS))}), not {self.llm_provider}"
+            )
+        if self.web_search_backend == "searxng" and not self.web_search_url:
+            raise ValueError("WEB_SEARCH_BACKEND=searxng needs WEB_SEARCH_URL")
+        if self.web_search_backend in {"brave", "tavily"} and self.web_search_api_key is None:
+            raise ValueError(
+                f"WEB_SEARCH_BACKEND={self.web_search_backend} needs WEB_SEARCH_API_KEY"
+            )
+        if not self.web_search_model:
+            self.web_search_model = (
+                DEFAULT_ANTHROPIC_SEARCH_MODEL
+                if self.web_search_backend == "native"
+                else self.llm_model
+            )
         return self
 
 

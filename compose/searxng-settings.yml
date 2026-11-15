@@ -1,0 +1,9 @@
+# SearXNG's defaults, plus the JSON answers the agent reads. No port is published: only
+# the agent, on the Compose network, can query it.
+use_default_settings: true
+server:
+  limiter: false
+search:
+  formats:
+    - html
+    - json

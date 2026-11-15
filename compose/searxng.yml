@@ -1,0 +1,16 @@
+# Your own search engine (SearXNG) next to the agent, for web search with any model and
+# no account anywhere: it asks the public search engines for you.
+# With WEB_SEARCH_BACKEND=searxng; WEB_SEARCH_URL is set here.
+services:
+  agent:
+    environment:
+      WEB_SEARCH_URL: http://searxng:8080
+    depends_on: [searxng]
+
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env to a long random value}
+    volumes:
+      - ./compose/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped

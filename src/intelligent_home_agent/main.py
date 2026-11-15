@@ -21,7 +21,7 @@ from intelligent_home_agent.config import Settings, get_settings
 from intelligent_home_agent.conversations import Conversation, ConversationStore
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.i18n import strings
-from intelligent_home_agent.llm import WEB_SEARCH_PROVIDERS, LLMClient, build_llm_client
+from intelligent_home_agent.llm import LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.tools import (
@@ -36,10 +36,12 @@ from intelligent_home_agent.tools import (
     build_assistant_reminder_tools,
     build_calendar_tools,
     build_email_tools,
+    build_engine_web_tools,
     build_general_tools,
     build_github_tools,
     build_home_assistant_tools,
     build_outdoor_tools,
+    build_search_engine,
     build_surf_tools,
     build_travel_tools,
     build_weather_tools,
@@ -150,7 +152,7 @@ def build_registry(
                 http, token, settings.assistant_reminders_repo, settings.assistant_reminders_path
             )
             registry.extend(build_assistant_reminder_tools(reminders, settings.timezone))
-    if settings.web_search_enabled and settings.llm_provider in WEB_SEARCH_PROVIDERS:
+    if settings.web_search_enabled and settings.web_search_backend == "native":
         registry.extend(
             build_web_tools(
                 llm,
@@ -159,6 +161,24 @@ def build_registry(
                 city=settings.home_city,
                 country=settings.home_country,
                 timezone=settings.timezone,
+            )
+        )
+    elif settings.web_search_enabled:
+        key = settings.web_search_api_key
+        engine = build_search_engine(
+            settings.web_search_backend,
+            http,
+            url=settings.web_search_url,
+            api_key=key.get_secret_value() if key else None,
+            language=settings.language,
+            country=settings.home_country,
+        )
+        registry.extend(
+            build_engine_web_tools(
+                llm,
+                engine,
+                model=settings.web_search_model,
+                max_results=settings.web_search_results,
             )
         )
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))

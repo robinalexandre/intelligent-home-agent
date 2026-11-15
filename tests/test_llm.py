@@ -200,8 +200,26 @@ def test_settings_per_provider(monkeypatch):
         provider_env(monkeypatch, LLM_PROVIDER="skynet", LLM_API_KEY="k", LLM_MODEL="m")
 
 
-def test_web_search_is_only_registered_where_the_provider_runs_it(monkeypatch):
-    settings = provider_env(monkeypatch, LLM_PROVIDER="ollama", LLM_MODEL="m")
-    assert "web_search" not in main.build_registry(settings, None, None, None).names()
+def test_web_search_follows_the_provider(monkeypatch):
     settings = provider_env(monkeypatch, LLM_API_KEY="sk-test")
+    assert (settings.web_search_backend, settings.web_search_model) == (
+        "native",
+        "claude-haiku-5-5",
+    )
+    settings = provider_env(monkeypatch, LLM_PROVIDER="ollama", LLM_MODEL="local-model")
+    assert (settings.web_search_backend, settings.web_search_model) == (
+        "duckduckgo",
+        "local-model",
+    )
     assert "web_search" in main.build_registry(settings, None, None, None).names()
+    env = {"LLM_PROVIDER": "ollama", "LLM_MODEL": "m"}
+    for backend, match in (
+        ("native", "own search tool"),
+        ("searxng", "WEB_SEARCH_URL"),
+        ("brave", "WEB_SEARCH_API_KEY"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            provider_env(monkeypatch, WEB_SEARCH_BACKEND=backend, **env)
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
+    settings = provider_env(monkeypatch, WEB_SEARCH_BACKEND="brave", **env)
+    assert "web_search" not in main.build_registry(settings, None, None, None).names()

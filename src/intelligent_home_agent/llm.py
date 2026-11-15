@@ -31,6 +31,7 @@ import httpx
 
 ANTHROPIC = "anthropic"
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
+DEFAULT_ANTHROPIC_SEARCH_MODEL = "claude-haiku-5-5"
 CUSTOM = "openai-compatible"
 
 

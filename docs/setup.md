@@ -80,7 +80,7 @@ agent reads the calendar or switches a light. Set three values in `.env`:
 
 | `LLM_PROVIDER` | `LLM_API_KEY` | `LLM_MODEL` | Notes |
 |---|---|---|---|
-| `anthropic` (default) | from console.anthropic.com | `claude-sonnet-5-5` by default | The only provider with the web search tool. |
+| `anthropic` (default) | from console.anthropic.com | `claude-sonnet-5-5` by default | Searches the web with its own tool. |
 | `openai` | from platform.openai.com | required | |
 | `mistral` | from console.mistral.ai | required | |
 | `gemini` | from aistudio.google.com | required | Through Google's OpenAI-compatible endpoint. |
@@ -103,8 +103,20 @@ if the agent answers without looking anything up, try a larger model.
   `OLLAMA_HOST=0.0.0.0`), nothing to set without Docker.
 - *Ollama on another machine*: `LLM_BASE_URL=http://<its address>:11434/v1`.
 
-Web search runs on Anthropic's server-side search tool, so it is off with the other
-providers; everything else works the same.
+**Web search** works with every model. `WEB_SEARCH_BACKEND` says who fetches the results:
+
+| `WEB_SEARCH_BACKEND` | Needs | Notes |
+|---|---|---|
+| `auto` (default) | nothing | `native` with Anthropic, `duckduckgo` with the others. |
+| `native` | `LLM_PROVIDER=anthropic` | Anthropic's own search tool. |
+| `duckduckgo` | nothing | No account. Best effort: it reads a web page that may change, and refuses many searches in a row. |
+| `searxng` | `WEB_SEARCH_URL`, or `compose/searxng.yml` and `SEARXNG_SECRET` | Your own search engine, no account anywhere. The dependable free choice. |
+| `brave` | `WEB_SEARCH_API_KEY` from brave.com/search/api | |
+| `tavily` | `WEB_SEARCH_API_KEY` from tavily.com | |
+
+With the last four, the agent fetches the results and your model writes a short answer
+from them, in a request of its own that sees nothing else. `WEB_SEARCH_ENABLED=false`
+turns search off.
 
 ## 3. The home
 

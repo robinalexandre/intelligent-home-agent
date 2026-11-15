@@ -112,12 +112,16 @@ NOTHING_ELSE = ["", "weather", "short", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
-    answers = ["", *START, "ollama", "y", "some-model", *NOTHING_ELSE]
+    answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
     answers += ["n", "funnel", "agent", "scheduled"]  # no Home Assistant, access, name, channel
     env, output = run_with(tmp_path, answers, ["", "tskey-secret"])
     assert env["LLM_PROVIDER"] == "ollama" and "LLM_API_KEY" not in env
     assert "LLM_BASE_URL" not in env  # set by compose/ollama.yml
-    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/tailscale.yml:compose/ollama.yml"
+    assert env["COMPOSE_FILE"] == (
+        "docker-compose.yml:compose/tailscale.yml:compose/ollama.yml:compose/searxng.yml"
+    )
+    assert env["WEB_SEARCH_BACKEND"] == "searxng" and len(env["SEARXNG_SECRET"]) == 64
+    assert env["SEARXNG_SECRET"] not in output and "WEB_SEARCH_URL" not in env
     assert env["COMPOSE_PATH_SEPARATOR"] == ":"
     assert (env["TS_SERVE"], env["TS_HOSTNAME"]) == ("funnel", "agent")
     assert "tskey-secret" not in output and "Still empty" not in output
@@ -127,21 +131,23 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
-    answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m"]
+    answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
     answers += [*NOTHING_ELSE, "n", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
     assert "Still empty" not in output and "https://agent.example.com" in output
-    answers = ["", *START, "mistral", "m", *NOTHING_ELSE, "n", "cloudflare", "siri"]
+    assert env["WEB_SEARCH_ENABLED"] == "false" and "WEB_SEARCH_BACKEND" not in env
+    answers = ["", *START, "mistral", "m", "brave", *NOTHING_ELSE, "n", "cloudflare", "siri"]
     (tmp_path / "other").mkdir()
-    env, output = run_with(tmp_path / "other", answers, ["", ""])
-    assert "Still empty, add to .env before starting: LLM_API_KEY, TUNNEL_TOKEN." in output
+    env, output = run_with(tmp_path / "other", answers, ["", "", ""])
+    assert "LLM_API_KEY, TUNNEL_TOKEN, WEB_SEARCH_API_KEY." in output
 
 
 def test_without_docker_no_compose_question(tmp_path):
-    answers = ["n", *START, "lmstudio", "m", *NOTHING_ELSE, "n", "siri"]
+    answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
+    answers += [*NOTHING_ELSE, "n", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
     assert "uvicorn intelligent_home_agent.main:app" in output
@@ -153,7 +159,10 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng"}
+    from intelligent_home_agent.tools.web import ENGINES
+
+    assert set(setup.SEARCH) == {*ENGINES, "off"}
 
 
 def test_existing_env_is_kept_unless_confirmed(tmp_path):
