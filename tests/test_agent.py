@@ -1252,3 +1252,25 @@ async def test_without_an_api_key_the_subscription_answers_everywhere_and_says_w
     assert reply.text == words.subscription_no_file
     assert conv.messages[0]["content"] == "Read this\n\n[Files sent and read: scan.pdf]"
     assert "scan.pdf" in conv.files  # kept by name all the same
+
+
+async def test_a_proof_the_user_gave_is_not_written_to_the_log(caplog):
+    seen: list[dict] = []
+
+    async def unlock(args, _ctx):
+        seen.append(args)
+        return {"unlocked": True}
+
+    registry = ToolRegistry([Tool("unlock_door", "", OBJECT, unlock)])
+    fake = FakeLLM(
+        [
+            tool_response(("t1", "unlock_door", {"door": "front", "code": "blue heron at dawn"})),
+            text_response("Open."),
+        ]
+    )
+    with caplog.at_level("INFO"):
+        await make_agent(fake, registry).ask(Conversation(id="c"), "Open, blue heron at dawn")
+
+    assert seen == [{"door": "front", "code": "blue heron at dawn"}]
+    assert "tool call unlock_door" in caplog.text and '"door": "front"' in caplog.text
+    assert "blue heron" not in caplog.text

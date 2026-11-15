@@ -427,7 +427,7 @@ class Agent:
 
     async def _run_tool(self, block: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         name, args = block["name"], block.get("input") or {}
-        log.info("tool call %s %s", name, json.dumps(args, ensure_ascii=False))
+        log.info("tool call %s %s", name, json.dumps(_loggable(args), ensure_ascii=False))
         try:
             result = await self._tools.run(name, args, ctx)
             if isinstance(result, Attachment):
@@ -468,6 +468,15 @@ def quoted_words(text: str) -> str:
     if not text.startswith("[") or QUOTE_END not in text:
         return ""
     return text.rpartition(QUOTE_END)[0].partition(QUOTE_START)[2]
+
+
+# Arguments that are a proof only the user has (the code or phrase that opens a door):
+# never written to the log.
+SECRET_ARGS = frozenset({"code", "password", "passphrase", "secret"})
+
+
+def _loggable(args: dict[str, Any]) -> dict[str, Any]:
+    return {key: "***" if key in SECRET_ARGS and value else value for key, value in args.items()}
 
 
 def _json(result: Any) -> str:

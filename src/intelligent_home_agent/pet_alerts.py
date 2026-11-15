@@ -1,9 +1,9 @@
 """The pet's supplies watched: litter, food and the waste bin, told to the user.
 
 Needs the PetKit tools (tools/petkit.py) and a way to reach the user (a chat, or
-NTFY_URL). In the daytime, every few hours (PETKIT_CHECK_MINUTES), the PetKit status is read (the same client as the
-tools: PetKit allows one session per account). A notification goes out only when something
-needs doing:
+NTFY_URL). In the daytime, every few hours (PETKIT_CHECK_MINUTES), the PetKit status is
+read (the same client as the tools: PetKit allows one session per account). A message
+goes out only when something needs doing:
 
 - the litter under PETKIT_LITTER_ALERT_PERCENT (or the box's own "low" flag): once, again
   only after it went back up;
