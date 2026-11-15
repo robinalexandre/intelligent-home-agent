@@ -29,8 +29,9 @@ out of the default install:
 | `apple` | Apple TV and HomePods | `pip install -e ".[apple]"` |
 | `petkit` | PetKit | `pip install -e ".[petkit]"` |
 
-`devices` is the three together. With Docker, set `EXTRAS=devices` (or
-`EXTRAS=petkit,apple`) in `.env` and run `docker compose build`. When a device's settings
+`devices` is the three together. With Docker, set `EXTRAS=documents,devices` (or
+`EXTRAS=documents,petkit,apple`; `documents` is the image's default, see
+[documents.md](documents.md)) in `.env` and run `docker compose build`. When a device's settings
 are filled in but its library is missing, the device stays off and the log says which
 extra to install; everything else works as before. These libraries follow what the
 vendors' own apps do, which can change without notice: a device may stop answering until

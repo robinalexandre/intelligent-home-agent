@@ -6,11 +6,14 @@ import asyncio
 import base64
 import binascii
 import contextlib
+import hashlib
 import logging
 import re
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -23,7 +26,14 @@ from intelligent_home_agent import __version__
 from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.agent import Agent
 from intelligent_home_agent.config import Settings, get_settings
-from intelligent_home_agent.conversations import Attachment, Conversation, ConversationStore
+from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
+from intelligent_home_agent.config_crypt import available as crypt_available
+from intelligent_home_agent.conversations import (
+    Attachment,
+    Conversation,
+    ConversationStore,
+    FileStore,
+)
 from intelligent_home_agent.departure import Departure
 from intelligent_home_agent.departure import record as record_departure
 from intelligent_home_agent.ha_client import HomeAssistantClient
@@ -34,38 +44,68 @@ from intelligent_home_agent.home_devices import (
 )
 from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal
-from intelligent_home_agent.llm import LLMClient, build_llm_client
+from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.pet_alerts import PetAlerts
 from intelligent_home_agent.prompts import PromptConfig
+from intelligent_home_agent.shared_links import LINKS
 from intelligent_home_agent.tools import (
     CalDavCalendar,
+    CardDavBirthdays,
     EntityPolicy,
     GitHub,
+    GitHubFile,
     ImapMailbox,
+    Investigator,
     KnowledgeBase,
+    LocalFile,
+    Memory,
+    MergedCalendar,
     OpenMeteo,
     ReminderRepo,
     Router,
+    Tool,
     ToolRegistry,
+    TurnedDown,
+    WebPages,
     build_assistant_reminder_tools,
     build_calendar_tools,
+    build_calendar_write_tools,
+    build_draft_tools,
     build_email_tools,
     build_engine_web_tools,
     build_general_tools,
     build_github_tools,
     build_home_assistant_tools,
     build_knowledge_tools,
+    build_memory_tools,
+    build_osint_tools,
     build_outdoor_tools,
+    build_past_conversation_tools,
+    build_procedure_tools,
     build_search_engine,
     build_surf_tools,
     build_travel_tools,
+    build_turned_down_tools,
     build_weather_tools,
+    build_web_page_tools,
     build_web_tools,
     build_wind_tools,
+    trusted_domains,
 )
+from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
+from intelligent_home_agent.tools.documents import FONT_DIR, build_document_tools, paper_for
+from intelligent_home_agent.tools.generation import (
+    OPENAI_URL,
+    Gemini,
+    OpenAI,
+    Provider,
+    build_generation_tools,
+)
+from intelligent_home_agent.tools.github import API_URL
+from intelligent_home_agent.tools.illustrations import build_illustration_tools
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mcp_client import (
     MCPClient,
@@ -74,6 +114,9 @@ from intelligent_home_agent.tools.mcp_client import (
     StaticToken,
     TokenSource,
 )
+from intelligent_home_agent.tools.memory import folder_name
+from intelligent_home_agent.tools.pdf_forms import build_pdf_form_tools
+from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.withings import Withings, WithingsAuth, build_withings_tools
 
@@ -184,6 +227,7 @@ def build_registry(
     http: httpx.AsyncClient,
     llm: LLMClient,
     home: httpx.AsyncClient | None = None,
+    kept: Kept | None = None,
 ) -> ToolRegistry:
     policy = EntityPolicy.from_lists(
         settings.ha_exposed_domains, settings.ha_sensitive_domains, settings.ha_entity_denylist
@@ -217,16 +261,40 @@ def build_registry(
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
     activities = [CATALOG[key] for key in settings.outdoor_activities]
     registry.extend(build_outdoor_tools(meteo, activities, home=home, language=settings.language))
+    calendars: list = []
     if settings.caldav_url and settings.caldav_username and settings.caldav_password:
         calendar = CalDavCalendar(
             settings.caldav_url,
             settings.caldav_username,
             settings.caldav_password.get_secret_value(),
             settings.caldav_calendars,
+            settings.caldav_default_calendar,
         )
-        registry.extend(build_calendar_tools(calendar, settings.timezone))
+        calendars.append(calendar)
+        if settings.caldav_write:
+            registry.extend(
+                build_calendar_write_tools(calendar, settings.timezone, settings.language)
+            )
+    # Contacts' birthdays show as all-day events; the CalDAV login is used when CardDAV
+    # has none of its own (same account at most providers).
+    dav_user = settings.carddav_username or settings.caldav_username
+    dav_password = settings.carddav_password or settings.caldav_password
+    if settings.carddav_url and dav_user and dav_password:
+        calendars.append(
+            CardDavBirthdays(
+                http,
+                settings.carddav_url,
+                dav_user,
+                dav_password.get_secret_value(),
+                settings.timezone,
+            )
+        )
+    if calendars:
+        merged = calendars[0] if len(calendars) == 1 else MergedCalendar(calendars)
+        registry.extend(build_calendar_tools(merged, settings.timezone))
     mailboxes = [ImapMailbox(account) for account in settings.mail_accounts]
     registry.extend(build_email_tools(mailboxes, settings.timezone))
+    registry.extend(build_draft_tools([m for m in mailboxes if m.writable], settings.language))
     if mailboxes and settings.deliveries_enabled:
         deliveries = Deliveries(Path(settings.data_dir) / "deliveries.json")
         registry.extend(build_delivery_tools(deliveries))
@@ -288,12 +356,89 @@ def build_registry(
                 language=settings.language,
             )
         )
+    registry.extend(build_document_side_tools(settings, http, llm))
+    # What the agent keeps: facts about the user, how-tos, alerts turned down, the journal.
+    kept = kept or build_kept(settings, http)
+    registry.extend(build_memory_tools(kept.memory, settings.language))
+    registry.extend(
+        build_procedure_tools(
+            kept.procedures, settings.timezone, settings.assistant_name, settings.language
+        )
+    )
+    registry.extend(build_turned_down_tools(kept.turned_down))
+    registry.extend(build_past_conversation_tools(kept.journal))
+    if settings.web_pages_enabled:
+        trusted = trusted_domains(settings.home_country, settings.web_trusted_domains)
+        registry.extend(build_web_page_tools(WebPages(trusted), language=settings.language))
+    if settings.investigations_enabled:
+        investigator = Investigator(http, nominatim_url=settings.nominatim_url)
+        registry.extend(build_osint_tools(investigator, settings.public_url))
     # The core's own tools, last: the writes waiting for the user's go (the registry parks
     # them whatever is configured) and the long results read part by part.
     registry.extend(build_proposal_tools(registry, language=settings.language))
     registry.extend(build_long_result_tools())
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
+
+
+def build_document_side_tools(
+    settings: Settings, http: httpx.AsyncClient, llm: LLMClient
+) -> list[Tool]:
+    """Documents, PDFs, drawings, generated pictures and the code sandbox
+    (docs/documents.md), each only when it is switched on and can work here."""
+    language = settings.language
+    tools: list[Tool] = []
+    if settings.documents_enabled:
+        fonts = Path(settings.pdf_font_dir) if settings.pdf_font_dir else FONT_DIR
+        paper = paper_for(settings.paper_size, settings.home_country)
+        tools += build_document_tools(
+            fonts, paper=paper, language=language, country=settings.home_country
+        )
+        tools += build_pdf_form_tools(fonts, language=language)
+        tools += build_pdf_page_tools()
+        bank = http if settings.exercise_photos_enabled else None
+        tools += build_illustration_tools(bank, fonts, language=language)
+    providers: list[Provider] = []
+    if key := settings.generation_gemini_api_key:
+        providers.append(
+            Gemini(
+                http,
+                key.get_secret_value(),
+                _model(settings.generation_gemini_image_model),
+                _model(settings.generation_gemini_video_model),
+            )
+        )
+    if settings.generation_openai_api_key or settings.generation_openai_base_url:
+        key = settings.generation_openai_api_key
+        providers.append(
+            OpenAI(
+                http,
+                key.get_secret_value() if key else "",
+                _model(settings.generation_openai_image_model),
+                _model(settings.generation_openai_video_model),
+                settings.generation_openai_base_url or OPENAI_URL,
+            )
+        )
+    providers.sort(key=lambda p: p.name != settings.generation_default_provider)
+    tools += build_generation_tools(
+        providers,
+        settings.generation_max_images,
+        settings.generation_max_videos,
+        language=language,
+    )
+    if settings.code_execution_enabled:
+        # Anthropic only: the other providers have no sandbox, so run_code stays off.
+        files = getattr(llm, "files", None) if settings.llm_provider == ANTHROPIC else None
+        if files is None:
+            log.warning("CODE_EXECUTION_ENABLED needs LLM_PROVIDER=anthropic: run_code is off")
+        model = settings.code_execution_model or settings.llm_model
+        tools += build_code_tools(llm, files, model, language=language)
+    return tools
+
+
+def _model(name: str) -> str:
+    """A model's name, or nothing when the setting switches that kind off."""
+    return "" if name.strip().casefold() in {"off", "none"} else name.strip()
 
 
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
@@ -367,6 +512,113 @@ def build_journal(settings: Settings) -> Journal | None:
     return Journal(directory, settings.timezone, settings.journal_keep_days)
 
 
+@dataclass
+class Kept:
+    """What the agent keeps between conversations (docs/memory.md)."""
+
+    memory: Memory | None = None
+    procedures: Memory | None = None
+    turned_down: TurnedDown | None = None
+    journal: Journal | None = None
+
+    async def prompt_text(self) -> str:
+        """For the system prompt: the facts kept, and the alerts the user turned down."""
+        facts = await self.memory.prompt_text() if self.memory else ""
+        turned_down = self.turned_down.prompt_text() if self.turned_down else ""
+        return "\n\n".join(p for p in (facts, turned_down) if p)
+
+
+def memory_paths(settings: Settings) -> tuple[str, str]:
+    """Where the memory and the procedures are: files of DATA_DIR, or paths of the
+    repository in a folder named after the assistant."""
+    if settings.memory_store == "local":
+        base = Path(settings.data_dir)
+        return (
+            str(base / (settings.memory_path or "memory.md")),
+            str(base / (settings.procedures_path or "procedures.md")),
+        )
+    folder = folder_name(settings.assistant_name)
+    return (
+        (settings.memory_path or f"{folder}/memory.md").strip("/"),
+        (settings.procedures_path or f"{folder}/procedures.md").strip("/"),
+    )
+
+
+def build_crypt(settings: Settings) -> ConfigCrypt | None:
+    """The memory repository's git-crypt codec, when it has a key; its perimeter is read
+    from the repository's .gitattributes at startup (load_crypt_patterns)."""
+    if settings.memory_store != "github" or not settings.memory_crypt_key:
+        return None
+    # Until the repository's .gitattributes is read, the agent's own folders count as
+    # encrypted: a write made before that, or after a failed read, is never in clear by
+    # default.
+    own = dict.fromkeys(
+        f"{path.rsplit('/', 1)[0]}/**" if "/" in path else path for path in memory_paths(settings)
+    )
+    return _crypt_for(settings.memory_crypt_key.get_secret_value(), tuple(own))
+
+
+@lru_cache
+def _crypt_for(key: str, own: tuple[str, ...]) -> ConfigCrypt | None:
+    if not crypt_available():
+        log.error('MEMORY_CRYPT_KEY needs the cryptography package: pip install ".[crypt]"')
+        return None
+    try:
+        return ConfigCrypt.from_base64(key, list(own))
+    except CryptError as exc:
+        log.error("MEMORY_CRYPT_KEY is not a git-crypt key (%s)", exc)
+        return None
+
+
+async def load_crypt_patterns(settings: Settings, http: httpx.AsyncClient) -> None:
+    crypt = build_crypt(settings)
+    if crypt is None or not settings.github_token:
+        return
+    try:
+        resp = await http.get(
+            f"{API_URL}/repos/{settings.memory_repo}/contents/.gitattributes",
+            headers={
+                "Authorization": f"Bearer {settings.github_token.get_secret_value()}",
+                "Accept": "application/vnd.github.raw+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        log.warning("could not read the memory repository's .gitattributes (%s)", exc)
+        return
+    patterns = patterns_from_attributes(resp.text)
+    if patterns:
+        crypt.patterns = patterns
+    log.info("encrypted folders of the memory repository: %s", ", ".join(crypt.patterns))
+
+
+def build_kept(settings: Settings, http: httpx.AsyncClient) -> Kept:
+    kept = Kept(
+        turned_down=TurnedDown(
+            Path(settings.data_dir) / "turned-down-alerts.json", settings.timezone
+        ),
+        journal=build_journal(settings),
+    )
+    memory_path, procedures_path = memory_paths(settings)
+    name, timezone = settings.assistant_name, settings.timezone
+    if settings.memory_store == "local":
+        kept.memory = Memory(LocalFile(Path(memory_path)), timezone, name)
+        kept.procedures = Memory(LocalFile(Path(procedures_path)), timezone, name)
+    elif settings.memory_store == "github" and settings.github_token and settings.memory_repo:
+        crypt = build_crypt(settings)
+        if settings.memory_crypt_key and crypt is None:
+            # Never fall back to writing in clear where a key says the folder is encrypted.
+            log.error("memory is off: MEMORY_CRYPT_KEY is set but cannot be used")
+            return kept
+        token, repo = settings.github_token.get_secret_value(), settings.memory_repo
+        kept.memory = Memory(GitHubFile(http, token, repo, memory_path, crypt), timezone, name)
+        kept.procedures = Memory(
+            GitHubFile(http, token, repo, procedures_path, crypt), timezone, name
+        )
+    return kept
+
+
 def build_agent(
     settings: Settings,
     ha: HomeAssistantClient | None,
@@ -375,7 +627,8 @@ def build_agent(
 ) -> Agent:
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
     llm = build_llm_client(settings.llm_provider, key, settings.llm_base_url)
-    registry = build_registry(settings, ha, http, llm, home)
+    kept = build_kept(settings, http)
+    registry = build_registry(settings, ha, http, llm, home, kept)
     return Agent(
         llm,
         registry,
@@ -386,8 +639,72 @@ def build_agent(
         max_chat_tool_iterations=settings.max_chat_tool_iterations,
         max_chat_tokens=settings.max_chat_tokens,
         max_history_messages=settings.max_history_messages,
-        journal=build_journal(settings),
+        memory=kept.prompt_text,
+        journal=kept.journal,
     )
+
+
+def _kept_name(conversation_id: str) -> str:
+    """A conversation's name on disk: its id is the client's text, never a path."""
+    return hashlib.sha256(conversation_id.encode()).hexdigest()[:32]
+
+
+def conversation_file(settings: Settings, conversation_id: str) -> Path:
+    return Path(settings.data_dir) / "conversations" / f"{_kept_name(conversation_id)}.json"
+
+
+def file_store(settings: Settings, conversation_id: str) -> FileStore | None:
+    """Where a chat conversation's files are kept across restarts."""
+    if not settings.files_keep_days:
+        return None
+    directory = Path(settings.data_dir) / "files" / _kept_name(conversation_id)
+    return FileStore(directory, settings.files_keep_days)
+
+
+def keep_files(settings: Settings, conv: Conversation) -> None:
+    store = file_store(settings, conv.id)
+    if store is None or conv.file_store is not None:
+        return
+    try:
+        conv.attach_store(store)
+    except (OSError, KeyError, TypeError) as exc:
+        log.warning("Could not read the kept files of a conversation: %s", exc)
+
+
+def save_conversation(store: ConversationStore, settings: Settings, conv: Conversation) -> None:
+    """A chat is answered hours later: a restart in between must not make it forget what
+    was said, nor what waits for the user's go."""
+    try:
+        store.save(conv, conversation_file(settings, conv.id))
+    except (OSError, TypeError, ValueError) as exc:
+        log.warning("Could not save a conversation: %s", exc)
+
+
+def restore_conversations(store: ConversationStore, settings: Settings) -> int:
+    """Bring back the chat conversations saved before a restart, with their files; the
+    ones past their lifetime are removed, as are the files past their days."""
+    restored = 0
+    for path in sorted((Path(settings.data_dir) / "conversations").glob("*.json")):
+        try:
+            conv = store.restore(path)
+        except (KeyError, TypeError, ValueError):
+            conv = None
+        if conv is None:
+            path.unlink(missing_ok=True)
+            continue
+        keep_files(settings, conv)
+        restored += 1
+    files = Path(settings.data_dir) / "files"
+    for directory in files.iterdir() if files.is_dir() else ():
+        if directory.is_dir():
+            kept = FileStore(directory, settings.files_keep_days)
+            try:
+                empty = not kept.prune()
+            except (KeyError, TypeError):
+                empty = True
+            if empty:
+                kept.clear()
+    return restored
 
 
 def with_waiting(text: str, actions: list[dict], conv: Conversation, language: str = "en") -> str:
@@ -398,6 +715,14 @@ def with_waiting(text: str, actions: list[dict], conv: Conversation, language: s
     lines = [
         s.written_line.format(summary=a["summary"]) for a in actions if a.get("type") == "written"
     ]
+    for draft in (a for a in actions if a.get("type") == "draft"):
+        names = ", ".join(draft["attachments"])
+        files = s.draft_files.format(files=names) if names else ""
+        lines.append(
+            s.draft_line.format(to=", ".join(draft["to"]), subject=draft["subject"], files=files)
+        )
+        if draft.get("check"):
+            lines.append(s.draft_check.format(files=", ".join(draft["check"])))
     proposals = [a for a in actions if a.get("type") == "proposal"]
     if proposals:
         lines += ["", s.waiting_header] if lines else [s.waiting_header]
@@ -455,8 +780,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.ha = ha
     home = home_network_client(settings) if has_home_devices(settings) else None
+    await load_crypt_patterns(settings, http)
     app.state.agent = build_agent(settings, ha, http, home)
     app.state.store = ConversationStore(settings.conversation_ttl_seconds)
+    try:
+        if restored := restore_conversations(app.state.store, settings):
+            log.info("%d chat conversation(s) restored", restored)
+    except OSError as exc:
+        log.warning("Could not restore the saved conversations: %s", exc)
     app.state.ntfy = None
     if settings.ntfy_url:
         token = settings.ntfy_token.get_secret_value() if settings.ntfy_token else None
@@ -508,6 +839,20 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/s/{token}/{name}", include_in_schema=False)
+async def shared_image(token: str, name: str) -> Response:
+    """A picture put online for a reverse image search, while its link lasts: no bearer
+    token, as the search engines fetch it; the address itself is the secret."""
+    shared = LINKS.get(token)
+    if shared is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return Response(
+        shared.data,
+        media_type=shared.mimetype,
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, noarchive"},
+    )
+
+
 @app.get("/health/ha", dependencies=[Depends(require_token)])
 async def health_ha(request: Request) -> dict[str, bool]:
     ha = request.app.state.ha
@@ -526,9 +871,17 @@ async def ask(body: AskRequest, request: Request) -> AskResponse:
     # A chat can be answered hours later; a voice exchange is over in minutes.
     ttl = settings.chat_conversation_ttl_seconds if body.display == "chat" else None
     conv = store.get(body.conversation_id, ttl)
+    # A chat outlives restarts, with its files and what waits for a go (DATA_DIR); once
+    # kept, a conversation stays so whatever the display of its next requests.
+    kept = body.display == "chat" or conv.kept
     async with conv.lock:
+        if kept:
+            conv.kept = True
+            keep_files(settings, conv)
         text, actions = await answer(request, conv, body)
         store.touch(conv)
+        if kept:
+            save_conversation(store, settings, conv)
         shared = [
             FileOut(name=file.filename, mimetype=file.mimetype)
             for a in actions
@@ -618,15 +971,19 @@ async def left_home(body: DepartureRequest, request: Request) -> DepartureRespon
     if body.push and ntfy is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
     store: ConversationStore = request.app.state.store
-    # The answer may come a while after leaving: kept as long as a chat.
-    conv = store.get(body.conversation_id, settings.chat_conversation_ttl_seconds)
+    conv = store.get(body.conversation_id)
     async with conv.lock:
         report = await check.check(conv)
         if not report.text:
             return DepartureResponse(reply="", conversation_id=conv.id)
         text = with_waiting(report.text, report.actions, conv, settings.language)
         record_departure(conv, text)
+        # The answer may come a while after leaving: kept as long as a chat, and
+        # across a restart like one.
+        conv.ttl_seconds = settings.chat_conversation_ttl_seconds
+        conv.kept = True
         store.touch(conv)
+        save_conversation(store, settings, conv)
     pushed = False
     if body.push and ntfy is not None:
         title = strings(settings.language).departure_title
@@ -645,4 +1002,9 @@ async def left_home(body: DepartureRequest, request: Request) -> DepartureRespon
 
 @app.post("/v1/reset", status_code=204, dependencies=[Depends(require_token)])
 async def reset(request: Request, conversation_id: str = DEFAULT_CONVERSATION) -> None:
+    """Forget a conversation: what was said, what waits for a go, and its kept files."""
+    settings: Settings = request.app.state.settings
     request.app.state.store.reset(conversation_id)
+    conversation_file(settings, conversation_id).unlink(missing_ok=True)
+    if (store := file_store(settings, conversation_id)) is not None:
+        store.clear()

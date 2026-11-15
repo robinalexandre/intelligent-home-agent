@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 import unicodedata
 import uuid
@@ -134,8 +135,8 @@ class FileStore:
         }
         self._write_index(index)
 
-    def load(self) -> list[Attachment]:
-        """The files still within their days, after deleting the older ones."""
+    def prune(self) -> dict[str, dict[str, Any]]:
+        """Delete the files past their days; the index of the ones still kept."""
         index = self._read_index()
         cutoff = self._clock() - self._keep_seconds
         kept = {name: meta for name, meta in index.items() if meta["saved_at"] >= cutoff}
@@ -145,6 +146,15 @@ class FileStore:
             for meta in index.values():
                 if meta["blob"] not in used:
                     (self._dir / meta["blob"]).unlink(missing_ok=True)
+        return kept
+
+    def clear(self) -> None:
+        """Delete every file kept here."""
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def load(self) -> list[Attachment]:
+        """The files still within their days, after deleting the older ones."""
+        kept = self.prune()
         files = []
         for name, meta in kept.items():
             path = self._dir / meta["blob"]
@@ -208,6 +218,8 @@ class Conversation:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     # Where this conversation's files are kept across restarts, if anywhere.
     file_store: FileStore | None = field(default=None, repr=False)
+    # Saved to disk after each request (a chat), so it survives a restart.
+    kept: bool = False
 
     def attach_store(self, store: FileStore) -> None:
         """Keep this conversation's files in the store, and bring back the saved ones."""
@@ -377,6 +389,7 @@ class ConversationStore:
         conv.questions = data.get("questions", [])
         conv.clean_replies = data.get("clean_replies", [])
         conv.updated_at = self._clock() - age
+        conv.kept = True
         return conv
 
     def _evict_expired(self) -> None:

@@ -103,20 +103,14 @@ if the agent answers without looking anything up, try a larger model.
   `OLLAMA_HOST=0.0.0.0`), nothing to set without Docker.
 - *Ollama on another machine*: `LLM_BASE_URL=http://<its address>:11434/v1`.
 
-**Web search** works with every model. `WEB_SEARCH_BACKEND` says who fetches the results:
-
-| `WEB_SEARCH_BACKEND` | Needs | Notes |
-|---|---|---|
-| `auto` (default) | nothing | `native` with Anthropic, `duckduckgo` with the others. |
-| `native` | `LLM_PROVIDER=anthropic` | Anthropic's own search tool. |
-| `duckduckgo` | nothing | No account. Best effort: it reads a web page that may change, and refuses many searches in a row. |
-| `searxng` | `WEB_SEARCH_URL`, or `compose/searxng.yml` and `SEARXNG_SECRET` | Your own search engine, no account anywhere. The dependable free choice. |
-| `brave` | `WEB_SEARCH_API_KEY` from brave.com/search/api | |
-| `tavily` | `WEB_SEARCH_API_KEY` from tavily.com | |
-
-With the last four, the agent fetches the results and your model writes a short answer
-from them, in a request of its own that sees nothing else. `WEB_SEARCH_ENABLED=false`
-turns search off.
+**Web search** works with every model: Anthropic's own search tool with Claude, and with
+the others a search engine of your choice (`WEB_SEARCH_BACKEND`: `duckduckgo` with no
+account, your own `searxng`, `brave` or `tavily` with a key) whose results your model
+answers from. `WEB_SEARCH_ENABLED=false` turns search off. The agent can also read public
+web pages (`WEB_PAGES_ENABLED`, on by default) and investigate a photo, a link or a site
+(`INVESTIGATIONS_ENABLED`, off by default). [docs/web.md](web.md) has the table of search
+backends, what each of the three may and may not do, and the sites the agent still opens
+after it read your mail.
 
 ## 3. The home
 
@@ -228,8 +222,9 @@ Optional data sources, each off until its settings are filled in:
 
 | Source | Works with | Doesn't |
 |---|---|---|
-| Calendar (CalDAV, read-only) | iCloud (`https://caldav.icloud.com`, an app-specific password), Fastmail (`https://caldav.fastmail.com/dav/`), Nextcloud (`https://<host>/remote.php/dav`), any CalDAV server with a password | Google Calendar and Microsoft 365, whose CalDAV or equivalent needs OAuth |
-| Mail (IMAP, read-only) | Gmail (`imap.gmail.com`, an app password, 2-step verification on), iCloud (`imap.mail.me.com`, an app-specific password), Fastmail, most hosting providers | Outlook.com and Microsoft 365, which need OAuth |
+| Calendar (CalDAV; read, and adding events when you allow it: [mail-calendar.md](mail-calendar.md)) | iCloud (`https://caldav.icloud.com`, an app-specific password), Fastmail (`https://caldav.fastmail.com/dav/`), Nextcloud (`https://<host>/remote.php/dav`), any CalDAV server with a password | Google Calendar and Microsoft 365, whose CalDAV or equivalent needs OAuth |
+| Contacts' birthdays (CardDAV, read-only), shown in the agenda | iCloud (`https://contacts.icloud.com`), Fastmail (`https://carddav.fastmail.com/dav/`), Nextcloud (same address as its calendar), any CardDAV server with a password; the calendar's login is reused | Google Contacts, which needs OAuth |
+| Mail (IMAP; read and search, and per account when you allow it: drafts, flags, filing into your folders; never sends, never deletes) | Gmail (`imap.gmail.com`, an app password, 2-step verification on), iCloud (`imap.mail.me.com`, an app-specific password), Fastmail (`imap.fastmail.com`, an app password), most hosting providers and your own server on port 993 | Outlook.com and Microsoft 365, which need OAuth; servers that only offer STARTTLS on port 143 |
 | Weather, outdoor activities, travel time | no account: Open-Meteo and OpenStreetMap, once the home location is set | |
 | GitHub pull requests | a classic token with the `repo` scope | |
 | Connectors ([connectors.md](connectors.md)) | any service with an MCP server reachable over HTTPS: your bank, your hosting provider, an accounting tool | servers that only run as a local command |

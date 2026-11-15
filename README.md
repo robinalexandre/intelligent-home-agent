@@ -40,7 +40,10 @@ spoken morning briefing and evening recap.
   - Outdoor activities: wind sports per spot (strength, gusts, direction), surf per beach
     (waves, period, wind effect, tides), and weather windows for everything else
     (cycling, running, hiking, skiing, climbing, golf, or just "I go out a lot").
-  - Calendar (CalDAV) and mailboxes (IMAP), both read-only.
+  - Mailboxes (IMAP), calendars (CalDAV) and contacts' birthdays (CardDAV), with any
+    provider that offers them: read-only by default; when you allow it, email
+    drafts, flags and filing into your folders, and new calendar events. It never
+    sends or deletes an email ([docs/mail-calendar.md](docs/mail-calendar.md)).
   - When to leave for an appointment (driving time from home, OpenStreetMap).
   - GitHub pull requests waiting for you, and reminders left with a coding assistant.
   - Connectors: any service that has an MCP server, such as your bank or your hosting
@@ -49,6 +52,20 @@ spoken morning briefing and evening recap.
   - Your own notes (a knowledge base in a GitHub repository), searched before it says it
     doesn't know: see [docs/knowledge.md](docs/knowledge.md).
   - Web search with any model, in a separate model request that only sees the query.
+  - Documents and pictures ([docs/documents.md](docs/documents.md)): PDFs it writes
+    (a letter, a statement, a summary) on A4 or US Letter, PDF forms filled, pages
+    extracted and merged, diagrams drawn, animations; and, with a key of your own,
+    pictures and clips from an image model, and calculations in a sandbox.
+  - Memory: facts you tell it to remember and the steps of jobs that worked, in Markdown
+    files you can edit (on the agent's disk, or in a GitHub repository of yours); the
+    alerts you turned down; a search of your past conversations
+    ([docs/memory.md](docs/memory.md)).
+  - Public web pages and documents, read from site to site; never an address inside your
+    network, and after private content only your country's public-service sites.
+  - Investigations of a photo, a document, a link or a site: metadata (EXIF, author,
+    dates), a domain's age and registrar, archives, certificates, places on
+    OpenStreetMap, reverse image search links. Never to identify a private person. See
+    [docs/web.md](docs/web.md) for the three.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
@@ -125,18 +142,31 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `DELIVERIES_ENABLED` | `true` | With a mailbox: parcels noted from shipping emails. |
 | `WEB_SEARCH_ENABLED`, `WEB_SEARCH_BACKEND` | `true`, `auto` | Web search: `native` (Anthropic's own tool), or `duckduckgo`, `searxng`, `brave`, `tavily` with any model. |
 | `WEB_SEARCH_URL`, `WEB_SEARCH_API_KEY`, `WEB_SEARCH_MODEL` | unset | SearXNG address; Brave or Tavily key; model that writes the answer. |
+| `WEB_PAGES_ENABLED`, `WEB_TRUSTED_DOMAINS` | `true`, empty | Reading public web pages; sites added to the public services of `HOME_COUNTRY`, the only ones opened after private content ([docs/web.md](docs/web.md)). |
+| `INVESTIGATIONS_ENABLED`, `PUBLIC_URL` | `false`, unset | Investigation tools; the agent's public address, for reverse image search. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
-| `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only. |
+| `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
+| `CARDDAV_URL`, `CARDDAV_USERNAME`, `CARDDAV_PASSWORD` | unset | Contacts' birthdays in the agenda; the login defaults to CalDAV's. |
+| `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only; `"write": true` on an account allows drafts, flags and filing there. |
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
 | `GITHUB_TOKEN` | unset | Pull requests waiting for you. |
 | `ASSISTANT_REMINDERS_REPO`, `ASSISTANT_REMINDERS_PATH` | unset, `reminders` | Coding-assistant reminders: `owner/repo` and folder. |
 | `MCP_SERVERS` | `[]` | Connectors: remote MCP servers (JSON), each with its login and `writes`: `off` or `confirm`. |
+| `DOCUMENTS_ENABLED`, `PAPER_SIZE`, `PDF_FONT_DIR` | `true`, `auto`, DejaVu | PDFs, forms and drawings ([docs/documents.md](docs/documents.md)); paper `a4`, `letter` or by country; a folder of fonts. |
+| `EXERCISE_PHOTOS_ENABLED` | `false` | Exercise photos from a public-domain bank. |
+| `CODE_EXECUTION_ENABLED`, `CODE_EXECUTION_MODEL` | `false`, `LLM_MODEL` | Calculations and charts in the provider's sandbox (Anthropic only). |
+| `GENERATION_GEMINI_API_KEY`, `GENERATION_OPENAI_API_KEY` | unset | Pictures and clips from Google's or OpenAI's models, billed there; models, an OpenAI-compatible address and limits in `.env.example`. |
 | `KB_URL`, `KB_TOKEN` | unset | Knowledge base container (`compose/kb.yml`, with `KB_REPO` and `KB_GITHUB_TOKEN`). |
 | `NTFY_URL`, `NTFY_TOKEN` | unset | Push channel for `/v1/briefing`. |
 | `CONVERSATION_TTL_SECONDS` | `300` | How long a conversation is remembered, with the files sent in it and what waits for your yes. |
 | `CHAT_CONVERSATION_TTL_SECONDS` | `43200` | The same for a conversation held in a chat (`"display": "chat"`). |
 | `DATA_DIR` | `data` | Where the agent keeps what must survive a restart (the `agent_data` volume in Docker). |
-| `JOURNAL_KEEP_DAYS` | `365` | Days the journal of requests is kept in `DATA_DIR/journal`; `0` turns it off. |
+| `JOURNAL_KEEP_DAYS` | `365` | Days the journal of requests is kept in `DATA_DIR/journal`; `0` turns it off (and the search of past conversations with it). |
+| `FILES_KEEP_DAYS` | `30` | Days the files of a chat are kept in `DATA_DIR/files`, so they survive a restart; `0`: memory only. |
+| `MEMORY_STORE` | `local` | Where the memory is kept: `local` (files in `DATA_DIR`), `github` (a repository) or `off`. See [docs/memory.md](docs/memory.md). |
+| `MEMORY_REPO` | unset | `owner/repo` for `MEMORY_STORE=github`; `GITHUB_TOKEN` must be allowed to write to it. |
+| `MEMORY_PATH`, `PROCEDURES_PATH` | `memory.md`, `procedures.md` | The two files; in a repository they default to a folder named after the assistant. |
+| `MEMORY_CRYPT_KEY` | unset | Optional: the git-crypt key of a repository that encrypts that folder. |
 
 ### Outdoor activities
 
@@ -186,8 +216,8 @@ see [docs/integrations.md](docs/integrations.md) and [docs/siri-shortcut.md](doc
 
 The guardrails are enforced in code, not only in the prompt.
 
-- **Authentication**: every endpoint except `/health` needs the bearer token, compared in
-  constant time.
+- **Authentication**: every endpoint except `/health` (and a picture's short-lived link,
+  below) needs the bearer token, compared in constant time.
 - **Entity policy**: only entities in `HA_EXPOSED_DOMAINS` are visible, denylisted ones
   never are. A service can only target entities of its own domain (no `light.turn_on` on a
   lock), and targets can't be smuggled in through `data`.
@@ -226,18 +256,48 @@ The guardrails are enforced in code, not only in the prompt.
   the search waits for your go like a write; in any request, a query that repeats a
   number, an email address, a long token or a run of words from what the request holds
   (earlier replies, tool results) is refused; at most three searches run per request.
+- **Web pages**: only public addresses open (never the home network, a container or
+  cloud metadata, checked again after every redirect and on the address really reached).
+  After web content, the agent follows what pages put forward, and a few sites of its own
+  with a plain address (a site and a short readable path, no parameters); after private content, only your country's
+  public-service sites and `WEB_TRUSTED_DOMAINS`, anything else waits for your go. A page
+  that hides words for an assistant is flagged and ends free navigation.
+- **Investigations**: lookups go to public registries and archives, never to the site
+  investigated; after private content no GPS position and no DNS query goes out. A photo
+  is put online for a reverse image search only if you sent it, stripped of its metadata,
+  for 15 minutes at an unguessable address (the one endpoint besides `/health` that takes
+  no token).
 - **Lockdown of memory**: after a tainted request, only the question, the reply and the
   names of the tools used stay in conversation memory; the private content is dropped, so
   it can't steer later requests. A request that fails is rolled back entirely. The
   journal keeps neither the reply nor the tool arguments of a tainted request.
+- **Memory**: a remembered fact comes back in every later request, so nothing is
+  remembered, forgotten or saved as a procedure after a read or in a reply quoting a
+  message without your go, shown with every word; passwords, keys and tokens are refused.
+  Facts are given to the model as data, not instructions, and are among what a web search
+  query may not repeat. Saved chats and files are written readable by the agent's user
+  only.
 - **Connectors**: reading from a connected service taints the request like an email. A
   write never runs when asked, even in a clean request: it waits for your go as above,
   shown with its exact arguments; with `writes: off` the write tools don't exist.
 - **Files**: a file you send is read as data written by someone else (it taints the
   request), its name is reduced to a safe character set, and an office file that would
   expand like a zip bomb is not opened.
-- **Read-only sources**: IMAP mailboxes are opened read-only and never marked as read;
-  CalDAV is only queried.
+- **Documents and pictures**: a PDF or a drawing the agent writes is rendered on the
+  server from an allowlist: only layout tags, and only images already kept in the
+  conversation, so nothing in it can load a file or an address. Opening a kept file or
+  a form taints the request. A prompt for an image model is checked like a search
+  query, only pictures you sent or the agent made go along, and each request makes a
+  few at most. Code runs in the model provider's sandbox, never on your machine.
+- **Mail and calendar**: reading opens IMAP folders read-only and never marks an email
+  as read; CalDAV and CardDAV are only queried. Writing is off until you turn it on
+  (per mail account, and for the calendar). Even then no email is ever sent or
+  deleted: a draft waits in your mail app for you to send, filing only goes to
+  folders of your own, and a replaced draft goes to the trash. Flagging, filing and
+  adding an event wait for your go once the request read anything; changing or
+  removing a draft and creating a folder always do; filing never runs by itself in a
+  scheduled task. Each saved draft is noted under the reply by the code, with a
+  warning when it carries files after content written by others was read.
 - **Secrets** stay in `.env` (mode 600 when written by the setup script); the setup script
   never prints them. The Siri Shortcut files hold the token: don't share them.
 

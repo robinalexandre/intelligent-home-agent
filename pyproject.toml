@@ -12,15 +12,39 @@ dependencies = [
     "httpx>=0.27",
     "pydantic-settings>=2.4",
     "caldav>=3.0",
+    # Calendar events written and read (tools/calendar.py), CardDAV answers (tools/contacts.py).
+    "icalendar>=6.0",
+    "lxml>=5.0",
     # Office files the user sends, read as text; defusedxml keeps the XML parsing safe
     # from entity tricks.
     "openpyxl>=3.1",
     "python-pptx>=1.0",
     "python-docx>=1.1",
     "defusedxml>=0.7",
+    # Investigations (tools/osint.py): a photo's metadata and the copy put online for a
+    # reverse image search, a PDF's author and dates, a site's DNS records. Pillow and pypdf
+    # also serve the documents the agent makes (tools/documents.py, pdf_pages.py).
+    "pillow>=10",
+    "pypdf>=6.0",
+    "dnspython>=2.6",
 ]
 
 [project.optional-dependencies]
+# Memory kept in a GitHub repository that encrypts its folder with git-crypt
+# (MEMORY_CRYPT_KEY, docs/memory.md); nothing else needs it.
+crypt = [
+    "cryptography>=42",
+]
+# PDFs written, forms filled, drawings rendered (docs/documents.md). The Docker image
+# installs it; without it those tools are simply absent.
+documents = [
+    "fpdf2>=2.8.4",
+    # Filling PDF forms: pdfminer.six gives the text's positions.
+    "pdfminer.six>=20250506",
+    # Renders the drawings the agent writes in SVG (Rust, no system library, loads nothing
+    # from the network).
+    "resvg-py>=0.5",
+]
 # Home devices that rest on unofficial libraries (docs/home-devices.md). Each is pinned,
 # since the vendor's side changes without notice; without its extra the device stays off.
 # PetKit feeder and litter box, through the signed calls of PetKit's phone app.
@@ -38,11 +62,18 @@ devices = [
     "pyatv==0.18.0",
     "srptools==1.0.1",
 ]
+# Animations as MP4 videos (PyAV brings its own FFmpeg, some 40 MB); GIFs without it.
+video = ["av>=11"]
 dev = [
+    "cryptography>=42",
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "respx>=0.21",
     "ruff>=0.6",
+    # The documents extra, so its tests run.
+    "fpdf2>=2.8.4",
+    "pdfminer.six>=20250506",
+    "resvg-py>=0.5",
 ]
 
 [build-system]
@@ -70,3 +101,5 @@ extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
+# Runs the installed git-crypt, when there is one, to check the codec against it.
+"tests/test_config_crypt.py" = ["S105", "S106", "S603", "S607"]

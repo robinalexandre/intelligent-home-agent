@@ -10,9 +10,10 @@ services:
     build:
       context: .
       args:
-        # Optional libraries for some home devices, e.g. EXTRAS=devices in .env
+        # Optional parts of the agent (the Dockerfile's EXTRAS). In .env, e.g.
+        # EXTRAS=documents,devices adds the libraries of some home devices
         # (docs/home-devices.md).
-        EXTRAS: "${EXTRAS:-}"
+        EXTRAS: "${EXTRAS:-documents}"
     env_file: .env
     ports:
       - "${AGENT_BIND:-127.0.0.1}:8000:8000"

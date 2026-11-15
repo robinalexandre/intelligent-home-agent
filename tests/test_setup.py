@@ -11,10 +11,13 @@ spec.loader.exec_module(setup)
 ANSWERS = [
     "",  # with Docker Compose
     "Nova",  # name
+    "Sam",  # what it calls the user
     "fr",  # language
     "Europe/Paris",  # time zone
     "",  # provider: anthropic
     "claude-test",  # model
+    "",  # open public web pages
+    "",  # no investigations
     "Springfield",  # city
     "y",  # look it up
     "y",  # use it
@@ -30,18 +33,26 @@ ANSWERS = [
     "w, sw",
     "",  # min knots: default
     "n",  # no more spots
+    "letter",  # paper
+    "gemini",  # generated pictures
+    "y",  # code sandbox
     "n",  # no Home Assistant
     "",  # no Hue
     "y",  # CalDAV
-    "https://caldav.example.com",
+    "nextcloud",  # provider
+    "https://cloud.example.com/",
     "someone",  # username
+    "y",  # the agent may add events
+    "",  # to the server's default calendar
+    "y",  # contacts' birthdays
     "",  # no other devices
+    "",  # memory: local files
     "",  # no knowledge base
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
 ]
-SECRETS = ["sk-very-secret", "caldav-pass", ""]
+SECRETS = ["sk-very-secret", "gen-secret", "caldav-pass", ""]
 
 
 def scripted(answers):
@@ -73,7 +84,8 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
     env = dict(
         line.split("=", 1) for line in path.read_text().splitlines() if line and line[0] != "#"
     )
-    assert env["ASSISTANT_NAME"] == "Nova"
+    assert env["ASSISTANT_NAME"] == "Nova" and env["USER_NAME"] == "Sam"
+    assert "MEMORY_STORE" not in env  # local files, the default
     assert env["LANGUAGE"] == "fr"
     assert env["HOME_LATITUDE"] == "0.000"
     assert env["BRIEF_SECTIONS"] == "calendar,weather,activities"
@@ -84,16 +96,21 @@ def test_setup_writes_env_without_printing_secrets(tmp_path):
          "directions": ["W", "SW"], "min_knots": 12.0}
     ]  # fmt: skip
     assert env["CALDAV_PASSWORD"] == "caldav-pass"
+    assert env["PAPER_SIZE"] == "letter" and env["CODE_EXECUTION_ENABLED"] == "true"
+    assert env["GENERATION_GEMINI_API_KEY"] == "gen-secret"
+    assert env["CALDAV_URL"] == env["CARDDAV_URL"] == "https://cloud.example.com/remote.php/dav"
+    assert env["CALDAV_WRITE"] == "true" and "CALDAV_DEFAULT_CALENDAR" not in env
     assert env["NTFY_URL"] == "https://ntfy.example.com/topic"
     assert "HA_TOKEN" not in env and "NTFY_TOKEN" not in env
     assert len(env["AGENT_API_TOKEN"]) >= 40
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
     output = "\n".join(printed)
-    for secret in ("sk-very-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
+    for secret in ("sk-very-secret", "gen-secret", "caldav-pass", env["AGENT_API_TOKEN"]):
         assert secret not in output
     assert "LLM_API_KEY = (set)" in output
     assert "COMPOSE_FILE" not in env and "http://127.0.0.1:8000" in output
+    assert "WEB_PAGES_ENABLED" not in env and "INVESTIGATIONS_ENABLED" not in env
 
 
 def run_with(tmp_path, answers, secrets_typed):
@@ -109,15 +126,19 @@ def run_with(tmp_path, answers, secrets_typed):
     return env, "\n".join(printed)
 
 
-# Name, language, time zone; then after the model: no city, no sections, no activities.
-START = ["", "en", "UTC"]
-NOTHING_ELSE = ["", "weather", "short", ""]
+# Name, no user name, language, time zone; then after the model and the search: web pages,
+# no investigations, no city, no sections, no activities, the usual paper and no
+# generated pictures.
+START = ["", "", "en", "UTC"]
+NOTHING_ELSE = ["", "", "", "weather", "short", "", "", ""]
 
 
 def test_a_local_model_reached_over_tailscale(tmp_path):
     answers = ["", *START, "ollama", "y", "some-model", "searxng", "y", *NOTHING_ELSE]
-    # No Home Assistant, a knowledge base, access, node name, channel.
-    answers += ["n", "y", "http://192.168.1.20", "", "y", "someone/notes", "funnel"]
+    # No Home Assistant, Hue, no other devices, memory in local files, a knowledge base,
+    # access, node name,
+    # channel.
+    answers += ["n", "y", "http://192.168.1.20", "", "", "y", "someone/notes", "funnel"]
     answers += ["agent"]
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
@@ -142,13 +163,19 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
 
 def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     answers = ["", *START, "openai-compatible", "http://10.0.0.5:8080/v1", "", "m", "off"]
-    answers += [*NOTHING_ELSE, "n", "", "", "", "caddy", "", "agent.example.com", "siri"]
+    # No web pages, investigations: with a domain, the agent knows its public address.
+    # Then no Home Assistant, no Hue, no other devices, no memory.
+    answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "", "off"]
+    answers += ["", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
+    assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
+    assert env["PUBLIC_URL"] == "https://agent.example.com"
     assert env["LLM_BASE_URL"] == "http://10.0.0.5:8080/v1"
     assert env["AGENT_DOMAIN"] == "agent.example.com"
     assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/caddy.yml"
     assert "Still empty" not in output and "https://agent.example.com" in output
     assert env["WEB_SEARCH_ENABLED"] == "false" and "WEB_SEARCH_BACKEND" not in env
+    assert env["MEMORY_STORE"] == "off" and "USER_NAME" not in env
     answers = [
         "",
         *START,
@@ -158,6 +185,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         *NOTHING_ELSE,
         "n",
         "",
+        "",  # memory: local files
         "",
         "",
         "cloudflare",
@@ -170,9 +198,16 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
 
 def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
-    answers += [*NOTHING_ELSE, "n", "", "", "siri"]
-    env, output = run_with(tmp_path, answers, [""])
+    # No Home Assistant, no Hue, no other devices, memory in a repository (asked twice:
+    # owner/repo), channel.
+    answers += [*NOTHING_ELSE, "n", "", "", "github", "notes", "someone/config", "siri"]
+    env, output = run_with(tmp_path, answers, ["", "gh-write-secret"])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
+    # Not Anthropic: the code sandbox is not offered. No country: A4.
+    assert env["PAPER_SIZE"] == "a4" and "CODE_EXECUTION_ENABLED" not in env
+    assert (env["MEMORY_STORE"], env["MEMORY_REPO"]) == ("github", "someone/config")
+    assert env["GITHUB_TOKEN"] == "gh-write-secret" and "gh-write-secret" not in output
+    assert "MEMORY_CRYPT_KEY" in output and "Still empty" not in output
     assert "uvicorn intelligent_home_agent.main:app" in output
 
 
@@ -180,7 +215,7 @@ def test_other_devices_ask_what_the_wizard_can_take_and_say_the_rest(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "off", *NOTHING_ELSE, "n", ""]
     # Other devices: yes; which; the PetKit account and its country.
     answers += ["y", "nuki, petkit, netatmo, android-tv, withings", "pets@example.com", "GB"]
-    answers += ["siri"]
+    answers += ["", "siri"]  # memory in local files, channel
     env, output = run_with(tmp_path, answers, ["", "nuki-secret", "petkit-secret"])
     assert env["NUKI_API_TOKEN"] == "nuki-secret" and env["PETKIT_PASSWORD"] == "petkit-secret"
     assert (env["PETKIT_USERNAME"], env["PETKIT_REGION"]) == ("pets@example.com", "GB")
@@ -201,6 +236,13 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
+    from intelligent_home_agent.tools.documents import LETTER_COUNTRIES, PAPER_SIZES, paper_for
+
+    assert set(setup.PAPERS) == set(PAPER_SIZES)
+    assert {c.casefold() for c in setup.LETTER_COUNTRIES} == {
+        c for c in LETTER_COUNTRIES if len(c) == 2
+    }
+    assert all(paper_for("auto", c) == "letter" for c in setup.LETTER_COUNTRIES)
 
 
 def test_existing_env_is_kept_unless_confirmed(tmp_path):
@@ -225,3 +267,38 @@ def test_written_env_loads_into_settings(tmp_path, monkeypatch):
     settings = Settings(_env_file=path)
     assert settings.outdoor_activities == ["surf", "outdoors"]
     assert settings.surf_spots[0].facing == "W"
+
+
+def test_a_mailbox_is_asked_for_by_provider_and_only_read_unless_agreed():
+    from intelligent_home_agent.config import MailAccount
+
+    answers = ["gmail", "", "sam@example.com", "n"]
+    answers += ["other", "Work", "mail.example.com", "sam", "y"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["app-pass", "other-pass"])
+    p = setup.Prompter(read, read_secret, lambda _: None)
+
+    first, second = setup.ask_mailbox(p, 1), setup.ask_mailbox(p, 2)
+
+    assert queue == []
+    assert first == {
+        "name": "Gmail",
+        "host": "imap.gmail.com",
+        "username": "sam@example.com",
+        "password": "app-pass",
+    }
+    assert (second["name"], second["host"], second["write"]) == ("Work", "mail.example.com", True)
+    assert not MailAccount(**first).write and MailAccount(**second).write
+
+
+def test_a_calendar_on_another_server_asks_for_both_addresses():
+    answers = ["other", "https://dav.example.com/", "sam", "n", "y", "https://dav.example.com/c/"]
+    read, queue = scripted(answers)
+    read_secret, _ = scripted(["dav-pass"])
+    env: dict[str, str] = {}
+
+    setup.ask_calendar(setup.Prompter(read, read_secret, lambda _: None), env)
+
+    assert queue == [] and "CALDAV_WRITE" not in env
+    assert env["CALDAV_URL"] == "https://dav.example.com/"
+    assert env["CARDDAV_URL"] == "https://dav.example.com/c/"
