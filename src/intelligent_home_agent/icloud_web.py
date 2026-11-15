@@ -171,7 +171,7 @@ def main() -> None:
     if not args.apple_id:
         raise SystemExit("Set ICLOUD_APPLE_ID or pass the Apple ID.")
     if not available():
-        raise SystemExit('pyicloud is not installed: pip install ".[apple]"')
+        raise SystemExit('pyicloud is not installed: pip install ".[icloud]"')
     login(args.apple_id, session_dir(settings.data_dir))
 
 

@@ -716,7 +716,7 @@ def build_icloud(settings: Settings) -> ICloudWeb | None:
     if not settings.icloud_apple_id:
         return None
     if not icloud_available():
-        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[apple]"')
+        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[icloud]"')
         return None
     return ICloudWeb(settings.icloud_apple_id, session_dir(settings.data_dir))
 
