@@ -1352,7 +1352,7 @@ def access_of(env: dict[str, str]) -> str:
 # order is also the one they are asked in: GitHub before the briefing, which may keep its
 # tasks in the notes repository.
 FEATURES = {
-    "devices": "home devices without Home Assistant: Hue, a lock, cameras, a TV, a pet feeder",
+    "devices": "home devices without Home Assistant: Hue, a lock, cameras, a TV, a car...",
     "health": "weigh-ins from a Withings scale",
     "mail": "your mailboxes (IMAP): read; drafts and filing if you allow it",
     "calendar": "your calendar (CalDAV) and contacts' birthdays",
