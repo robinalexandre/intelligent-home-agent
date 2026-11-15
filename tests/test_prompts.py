@@ -24,6 +24,9 @@ ALL_TOOLS = {
     "get_surf_forecast",
     "get_outdoor_forecast",
     "create_reminder",
+    "get_reminders",
+    "search_apple_notes",
+    "find_my_devices",
     "web_search",
     "list_saved_files",
     "read_saved_file",
@@ -242,3 +245,15 @@ def test_filing_from_emails_into_a_drive_needs_both():
     plain = prompt(tools={"list_drive_folder", "create_drive_folder", "read_email"})
     assert "Filing from emails" in plain and "flag_email" not in plain
     assert "create_pdf" not in plain
+
+
+def test_reminders_come_from_icloud_when_it_is_set_up_else_from_the_phone():
+    apple = prompt()
+    assert "get_reminders lists the user's open reminders" in apple
+    assert "Apple reminders (get_reminders with until = today)" in apple
+    assert "search_apple_notes" in apple and "find_my_devices" in apple
+    assert "Apple reminders" in apple.split("Untrusted content")[1]
+    phone = prompt(tools=ALL_TOOLS - {"get_reminders", "search_apple_notes", "find_my_devices"})
+    assert "create_reminder puts it on the user's phone" in phone
+    assert "reminders from phone_context" in phone
+    assert "get_reminders" not in phone and "Find My" not in phone

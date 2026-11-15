@@ -247,6 +247,13 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "delete_drive_file",
         "list_drive_trash",
         "search_drive_content",
+        "get_reminders",
+        "update_reminder",
+        "complete_reminder",
+        "search_apple_notes",
+        "read_apple_note",
+        "find_my_devices",
+        "play_sound_on_device",
     }
     assert registry.jobs == []
     # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
@@ -1077,3 +1084,22 @@ def test_searches_and_scans_go_to_the_subscription_first(monkeypatch):
     # An engine of its own, on the small model the searches use.
     assert seen["engine"] is main.subscription_engine(settings, settings.web_search_model)
     assert seen["engine"]._model == settings.web_search_model != settings.llm_model
+
+
+def test_an_apple_id_moves_reminders_to_icloud_with_notes_and_find_my(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.setenv("ICLOUD_APPLE_ID", "sam@example.com")
+    monkeypatch.setenv("ICLOUD_REMINDER_LISTS", "General, Shopping")
+    monkeypatch.setenv("ICLOUD_FIND_MY", "false")
+    settings = main.Settings(_env_file=None)
+    assert settings.icloud_reminder_lists == ["General", "Shopping"]
+    registry = main.build_registry(settings, ha=None, http=None, llm=None)
+    names = registry.names()
+    assert {"get_reminders", "update_reminder", "complete_reminder", "read_apple_note"} <= names
+    assert "find_my_devices" not in names
+    # One create_reminder, iCloud's: it waits for the user's go after a read.
+    assert registry.get("create_reminder").needs_clean_turn
+
+    monkeypatch.setattr(main, "icloud_available", lambda: False)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "get_reminders" not in names and "create_reminder" in names

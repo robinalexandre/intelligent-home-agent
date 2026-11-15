@@ -346,6 +346,18 @@ class Settings(BaseSettings):
     carddav_username: str | None = None
     carddav_password: SecretStr | None = None
 
+    # --- Apple Reminders, Notes and Find My (iCloud's web services, docs/apple.md) -----
+    # The Apple ID logged in by hand with `python -m intelligent_home_agent.icloud_web`;
+    # only the session that login leaves is kept, in DATA_DIR/icloud-web. Empty: none
+    # of these tools, and reminders are made by the client app on the phone.
+    icloud_apple_id: str | None = None
+    # Only these Reminders lists (by name); empty means all of them.
+    icloud_reminder_lists: CsvList = []
+    # Where a new reminder goes without a list; empty: the list with the most open ones.
+    icloud_reminders_default_list: str | None = None
+    icloud_notes: bool = True
+    icloud_find_my: bool = True
+
     # --- Email (IMAP; each account is read-only unless it says "write": true) ----------
     mail_accounts: list[MailAccount] = []
 
@@ -473,6 +485,7 @@ class Settings(BaseSettings):
         "ha_sensitive_domains",
         "ha_entity_denylist",
         "caldav_calendars",
+        "icloud_reminder_lists",
         "brief_sections",
         "outdoor_activities",
         "web_trusted_domains",

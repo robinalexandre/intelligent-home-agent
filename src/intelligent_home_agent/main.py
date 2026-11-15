@@ -49,6 +49,8 @@ from intelligent_home_agent.home_devices import (
     home_network_client,
 )
 from intelligent_home_agent.i18n import strings
+from intelligent_home_agent.icloud_web import ICloudWeb, session_dir
+from intelligent_home_agent.icloud_web import available as icloud_available
 from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
@@ -59,8 +61,11 @@ from intelligent_home_agent.tools import (
     CalDavCalendar,
     CardDavBirthdays,
     EntityPolicy,
+    FindMy,
     GitHub,
     GitHubFile,
+    ICloudNotes,
+    ICloudReminders,
     ImapMailbox,
     Investigator,
     KnowledgeBase,
@@ -83,15 +88,18 @@ from intelligent_home_agent.tools import (
     build_drives,
     build_email_tools,
     build_engine_web_tools,
+    build_find_my_tools,
     build_general_tools,
     build_github_tools,
     build_home_assistant_tools,
     build_knowledge_tools,
     build_memory_tools,
+    build_note_tools,
     build_osint_tools,
     build_outdoor_tools,
     build_past_conversation_tools,
     build_procedure_tools,
+    build_reminder_tools,
     build_search_engine,
     build_surf_tools,
     build_travel_tools,
@@ -249,7 +257,21 @@ def build_registry(
         home = (settings.home_latitude, settings.home_longitude)
 
     registry = ToolRegistry()
-    registry.extend(build_general_tools(settings.timezone))
+    icloud = build_icloud(settings)
+    # With iCloud, reminders are written there; else the client app makes them on
+    # the phone.
+    registry.extend(build_general_tools(settings.timezone, phone_reminders=icloud is None))
+    if icloud is not None:
+        reminders = ICloudReminders(
+            icloud, settings.icloud_reminder_lists, settings.icloud_reminders_default_list
+        )
+        registry.extend(build_reminder_tools(reminders, settings.timezone, settings.language))
+        if settings.icloud_notes:
+            registry.extend(build_note_tools(ICloudNotes(icloud), settings.timezone))
+        if settings.icloud_find_my:
+            registry.extend(
+                build_find_my_tools(FindMy(icloud), settings.timezone, home, settings.language)
+            )
     if ha is not None:
         registry.extend(build_home_assistant_tools(ha, policy))
     # The clients others share (the pet supplies watch) and those to close at the end.
@@ -498,6 +520,16 @@ def add_drives(
             registry.jobs.append(
                 lambda d=drive: contents[d.name].keep_fresh(lambda: d.index)  # type: ignore[misc]
             )
+
+
+def build_icloud(settings: Settings) -> ICloudWeb | None:
+    """The iCloud web session behind Reminders, Notes and Find My (docs/apple.md)."""
+    if not settings.icloud_apple_id:
+        return None
+    if not icloud_available():
+        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[apple]"')
+        return None
+    return ICloudWeb(settings.icloud_apple_id, session_dir(settings.data_dir))
 
 
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:

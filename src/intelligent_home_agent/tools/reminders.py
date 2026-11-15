@@ -345,9 +345,7 @@ def _title(value: Any) -> str:
     return title[:MAX_TITLE_CHARS]
 
 
-def build_reminder_tools(
-    source: ReminderSource, timezone: str, language: str = "en"
-) -> list[Tool]:
+def build_reminder_tools(source: ReminderSource, timezone: str, language: str = "en") -> list[Tool]:
     tz = ZoneInfo(timezone)
     s = strings(language)
 

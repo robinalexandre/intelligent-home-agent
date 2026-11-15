@@ -1,3 +1,4 @@
+from intelligent_home_agent.tools.apple_notes import ICloudNotes, build_note_tools
 from intelligent_home_agent.tools.assistant_reminders import (
     ReminderRepo,
     build_assistant_reminder_tools,
@@ -14,6 +15,7 @@ from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_t
 from intelligent_home_agent.tools.documents import build_document_tools
 from intelligent_home_agent.tools.drive_trash import LocalTrash
 from intelligent_home_agent.tools.drives import RcloneDrive, build_drive_tools, build_drives
+from intelligent_home_agent.tools.find_my import FindMy, build_find_my_tools
 from intelligent_home_agent.tools.general import build_general_tools
 from intelligent_home_agent.tools.generation import Gemini, OpenAI, build_generation_tools
 from intelligent_home_agent.tools.github import GitHub, build_github_tools
@@ -32,6 +34,7 @@ from intelligent_home_agent.tools.pdf_forms import build_pdf_form_tools
 from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.procedures import build_procedure_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
+from intelligent_home_agent.tools.reminders import ICloudReminders, build_reminder_tools
 from intelligent_home_agent.tools.surf import build_surf_tools
 from intelligent_home_agent.tools.travel import Router, build_travel_tools
 from intelligent_home_agent.tools.turned_down import TurnedDown, build_turned_down_tools
@@ -65,8 +68,11 @@ __all__ = [
     "CardDavBirthdays",
     "EntityPolicy",
     "Gemini",
+    "FindMy",
     "GitHub",
     "GitHubFile",
+    "ICloudNotes",
+    "ICloudReminders",
     "ImapMailbox",
     "Investigator",
     "KnowledgeBase",
@@ -95,6 +101,7 @@ __all__ = [
     "build_drives",
     "build_email_tools",
     "build_engine_web_tools",
+    "build_find_my_tools",
     "build_general_tools",
     "build_generation_tools",
     "build_github_tools",
@@ -103,6 +110,7 @@ __all__ = [
     "build_knowledge_tools",
     "build_long_result_tools",
     "build_memory_tools",
+    "build_note_tools",
     "build_osint_tools",
     "build_outdoor_tools",
     "build_pdf_form_tools",
@@ -110,6 +118,7 @@ __all__ = [
     "build_past_conversation_tools",
     "build_procedure_tools",
     "build_proposal_tools",
+    "build_reminder_tools",
     "build_search_engine",
     "build_surf_tools",
     "build_travel_tools",

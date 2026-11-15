@@ -71,6 +71,9 @@ _PRIVATE_SOURCES = {
     "get_calendar_events": "the calendar",
     "get_github_pull_requests": "GitHub",
     "get_assistant_reminders": "assistant reminders",
+    "get_reminders": "Apple reminders",
+    "search_apple_notes": "Apple notes",
+    "read_apple_note": "Apple notes",
     "list_deliveries": "the parcels noted from emails",
     "read_drive_file": "files of a drive",
     "read_saved_file": "kept files",
@@ -191,15 +194,39 @@ def _daily_help(cfg: PromptConfig) -> str:
             "in that order on the user's go. flag_email marks an email you acted on, so the "
             "user sees which ones you handled."
         )
-    lines.append(
-        "- phone_context may list the user's open reminders with their due date: in the "
-        "briefing mention those due today or overdue, in the recap those still open today "
-        "and due tomorrow."
-    )
-    if "create_reminder" in t:
+    if "get_reminders" in t:
         lines.append(
-            "- Reminders: create_reminder puts it on the user's phone. Resolve relative times "
-            '("tomorrow at ten") into a local date-time yourself.'
+            "- Apple Reminders: get_reminders lists the user's open reminders with their due "
+            "date. In the briefing mention those overdue or due today, in the recap those "
+            "still open today and due tomorrow; undated ones only when asked. "
+            "create_reminder adds one, on all their Apple devices: resolve relative times "
+            '("tomorrow at ten") into a local date-time yourself, or give in_minutes. When '
+            "the user says one is done, find it with get_reminders and tick it with "
+            "complete_reminder; to postpone or rename it, update_reminder."
+        )
+    else:
+        lines.append(
+            "- phone_context may list the user's open reminders with their due date: in the "
+            "briefing mention those due today or overdue, in the recap those still open "
+            "today and due tomorrow."
+        )
+        if "create_reminder" in t:
+            lines.append(
+                "- Reminders: create_reminder puts it on the user's phone. Resolve relative "
+                'times ("tomorrow at ten") into a local date-time yourself.'
+            )
+    if "search_apple_notes" in t:
+        lines.append(
+            "- Apple Notes: search_apple_notes finds the user's notes by words of their "
+            "title or text, read_apple_note gives one whole. They can't be written."
+            + (" Not to be confused with the knowledge base (recall)." if "recall" in t else "")
+        )
+    if "find_my_devices" in t:
+        lines.append(
+            "- Find My: find_my_devices says where the user's Apple devices are and their "
+            'battery ("where is my phone", "how charged is my watch"), and with family their '
+            "family members'; give a place in words (at home, or how far) rather than "
+            "coordinates, with the map link in writing. play_sound_on_device rings one."
         )
     if "web_search" in t:
         lines.append(
@@ -564,7 +591,11 @@ def _brief_sources(cfg: PromptConfig, *, evening: bool) -> tuple[list[str], list
         gather.append("today's unread emails" if evening else "emails of the last 16 hours")
         action.append("emails that need an answer")
     if "reminders" in sections:
-        gather.append("reminders from phone_context")
+        gather.append(
+            f"Apple reminders (get_reminders with until = {day})"
+            if "get_reminders" in t
+            else "reminders from phone_context"
+        )
         if "get_assistant_reminders" in t:
             gather.append("assistant reminders")
         action.append("reminders not done" if evening else "reminders")
