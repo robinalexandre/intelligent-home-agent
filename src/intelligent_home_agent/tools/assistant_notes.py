@@ -376,3 +376,281 @@ def front_matter(fields: dict[str, str | None]) -> str:
     return "---\n" + "\n".join(lines) + "\n---\n"
 
 
+def date_arg(args: dict[str, Any], key: str, required: bool = False) -> str | None:
+    value = str(args.get(key) or "").strip()
+    if not value:
+        if required:
+            raise ToolError(f"{key} is required.")
+        return None
+    if not _DATE.match(value):
+        raise ToolError(f'{key} must be "YYYY-MM-DD" or "YYYY-MM-DD HH:MM".')
+    return value
+
+
+def text_arg(args: dict[str, Any], key: str) -> str:
+    value = str(args.get(key) or "").strip()
+    if not value:
+        raise ToolError(f"{key} is required.")
+    return value
+
+
+def build_assistant_note_tools(
+    repo: NotesRepo | None,
+    timezone: str,
+    language: str = "en",
+    reminders_path: str = "reminders",
+    handoffs_path: str = "handoffs",
+) -> list[Tool]:
+    """Leaving and closing reminders and handoff notes: only with a repository the agent
+    may write to (NOTES_WRITE)."""
+    if repo is None:
+        return []
+    s = strings(language)
+    reminders_path, handoffs_path = reminders_path.strip("/"), handoffs_path.strip("/")
+
+    def now() -> datetime:
+        return datetime.now(ZoneInfo(timezone))
+
+    async def create_assistant_reminder(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
+        title, details = text_arg(args, "title"), text_arg(args, "details")
+        start = date_arg(args, "on", required=True)
+        stamp = now()
+        text = front_matter(
+            {
+                "title": title,
+                "on": start,
+                "until": date_arg(args, "until"),
+                "every": str(args.get("every") or "").strip() or None,
+                "times": str(args.get("times") or "").strip() or None,
+                "where": args.get("where"),
+                "machine": args.get("machine"),
+                "group": args.get("group"),
+                "created": stamp.strftime("%Y-%m-%d %H:%M"),
+            }
+        )
+        path = await repo.create(reminders_path, title, f"{text}\n{details}\n", f"{stamp:%Y-%m-%d}")
+        return {"created": path}
+
+    async def create_handoff(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
+        title = text_arg(args, "title")
+        stamp = now()
+        sections = {
+            "Goal": text_arg(args, "goal"),
+            "Where it stands": args.get("where_it_stands"),
+            "Decisions made (and why)": args.get("decisions"),
+            "Next steps": text_arg(args, "next_steps"),
+            "Open questions": args.get("open_questions"),
+        }
+        body = "\n".join(
+            f"## {name}\n\n{value.strip()}\n" for name, value in sections.items() if value
+        )
+        text = front_matter(
+            {
+                "title": title,
+                "from": repo.author,
+                "date": stamp.strftime("%Y-%m-%d %H:%M"),
+                "repo": args.get("repo") or "none",
+                "branch": args.get("branch") or "none",
+            }
+        )
+        path = await repo.create(handoffs_path, title, f"{text}\n{body}", f"{stamp:%Y-%m-%d}")
+        return {"created": path}
+
+    def reminder_id(args: dict[str, Any]) -> str:
+        return note_id(args.get("id"), "get_assistant_reminders")
+
+    async def close_assistant_reminder(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
+        reminder = reminder_id(args)
+        path = f"{reminders_path}/{reminder}.md"
+        stamp = now()
+        meta, _body = parse(await repo.text(path))
+        if meta.get("every") and not args.get("stop"):
+            await repo.close_for_day(path, f"{stamp:%Y-%m-%d}")
+            return {"closed_for_today": reminder}
+        return {"closed": await repo.close(path, f"{stamp:%Y-%m-%d %H:%M}")}
+
+    async def delete_handoff(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
+        path = f"{handoffs_path}/{note_id(args.get('id'), 'create_handoff')}.md"
+        if not await repo.delete(path):
+            raise ToolError(f"No handoff note {path}.")
+        return {"deleted": path}
+
+    async def describe_delete_handoff(args: dict[str, Any]) -> str:
+        name = str(args.get("id") or "").removesuffix(".md")
+        return s.handoff_delete_summary.format(path=f"{handoffs_path}/{name}.md")
+
+    async def delete_assistant_reminder(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
+        reminder = reminder_id(args)
+        for path in (
+            f"{reminders_path}/{reminder}.md",
+            f"{reminders_path}/{PAST}/{reminder}.md",
+        ):
+            if await repo.delete(path):
+                return {"deleted": path}
+        raise ToolError(f"No reminder {reminder}, open or past.")
+
+    async def reminder_title(args: dict[str, Any]) -> str:
+        reminder = str(args.get("id") or "")
+        try:
+            text = await repo.text(f"{reminders_path}/{reminder_id(args)}.md")
+            title = parse(text)[0].get("title")
+        except ToolError:
+            title = None
+        return s.note_label.format(title=title, id=reminder) if title else reminder
+
+    async def describe_close(args: dict[str, Any]) -> str:
+        summary = s.reminder_stop_summary if args.get("stop") else s.reminder_close_summary
+        return summary.format(label=await reminder_title(args))
+
+    async def describe_delete(args: dict[str, Any]) -> str:
+        return s.reminder_delete_summary.format(label=await reminder_title(args))
+
+    id_property = {"type": "string", "description": "The id get_assistant_reminders gave."}
+    return [
+        Tool(
+            name="create_assistant_reminder",
+            description=(
+                "Leave a reminder for the user's coding sessions: their coding assistant shows "
+                "it at the next sessions, on every computer, from `on` until `until`, and it "
+                "comes back in get_assistant_reminders. For work on code or projects."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "One line, in the user's language."},
+                    "on": {
+                        "type": "string",
+                        "description": 'Start showing on "YYYY-MM-DD" or "YYYY-MM-DD HH:MM".',
+                    },
+                    "until": {"type": "string", "description": "Last day it shows (optional)."},
+                    "every": {
+                        "type": "string",
+                        "description": (
+                            'To repeat: "day", "weekday", "monday, thursday", "3 days" or '
+                            '"month" (optional).'
+                        ),
+                    },
+                    "times": {
+                        "type": "string",
+                        "description": 'A repeating one, several times a day: "08:00, 14:00".',
+                    },
+                    "where": {
+                        "type": "string",
+                        "description": "Only for work in one project: its folder, e.g. dev/shop.",
+                    },
+                    "machine": {
+                        "type": "string",
+                        "description": "Only for one computer: its name, as on other reminders.",
+                    },
+                    "group": {
+                        "type": "string",
+                        "description": (
+                            "The organization, client or project it belongs to, spelled as on "
+                            "the user's other reminders, so they are filed together."
+                        ),
+                    },
+                    "details": {
+                        "type": "string",
+                        "description": "What it is about: people, dates, links, what to do.",
+                    },
+                },
+                "required": ["title", "on", "details"],
+            },
+            handler=create_assistant_reminder,
+            needs_clean_turn=True,
+            describe=describe_whole(s.assistant_reminder_label),
+            multiline_args=frozenset({"details", "title"}),
+        ),
+        Tool(
+            name="create_handoff",
+            description=(
+                "Write a handoff note for the user's next coding session, on any computer, so "
+                "they (or their coding assistant) can pick up a piece of work there: goal, "
+                "where it stands, decisions, next steps."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "One line: what this work is."},
+                    "repo": {"type": "string", "description": 'GitHub "owner/name", if any.'},
+                    "branch": {"type": "string"},
+                    "goal": {"type": "string"},
+                    "where_it_stands": {"type": "string"},
+                    "decisions": {"type": "string"},
+                    "next_steps": {"type": "string"},
+                    "open_questions": {"type": "string"},
+                },
+                "required": ["title", "goal", "next_steps"],
+            },
+            handler=create_handoff,
+            needs_clean_turn=True,
+            describe=describe_whole(s.handoff_label),
+            multiline_args=frozenset(
+                {"goal", "where_it_stands", "decisions", "next_steps", "open_questions"}
+            ),
+        ),
+        Tool(
+            name="close_assistant_reminder",
+            description=(
+                "Mark one of the user's assistant reminders done, by its id from "
+                "get_assistant_reminders: a one-off one moves to the past ones; a repeating "
+                "one is closed for today and comes back on its next day, unless stop ends it "
+                "for good. It always waits for the user's go: call it right away."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "id": id_property,
+                    "stop": {
+                        "type": "boolean",
+                        "description": "A repeating reminder the user no longer wants at all.",
+                    },
+                },
+                "required": ["id"],
+            },
+            handler=close_assistant_reminder,
+            describe=describe_close,
+            needs_clean_turn=True,
+            proposable=True,
+            always_propose=True,
+        ),
+        Tool(
+            name="delete_handoff",
+            description=(
+                "Delete a handoff note once it was picked up or is no longer wanted, by its "
+                "id: the file name create_handoff returned, without its folder and .md (e.g. "
+                "2026-11-12-new-checkout-page). It always waits for the user's go: call it "
+                "right away."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+                "required": ["id"],
+            },
+            handler=delete_handoff,
+            describe=describe_delete_handoff,
+            needs_clean_turn=True,
+            needs_user_request=True,
+            proposable=True,
+            always_propose=True,
+        ),
+        Tool(
+            name="delete_assistant_reminder",
+            description=(
+                "Delete one of the user's assistant reminders for good, open or past, by its "
+                "id from get_assistant_reminders, only when they ask to delete it rather than "
+                "mark it done. It always waits for their go: call it right away."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"id": id_property},
+                "required": ["id"],
+            },
+            handler=delete_assistant_reminder,
+            describe=describe_delete,
+            needs_clean_turn=True,
+            needs_user_request=True,
+            proposable=True,
+            always_propose=True,
+        ),
+    ]

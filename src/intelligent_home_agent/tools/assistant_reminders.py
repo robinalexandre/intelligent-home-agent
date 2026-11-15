@@ -161,6 +161,18 @@ def runs_on(every: str, start: date | None, day: date) -> bool:
     return day.isoweekday() in days
 
 
+def known_every(every: str) -> bool:
+    """Whether ``every`` is a repeat this format knows, so a typo never makes a note that
+    silently never comes."""
+    every = every.strip().lower()
+    if every in {"month", "monthly"}:
+        return True
+    if match := _INTERVAL.match(every):
+        return int(match.group(1)) > 0
+    words = [w.strip() for w in every.split(",")]
+    return all(w in {"day", "daily", "weekday", "weekdays"} or w[:3] in _DAYS for w in words)
+
+
 def times_of(meta: dict[str, str]) -> list[str]:
     """When a repeating one comes each of its days: each of ``times``, else ``on``'s time."""
     on = meta.get("on", "")
