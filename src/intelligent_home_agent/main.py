@@ -12,9 +12,11 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -24,7 +26,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 from intelligent_home_agent import __version__
 from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.agent import REPEATING_TAG, TASK_TAG, Agent
-from intelligent_home_agent.config import Settings, get_settings
+from intelligent_home_agent.config import Place, Settings, get_settings, home_on
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
 from intelligent_home_agent.config_crypt import available as crypt_available
 from intelligent_home_agent.conversations import (
@@ -276,9 +278,16 @@ def build_registry(
     meteo = OpenMeteo(http, settings.timezone)
     # The client for the home network; `home` is the home's coordinates from here on.
     home_network = home
-    home = None
+    first_home = None
     if settings.home_latitude is not None and settings.home_longitude is not None:
-        home = (settings.home_latitude, settings.home_longitude)
+        first_home = (settings.home_latitude, settings.home_longitude)
+
+    def home_today() -> Place | None:
+        # Home may move (HOME_MOVES): forecasts and alerts ask where it is each time.
+        today = datetime.now(ZoneInfo(settings.timezone)).date()
+        return home_on(first_home, settings.home_moves, today)
+
+    home = home_today()
 
     registry = ToolRegistry()
     icloud = build_icloud(settings)
@@ -311,11 +320,13 @@ def build_registry(
             Path(settings.data_dir) / "withings.json",
         )
         registry.extend(build_withings_tools(Withings(http, auth), settings.timezone))
-    registry.extend(build_weather_tools(meteo, home=home, language=settings.language))
+    registry.extend(build_weather_tools(meteo, home=home_today, language=settings.language))
     registry.extend(build_wind_tools(meteo, settings.wind_spots, model=settings.wind_model))
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
     activities = [CATALOG[key] for key in settings.outdoor_activities]
-    registry.extend(build_outdoor_tools(meteo, activities, home=home, language=settings.language))
+    registry.extend(
+        build_outdoor_tools(meteo, activities, home=home_today, language=settings.language)
+    )
     calendars: list = []
     if settings.caldav_url and settings.caldav_username and settings.caldav_password:
         calendar = CalDavCalendar(

@@ -1,8 +1,10 @@
+from datetime import date
+
 import httpx
 import pytest
 import respx
 
-from intelligent_home_agent.config import WindSpot
+from intelligent_home_agent.config import HomeMove, WindSpot, home_on
 from intelligent_home_agent.tools import ToolError
 from intelligent_home_agent.tools.weather import (
     FORECAST_URL,
@@ -12,6 +14,7 @@ from intelligent_home_agent.tools.weather import (
     build_wind_tools,
     compass_point,
     direction_matches,
+    named_spots,
     summarize_spot_day,
 )
 
@@ -156,3 +159,54 @@ async def test_weather_without_home_or_place_asks_for_a_city(meteo, ctx):
     (tool,) = build_weather_tools(meteo, home=None, language="fr")
     with pytest.raises(ToolError, match="city"):
         await tool.handler({}, ctx)
+
+
+def test_home_follows_a_move():
+    first, second = (0.0, 0.0), (10.0, 20.0)
+    moves = [HomeMove(active_from=date(2026, 11, 16), latitude=10.0, longitude=20.0)]
+    assert home_on(first, moves, date(2026, 11, 15)) == first
+    assert home_on(first, moves, date(2026, 11, 16)) == second
+    assert home_on(None, [], date(2026, 11, 16)) is None
+
+
+@respx.mock
+async def test_weather_at_home_asks_where_home_is_today(meteo, ctx):
+    route = respx.get(FORECAST_URL).respond(
+        json={"current": {}, "hourly": {"time": []}, "daily": {"time": []}}
+    )
+    (tool,) = build_weather_tools(meteo, home=lambda: (10.0, 20.0), language="en")
+
+    await tool.handler({"days": 1}, ctx)
+
+    assert route.calls.last.request.url.params["latitude"] == "10.0"
+
+
+@respx.mock
+async def test_only_the_spots_in_season_unless_one_is_named(meteo, ctx):
+    summer = WindSpot(name="North Beach", latitude=0.0, longitude=0.0, active_until="2026-11-15")
+    winter = WindSpot(name="Lake", latitude=1.0, longitude=1.0, active_from="2026-11-16")
+    location = {
+        "hourly": hourly([15] * 24, [225] * 24),
+        "daily": {"sunrise": [f"{DAY}T08:10"], "sunset": [f"{DAY}T19:05"]},
+    }
+    respx.get(FORECAST_URL).respond(json=location)
+    (tool,) = build_wind_tools(meteo, [summer, winter], model="best_match")
+
+    now = await tool.handler({"days": 1}, ctx)
+    named = await tool.handler({"days": 1, "spot": "lake"}, ctx)
+
+    assert [s["name"] for s in now["spots"]] == ["North Beach"]  # mid-October
+    assert [s["name"] for s in named["spots"]] == ["Lake"]
+    with pytest.raises(ToolError, match="Unknown spot"):
+        await tool.handler({"spot": "River"}, ctx)
+
+
+def test_a_spot_is_found_by_part_of_its_name_when_only_one_holds_it():
+    pier = WindSpot(name="The Pier, North Beach", latitude=0.0, longitude=0.0)
+    beach = WindSpot(name="North Beach East", latitude=0.0, longitude=0.0)
+    spots = [pier, beach]
+
+    assert named_spots(spots, "the pier") == [pier]
+    assert named_spots(spots, "North Beach East") == [beach]
+    assert named_spots(spots, "North Beach") == []  # two spots hold it: none is guessed
+    assert named_spots(spots, "South Bay") == []

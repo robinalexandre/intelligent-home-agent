@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from intelligent_home_agent.activities import Activity
+from intelligent_home_agent.config import HomeNow, Place, home_now
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
 from intelligent_home_agent.tools.weather import OpenMeteo, is_daylight, window_end
 
@@ -121,16 +122,51 @@ def summarize_activity_day(
     return summary
 
 
+def limits(activity: Activity) -> dict[str, float]:
+    return {
+        k: v
+        for k, v in {
+            "max_rain_pct": activity.max_rain_pct,
+            "max_wind_kmh": activity.max_wind_kmh,
+            "min_temp_c": activity.min_temp_c,
+            "max_temp_c": activity.max_temp_c,
+            "min_visibility_m": activity.min_visibility_m,
+        }.items()
+        if v is not None
+    }
+
+
+async def outdoor_days(
+    meteo: OpenMeteo, activity: Activity, latitude: float, longitude: float, *, days: int
+) -> list[dict[str, Any]]:
+    """The good daylight windows of each day there, for get_outdoor_forecast and the
+    activity alerts (activity_alerts.py)."""
+    data = await meteo.forecast(
+        latitude=latitude,
+        longitude=longitude,
+        forecast_days=days,
+        hourly=HOURLY,
+        daily="sunrise,sunset",
+    )
+    now = meteo.now_hour()
+    daily = data["daily"]
+    return [
+        summarize_activity_day(activity, data["hourly"], sunrise, daily["sunset"][i], now)
+        for i, sunrise in enumerate(daily["sunrise"])
+    ]
+
+
 def build_outdoor_tools(
     meteo: OpenMeteo,
     activities: list[Activity],
     *,
-    home: tuple[float, float] | None,
+    home: Place | HomeNow | None,
     language: str,
 ) -> list[Tool]:
     by_key = {a.key: a for a in activities if a.kind == "weather"}
     if not by_key:
         return []
+    where = home_now(home)
 
     async def get_outdoor_forecast(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
         key = args.get("activity") or next(iter(by_key))
@@ -140,38 +176,17 @@ def build_outdoor_tools(
         days = min(max(int(args.get("days", 2)), 1), 7)
         if place := args.get("place"):
             location = await meteo.geocode(place, language)
-        elif home is not None:
-            location = {"name": "home", "latitude": home[0], "longitude": home[1]}
+        elif (here := where()) is not None:
+            location = {"name": "home", "latitude": here[0], "longitude": here[1]}
         else:
             raise ToolError("The home location is not configured: ask which place.")
-
-        data = await meteo.forecast(
-            latitude=location["latitude"],
-            longitude=location["longitude"],
-            forecast_days=days,
-            hourly=HOURLY,
-            daily="sunrise,sunset",
-        )
-        now = meteo.now_hour()
-        daily = data["daily"]
         return {
             "activity": activity.key,
             "place": location,
-            "limits": {
-                k: v
-                for k, v in {
-                    "max_rain_pct": activity.max_rain_pct,
-                    "max_wind_kmh": activity.max_wind_kmh,
-                    "min_temp_c": activity.min_temp_c,
-                    "max_temp_c": activity.max_temp_c,
-                    "min_visibility_m": activity.min_visibility_m,
-                }.items()
-                if v is not None
-            },
-            "days": [
-                summarize_activity_day(activity, data["hourly"], sunrise, daily["sunset"][i], now)
-                for i, sunrise in enumerate(daily["sunrise"])
-            ],
+            "limits": limits(activity),
+            "days": await outdoor_days(
+                meteo, activity, location["latitude"], location["longitude"], days=days
+            ),
         }
 
     return [

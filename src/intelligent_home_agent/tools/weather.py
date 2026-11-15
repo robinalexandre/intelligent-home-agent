@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
 
-from intelligent_home_agent.config import WindSpot
+from intelligent_home_agent.config import HomeNow, Place, WindSpot, home_now, in_season
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -137,15 +137,17 @@ class OpenMeteo:
 def build_weather_tools(
     meteo: OpenMeteo,
     *,
-    home: tuple[float, float] | None,
+    home: Place | HomeNow | None,
     language: str,
 ) -> list[Tool]:
+    where = home_now(home)
+
     async def get_weather(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
         days = min(max(int(args.get("days", 2)), 1), 7)
         if place := args.get("place"):
             location = await meteo.geocode(place, language)
-        elif home is not None:
-            location = {"name": "home", "latitude": home[0], "longitude": home[1]}
+        elif (here := where()) is not None:
+            location = {"name": "home", "latitude": here[0], "longitude": here[1]}
         else:
             raise ToolError("The home location is not configured: ask which city.")
 
@@ -273,6 +275,58 @@ def summarize_spot_day(
     }
 
 
+def named_spots(spots: list[Any], name: str) -> list[Any]:
+    """The spot of that name, or the only one whose name holds it ("North Beach" for
+    "North Beach, east end")."""
+    wanted = name.casefold().strip()
+    exact = [s for s in spots if s.name.casefold() == wanted]
+    partial = [s for s in spots if wanted in s.name.casefold()]
+    return exact or (partial if len(partial) == 1 else [])
+
+
+def spots_now(spots: list[Any], today: date, name: str | None = None) -> list[Any]:
+    """The named spot, else those in season today (all of them when none is)."""
+    if name:
+        selected = named_spots(spots, name)
+        if not selected:
+            raise ToolError(f"Unknown spot {name}. Known spots: {[s.name for s in spots]}")
+        return selected
+    return [s for s in spots if in_season(s, today)] or spots
+
+
+async def wind_report(
+    meteo: OpenMeteo, spots: list[WindSpot], *, days: int, model: str
+) -> list[dict[str, Any]]:
+    """Each spot's daylight wind and rideable windows, for get_wind_forecast and the
+    activity alerts (activity_alerts.py)."""
+    data = await meteo.forecast(
+        latitude=",".join(str(s.latitude) for s in spots),
+        longitude=",".join(str(s.longitude) for s in spots),
+        forecast_days=days,
+        hourly="wind_speed_10m,wind_gusts_10m,wind_direction_10m",
+        daily="sunrise,sunset",
+        wind_speed_unit="kn",
+        models=model,
+    )
+    # Open-Meteo returns a list for several coordinates, a single object for one.
+    locations = data if isinstance(data, list) else [data]
+    now = meteo.now_hour()
+    return [
+        {
+            "name": spot.name,
+            "min_knots": spot.min_knots,
+            "good_directions": spot.directions or "any",
+            "days": [
+                summarize_spot_day(
+                    spot, location["hourly"], sunrise, location["daily"]["sunset"][i], now
+                )
+                for i, sunrise in enumerate(location["daily"]["sunrise"])
+            ],
+        }
+        for spot, location in zip(spots, locations, strict=True)
+    ]
+
+
 def build_wind_tools(meteo: OpenMeteo, spots: list[WindSpot], *, model: str) -> list[Tool]:
     for spot in spots:
         unknown = [d for d in spot.directions if d.upper() not in COMPASS_POINTS]
@@ -283,40 +337,13 @@ def build_wind_tools(meteo: OpenMeteo, spots: list[WindSpot], *, model: str) -> 
 
     async def get_wind_forecast(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
         days = min(max(int(args.get("days", 2)), 1), 3)
-        selected = spots
-        if name := args.get("spot"):
-            selected = [s for s in spots if s.name.casefold() == name.casefold()]
-            if not selected:
-                raise ToolError(f"Unknown spot {name}. Known spots: {[s.name for s in spots]}")
-
-        data = await meteo.forecast(
-            latitude=",".join(str(s.latitude) for s in selected),
-            longitude=",".join(str(s.longitude) for s in selected),
-            forecast_days=days,
-            hourly="wind_speed_10m,wind_gusts_10m,wind_direction_10m",
-            daily="sunrise,sunset",
-            wind_speed_unit="kn",
-            models=model,
-        )
-        # Open-Meteo returns a list for several coordinates, a single object for one.
-        locations = data if isinstance(data, list) else [data]
-        now = meteo.now_hour()
+        today = date.fromisoformat(meteo.now_hour()[:10])
+        # The spots in season (near where the user is now), unless they name another one.
+        selected = spots_now(spots, today, args.get("spot"))
         return {
             "unit": "knots",
-            "spots": [
-                {
-                    "name": spot.name,
-                    "min_knots": spot.min_knots,
-                    "good_directions": spot.directions or "any",
-                    "days": [
-                        summarize_spot_day(
-                            spot, location["hourly"], sunrise, location["daily"]["sunset"][i], now
-                        )
-                        for i, sunrise in enumerate(location["daily"]["sunrise"])
-                    ],
-                }
-                for spot, location in zip(selected, locations, strict=True)
-            ],
+            "source": {"name": "Open-Meteo", "model": model},
+            "spots": await wind_report(meteo, selected, days=days, model=model),
         }
 
     return [
@@ -325,7 +352,8 @@ def build_wind_tools(meteo: OpenMeteo, spots: list[WindSpot], *, model: str) -> 
             description=(
                 "Wind forecast in knots for the user's wind-sport spots (wingfoil, kitesurf, "
                 "windsurf, sailing...), during daylight, with the time windows where the wind "
-                "is strong enough and from a good direction for each spot. Known spots: "
+                "is strong enough and from a good direction for each spot. Without a spot, "
+                "those in season now. Known spots: "
                 f"{', '.join(s.name for s in spots)}."
             ),
             input_schema={

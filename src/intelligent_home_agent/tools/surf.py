@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from intelligent_home_agent.config import SurfSpot
-from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
+from intelligent_home_agent.tools.base import Tool, ToolContext
 from intelligent_home_agent.tools.weather import (
     COMPASS_POINTS,
     OpenMeteo,
@@ -15,6 +15,7 @@ from intelligent_home_agent.tools.weather import (
     compass_degrees,
     compass_point,
     is_daylight,
+    spots_now,
     window_end,
 )
 
@@ -140,6 +141,48 @@ def summarize_surf_day(
     }
 
 
+async def surf_report(
+    meteo: OpenMeteo, spots: list[SurfSpot], *, days: int, model: str
+) -> list[dict[str, Any]]:
+    """Each spot's waves, tides and surfable windows, for get_surf_forecast and the
+    activity alerts (activity_alerts.py)."""
+    coords = {
+        "latitude": ",".join(str(s.latitude) for s in spots),
+        "longitude": ",".join(str(s.longitude) for s in spots),
+        "forecast_days": days,
+    }
+    marine, weather = await asyncio.gather(
+        meteo.marine(
+            **coords,
+            hourly="wave_height,wave_period,wave_direction,sea_level_height_msl",
+        ),
+        meteo.forecast(
+            **coords,
+            hourly="wind_speed_10m,wind_direction_10m",
+            daily="sunrise,sunset",
+            wind_speed_unit="kn",
+            models=model,
+        ),
+    )
+    # Open-Meteo returns a list for several coordinates, a single object for one.
+    marine = marine if isinstance(marine, list) else [marine]
+    weather = weather if isinstance(weather, list) else [weather]
+    now = meteo.now_hour()
+    return [
+        {
+            "name": spot.name,
+            "facing": spot.facing,
+            "days": [
+                summarize_surf_day(
+                    spot, sea["hourly"], air["hourly"], sunrise, air["daily"]["sunset"][i], now
+                )
+                for i, sunrise in enumerate(air["daily"]["sunrise"])
+            ],
+        }
+        for spot, sea, air in zip(spots, marine, weather, strict=True)
+    ]
+
+
 def build_surf_tools(meteo: OpenMeteo, spots: list[SurfSpot], *, model: str) -> list[Tool]:
     for spot in spots:
         if spot.facing.upper() not in COMPASS_POINTS:
@@ -149,55 +192,14 @@ def build_surf_tools(meteo: OpenMeteo, spots: list[SurfSpot], *, model: str) -> 
 
     async def get_surf_forecast(args: dict[str, Any], _: ToolContext) -> dict[str, Any]:
         days = min(max(int(args.get("days", 2)), 1), 3)
-        selected = spots
-        if name := args.get("spot"):
-            selected = [s for s in spots if s.name.casefold() == name.casefold()]
-            if not selected:
-                raise ToolError(f"Unknown spot {name}. Known spots: {[s.name for s in spots]}")
-
-        coords = {
-            "latitude": ",".join(str(s.latitude) for s in selected),
-            "longitude": ",".join(str(s.longitude) for s in selected),
-            "forecast_days": days,
-        }
-        marine, weather = await asyncio.gather(
-            meteo.marine(
-                **coords,
-                hourly="wave_height,wave_period,wave_direction,sea_level_height_msl",
-            ),
-            meteo.forecast(
-                **coords,
-                hourly="wind_speed_10m,wind_direction_10m",
-                daily="sunrise,sunset",
-                wind_speed_unit="kn",
-                models=model,
-            ),
-        )
-        # Open-Meteo returns a list for several coordinates, a single object for one.
-        marine = marine if isinstance(marine, list) else [marine]
-        weather = weather if isinstance(weather, list) else [weather]
-        now = meteo.now_hour()
+        today = date.fromisoformat(meteo.now_hour()[:10])
+        # The spots in season (near where the user is now), unless they name another one.
+        selected = spots_now(spots, today, args.get("spot"))
         return {
             "units": {"waves": "m (significant height)", "wind": "knots"},
+            "source": {"name": "Open-Meteo", "models": [model, "marine"]},
             "tides_note": "model estimate, about half an hour of uncertainty",
-            "spots": [
-                {
-                    "name": spot.name,
-                    "facing": spot.facing,
-                    "days": [
-                        summarize_surf_day(
-                            spot,
-                            sea["hourly"],
-                            air["hourly"],
-                            sunrise,
-                            air["daily"]["sunset"][i],
-                            now,
-                        )
-                        for i, sunrise in enumerate(air["daily"]["sunrise"])
-                    ],
-                }
-                for spot, sea, air in zip(selected, marine, weather, strict=True)
-            ],
+            "spots": await surf_report(meteo, selected, days=days, model=model),
         }
 
     return [
@@ -206,7 +208,8 @@ def build_surf_tools(meteo: OpenMeteo, spots: list[SurfSpot], *, model: str) -> 
             description=(
                 "Surf report for the user's surf spots: wave height and period, wind effect "
                 "(offshore, onshore...), the daylight windows worth surfing, and high and low "
-                "tide times, which also help for tide-dependent wind spots. Known spots: "
+                "tide times, which also help for tide-dependent wind spots. Without a spot, "
+                "those in season now. Known spots: "
                 f"{', '.join(s.name for s in spots)}."
             ),
             input_schema={

@@ -4,6 +4,8 @@ Run ``python scripts/setup.py`` to write a .env interactively; .env.example list
 setting with a comment.
 """
 
+from collections.abc import Callable
+from datetime import date
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
@@ -24,6 +26,9 @@ from intelligent_home_agent.llm import (
 
 CsvList = Annotated[list[str], NoDecode]
 
+# Where measured wind can come from (tools/live_wind.py), each with its own coverage.
+LIVE_WIND_SOURCES = ("openwindmap", "metar", "meteofrance")
+
 # Sections the morning briefing and the evening recap can include.
 BRIEF_SECTIONS = (
     "calendar",
@@ -43,6 +48,9 @@ class WindSpot(BaseModel):
     # Compass points the spot works with (e.g. ["W", "SW", "NW"]); empty means any direction.
     directions: list[str] = []
     min_knots: float = 12
+    # Days the user is near it (a season, a move); outside, it is left out unless asked for.
+    active_from: date | None = None
+    active_until: date | None = None
 
 
 class SurfSpot(BaseModel):
@@ -53,6 +61,40 @@ class SurfSpot(BaseModel):
     facing: str
     min_wave_m: float = 0.5
     max_wave_m: float = 2.5
+    active_from: date | None = None
+    active_until: date | None = None
+
+
+class HomeMove(BaseModel):
+    """Where the user lives from a given day (a move, a season elsewhere), instead of
+    HOME_LATITUDE/HOME_LONGITUDE."""
+
+    active_from: date
+    latitude: float
+    longitude: float
+
+
+Place = tuple[float, float]
+# Home as of now, or None when unknown: the user may move.
+HomeNow = Callable[[], Place | None]
+
+
+def home_on(home: Place | None, moves: list[HomeMove], day: date) -> Place | None:
+    started = [m for m in moves if m.active_from <= day]
+    if not started:
+        return home
+    latest = max(started, key=lambda m: m.active_from)
+    return (latest.latitude, latest.longitude)
+
+
+def home_now(home: Place | HomeNow | None) -> HomeNow:
+    return home if callable(home) else lambda: home
+
+
+def in_season(spot: WindSpot | SurfSpot, day: date) -> bool:
+    return (spot.active_from is None or spot.active_from <= day) and (
+        spot.active_until is None or day <= spot.active_until
+    )
 
 
 class MailAccount(BaseModel):
@@ -298,6 +340,24 @@ class Settings(BaseSettings):
     wind_model: str = "best_match"
     wind_spots: list[WindSpot] = []
     surf_spots: list[SurfSpot] = []
+    # Where the user lives from a given day, when home moves:
+    # [{"active_from":"2027-03-01","latitude":0.0,"longitude":0.0}].
+    home_moves: list[HomeMove] = []
+    # Wind measured now near the spots (tools/live_wind.py, docs/outdoor.md). Sources, each
+    # optional: openwindmap (open beacons, no key), metar (airport stations worldwide, no
+    # key), meteofrance (stations in France, needs METEOFRANCE_APPLICATION_ID).
+    live_wind_sources: CsvList = []
+    live_wind_radius_km: float = Field(20.0, gt=0, le=200)
+    meteofrance_application_id: SecretStr | None = None
+    # Activities the agent watches and tells the user about when a good window is coming
+    # (activity_alerts.py); the user can also ask for one in a request. Needs a way to
+    # reach the user (NTFY_URL).
+    activity_alerts: CsvList = []
+    # How long before a good window the user is told, at most.
+    activity_alerts_lead_hours: int = Field(24, ge=1, le=72)
+    # No alert is sent between these hours (22 to 8 by default).
+    activity_alerts_quiet_start: int = Field(22, ge=0, le=23)
+    activity_alerts_quiet_end: int = Field(8, ge=0, le=23)
 
     # --- Web search (a separate model request that only sees the query) ----------------
     web_search_enabled: bool = True
@@ -534,6 +594,8 @@ class Settings(BaseSettings):
         "icloud_reminder_lists",
         "brief_sections",
         "outdoor_activities",
+        "live_wind_sources",
+        "activity_alerts",
         "web_trusted_domains",
         "subscription_displays",
         mode="before",
@@ -552,7 +614,16 @@ class Settings(BaseSettings):
             raise ValueError(f"unknown sections {unknown}; known: {', '.join(BRIEF_SECTIONS)}")
         return value
 
-    @field_validator("outdoor_activities")
+    @field_validator("live_wind_sources")
+    @classmethod
+    def _known_live_sources(cls, value: list[str]) -> list[str]:
+        value = [v.lower() for v in value]
+        unknown = [v for v in value if v not in LIVE_WIND_SOURCES]
+        if unknown:
+            raise ValueError(f"unknown sources {unknown}; known: {', '.join(LIVE_WIND_SOURCES)}")
+        return value
+
+    @field_validator("outdoor_activities", "activity_alerts")
     @classmethod
     def _known_activities(cls, value: list[str]) -> list[str]:
         return [activity.key for activity in resolve(value)]
