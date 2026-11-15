@@ -2,7 +2,8 @@
 
 The agent loop, the conversation memory and the tools all speak one message format: the
 Messages format (a list of ``{"role", "content"}`` messages whose content is a string or
-a list of blocks: ``text``, ``tool_use``, ``tool_result``). A provider takes a request in
+a list of blocks: ``text``, ``tool_use``, ``tool_result``, and ``image`` or ``document``
+for the files the user sends or a tool returns). A provider takes a request in
 that format and returns an :class:`LLMResponse` in that format, so nothing else in the
 code depends on a vendor SDK.
 
@@ -77,7 +78,9 @@ class LLMResponse:
 
 
 class LLMClient(Protocol):
-    """Accepts ``model``, ``max_tokens``, ``system``, ``tools`` and ``messages``."""
+    """Accepts ``model``, ``max_tokens``, ``system`` (text, or text blocks), ``tools``,
+    ``messages`` and, optionally, ``tool_choice`` (``{"type": "none"}``). Blocks may carry
+    a ``cache_control`` marker, which a provider without prompt caching ignores."""
 
     async def create(self, **kwargs: Any) -> LLMResponse: ...
 
@@ -121,6 +124,9 @@ class OpenAICompatibleClient:
         }
         if tools := kwargs.get("tools"):
             body["tools"] = [to_chat_tool(tool) for tool in tools]
+            # {"type": "none"}: answer in words, as when the agent is out of tool rounds.
+            if (kwargs.get("tool_choice") or {}).get("type") == "none":
+                body["tool_choice"] = "none"
         try:
             response = await self._http.post(self._url, json=body, headers=self._headers)
         except httpx.HTTPError as exc:
@@ -151,18 +157,28 @@ def to_chat_tool(tool: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def to_chat_messages(system: str | None, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Messages format to Chat Completions: tool calls and results become their own shape."""
+def to_chat_messages(
+    system: str | list[dict[str, Any]] | None, messages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Messages format to Chat Completions: tool calls and results become their own shape.
+
+    What only the Messages API knows is carried as well as the other format allows: cache
+    markers are dropped, an image becomes an ``image_url`` data URL (for models that see),
+    a PDF document becomes a note saying it can't be read, and an image inside a tool
+    result follows it in a user message, as a tool message only holds text.
+    """
     out: list[dict[str, Any]] = []
     if system:
+        if not isinstance(system, str):
+            system = "\n\n".join(block.get("text", "") for block in system)
         out.append({"role": "system", "content": system})
     for message in messages:
         role, content = message["role"], message["content"]
         if isinstance(content, str):
             out.append({"role": role, "content": content})
             continue
-        texts = [block["text"] for block in content if block.get("type") == "text"]
         if role == "assistant":
+            texts = [block["text"] for block in content if block.get("type") == "text"]
             calls = [
                 {
                     "id": block["id"],
@@ -181,6 +197,7 @@ def to_chat_messages(system: str | None, messages: list[dict[str, Any]]) -> list
             out.append(entry)
             continue
         # Results must directly follow the assistant message that made the calls.
+        seen: list[dict[str, Any]] = []
         for block in content:
             if block.get("type") == "tool_result":
                 out.append(
@@ -190,15 +207,58 @@ def to_chat_messages(system: str | None, messages: list[dict[str, Any]]) -> list
                         "content": _result_text(block),
                     }
                 )
-        if texts:
-            out.append({"role": "user", "content": "\n".join(texts)})
+                inner = block.get("content")
+                if isinstance(inner, list):
+                    seen += [_image_part(b) for b in inner if b.get("type") == "image"]
+        parts = [part for block in content if (part := _user_part(block)) is not None]
+        if seen:
+            parts = [{"type": "text", "text": "[Image returned by the tool above]"}, *seen, *parts]
+        if not parts:
+            continue
+        if all(part["type"] == "text" for part in parts):
+            out.append({"role": "user", "content": "\n".join(part["text"] for part in parts)})
+        else:
+            out.append({"role": "user", "content": parts})
     return out
+
+
+def _image_part(block: dict[str, Any]) -> dict[str, Any]:
+    source = block.get("source") or {}
+    url = source.get("url") or f"data:{source.get('media_type')};base64,{source.get('data')}"
+    return {"type": "image_url", "image_url": {"url": url}}
+
+
+def _document_note(block: dict[str, Any]) -> str:
+    name = block.get("title") or "A document"
+    return (
+        f"[{name}: a PDF this model can't read here; it can still be attached or passed to "
+        "a tool by its name.]"
+    )
+
+
+def _user_part(block: dict[str, Any]) -> dict[str, Any] | None:
+    kind = block.get("type")
+    if kind == "text":
+        return {"type": "text", "text": block["text"]}
+    if kind == "image":
+        return _image_part(block)
+    if kind == "document":
+        return {"type": "text", "text": _document_note(block)}
+    return None
 
 
 def _result_text(block: dict[str, Any]) -> str:
     content = block.get("content", "")
     if not isinstance(content, str):
-        content = "\n".join(part.get("text", "") for part in content if isinstance(part, dict))
+        texts = []
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "document":
+                texts.append(_document_note(part))
+            elif part.get("text"):
+                texts.append(part["text"])
+        content = "\n".join(texts)
     return f"Error: {content}" if block.get("is_error") else content
 
 

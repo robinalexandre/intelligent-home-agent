@@ -223,3 +223,66 @@ def test_web_search_follows_the_provider(monkeypatch):
     monkeypatch.setenv("WEB_SEARCH_ENABLED", "false")
     settings = provider_env(monkeypatch, WEB_SEARCH_BACKEND="brave", **env)
     assert "web_search" not in main.build_registry(settings, None, None, None).names()
+
+
+def test_what_only_the_messages_format_knows_is_carried_as_well_as_chat_allows():
+    image = {"type": "base64", "media_type": "image/png", "data": "aW1n"}
+    history = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "document", "source": {"type": "base64"}, "title": "bill.pdf"},
+                {"type": "image", "source": image},
+                {"type": "text", "text": "What is this?", "cache_control": {"type": "ephemeral"}},
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "c1", "name": "look", "input": {}}],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "c1",
+                    "content": [
+                        {"type": "image", "source": image},
+                        {"type": "text", "text": '{"clicked": true}'},
+                    ],
+                },
+                {"type": "text", "text": "A note."},
+            ],
+        },
+    ]
+    system = [{"type": "text", "text": "Be brief.", "cache_control": {"type": "ephemeral"}}]
+
+    system_message, sent, _, result, shown = to_chat_messages(system, history)
+
+    assert system_message == {"role": "system", "content": "Be brief."}
+    note, picture, question = sent["content"]
+    assert note["type"] == "text" and "bill.pdf: a PDF this model can't read" in note["text"]
+    assert picture == {"type": "image_url", "image_url": {"url": "data:image/png;base64,aW1n"}}
+    assert question == {"type": "text", "text": "What is this?"}
+    # A tool message only holds text: the picture follows it in a user message.
+    assert result == {"role": "tool", "tool_call_id": "c1", "content": '{"clicked": true}'}
+    assert shown["role"] == "user" and shown["content"][1] == picture
+    assert shown["content"][-1] == {"type": "text", "text": "A note."}
+    assert "cache_control" not in json.dumps([system_message, sent, result, shown])
+
+
+@respx.mock
+async def test_out_of_rounds_asks_for_words_and_cache_markers_are_not_sent():
+    route = respx.post(f"{BASE}/chat/completions").respond(
+        json={"choices": [{"message": {"content": "Done."}, "finish_reason": "stop"}]}
+    )
+    client = OpenAICompatibleClient(BASE)
+    marked = [{**TOOLS[0], "cache_control": {"type": "ephemeral"}}]
+
+    await client.create(
+        model="m", max_tokens=10, tools=marked, tool_choice={"type": "none"}, messages=HISTORY
+    )
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["tool_choice"] == "none"
+    assert "cache_control" not in json.dumps(body)
