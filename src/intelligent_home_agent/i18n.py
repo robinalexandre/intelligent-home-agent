@@ -96,9 +96,6 @@ class Strings:
     go_done: str
     go_failed: str
     go_note: str
-    # The briefing or the recap sent in the chat, headed by the code.
-    briefing_title: str
-    recap_title: str
     # Marking other WhatsApp chats as read (tools/whatsapp_chats.py).
     whatsapp_mark_read_summary: str
     # Sets the register of a voice message for the speech model (transcription.py).
@@ -197,8 +194,6 @@ LANGUAGES: dict[str, Strings] = {
         go_done="✅ {summary}{note}",
         go_failed="❌ {summary}: {error}",
         go_note=" ({note})",
-        briefing_title="Briefing",
-        recap_title="Recap",
         whatsapp_mark_read_summary="Mark as read on WhatsApp the messages of: {names}",
         voice_prompt="Voice message to my assistant: remind me tomorrow, tonight, next week.",
         progress_waiting="waiting",
@@ -298,8 +293,6 @@ LANGUAGES: dict[str, Strings] = {
         go_done="✅ {summary}{note}",
         go_failed="❌ {summary} : {error}",
         go_note=" ({note})",
-        briefing_title="Briefing",
-        recap_title="Récap",
         whatsapp_mark_read_summary="Marquer comme lus sur WhatsApp les messages de : {names}",
         voice_prompt=(
             "Message vocal à mon assistant : rappelle-moi demain, ce soir, la semaine prochaine."

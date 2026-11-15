@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
 import logging
 import re
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -23,6 +24,8 @@ from pydantic import BaseModel, Field, field_validator
 from intelligent_home_agent import __version__
 from intelligent_home_agent.activities import CATALOG
 from intelligent_home_agent.agent import Agent
+from intelligent_home_agent.chat import ChatChannel
+from intelligent_home_agent.chat_session import PLAN_TAG, ChatSession, too_long_for_option
 from intelligent_home_agent.config import Settings, get_settings
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
 from intelligent_home_agent.config_crypt import available as crypt_available
@@ -42,8 +45,10 @@ from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
+from intelligent_home_agent.progress import Tracker
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.shared_links import LINKS
+from intelligent_home_agent.telegram import TelegramApi, TelegramBot
 from intelligent_home_agent.tools import (
     CalDavCalendar,
     CardDavBirthdays,
@@ -112,16 +117,21 @@ from intelligent_home_agent.tools.memory import folder_name
 from intelligent_home_agent.tools.pdf_forms import build_pdf_form_tools
 from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
+from intelligent_home_agent.tools.whatsapp_chats import build_whatsapp_chat_tools
+from intelligent_home_agent.transcription import Transcriber, shared_transcriber
+from intelligent_home_agent.transcription import available as voice_available
+from intelligent_home_agent.whatsapp import Waha, WhatsAppChannel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# A chat channel asks for news every few seconds, and a Telegram address holds the bot's
+# token: neither belongs in the log. Tool calls are logged anyway.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 DEFAULT_CONVERSATION = "default"
 MAX_FILES = 5
 # A PDF of 20 MB, the most the agent reads, once in base64.
 MAX_FILE_BASE64_CHARS = 28_000_000
-# How a plan the user approved comes back to the agent, as a request of its own.
-PLAN_TAG = "[Plan you proposed and the user approved as shown; do it now as their request:"
 
 
 class FileIn(BaseModel):
@@ -156,6 +166,10 @@ class AskRequest(BaseModel):
     display: Literal["voice", "notification", "chat"] = "voice"
     # Files the user sends along (a PDF, a photo, a text or office document).
     files: list[FileIn] = Field(default=[], max_length=MAX_FILES)
+    # "chat" also sends the reply in the chat channel (docs/chat.md) and continues the
+    # conversation there, whatever conversation_id and display say; a channel's name
+    # ("whatsapp", "telegram") picks one when several are set up.
+    deliver: str = Field(default="response", max_length=64)
 
 
 class FileOut(BaseModel):
@@ -182,12 +196,17 @@ class BriefingRequest(BaseModel):
     context: str | None = Field(default=None, max_length=4000)
     # Also send the reply as a push notification (needs NTFY_URL).
     push: bool = False
+    # "chat" (or a channel's name) sends the briefing in the chat channel, where the
+    # user can answer it: it then joins that chat's conversation (docs/chat.md).
+    deliver: str = Field(default="response", max_length=64)
 
 
 class BriefingResponse(BaseModel):
     reply: str
     actions: list[dict] = []
     pushed: bool = False
+    # Sent in the chat channel (deliver).
+    delivered: bool = False
 
 
 def closes_conversation(text: str, language: str = "en", assistant_name: str = "") -> bool:
@@ -333,9 +352,26 @@ def build_registry(
     if settings.investigations_enabled:
         investigator = Investigator(http, nominatim_url=settings.nominatim_url)
         registry.extend(build_osint_tools(investigator, settings.public_url))
+    if settings.whatsapp_enabled and settings.whatsapp_reading_enabled and http is not None:
+        # On the user's own account, whichever session the chat itself goes through.
+        waha = Waha(
+            http, settings.waha_url, settings.waha_api_key.get_secret_value(), settings.waha_session
+        )
+        transcriber = build_transcriber(settings)
+        registry.extend(
+            build_whatsapp_chat_tools(
+                waha,
+                settings.whatsapp_readable_chats,
+                settings.timezone,
+                language=settings.language,
+                transcribe=transcriber.transcribe if transcriber else None,
+            )
+        )
     # The core's own tools, last: the writes waiting for the user's go (the registry parks
     # them whatever is configured) and the long results read part by part.
-    registry.extend(build_proposal_tools(registry, language=settings.language))
+    registry.extend(
+        build_proposal_tools(registry, language=settings.language, polls=settings.chat_enabled)
+    )
     registry.extend(build_long_result_tools())
     log.info("tools: %s", ", ".join(d["name"] for d in registry.definitions()))
     return registry
@@ -650,10 +686,18 @@ def restore_conversations(store: ConversationStore, settings: Settings) -> int:
     return restored
 
 
-def with_waiting(text: str, actions: list[dict], conv: Conversation, language: str = "en") -> str:
+def with_waiting(
+    text: str,
+    actions: list[dict],
+    conv: Conversation,
+    language: str = "en",
+    option_chars: int | None = None,
+) -> str:
     """Add, written by the code, every write done without a go and every action waiting
     for the user's go in the turn, so none goes unnoticed; only actions listed here can
-    run on their yes."""
+    run on their yes. ``option_chars``: the reply goes to a chat that shows them as a
+    choice to tick right below (chat_session.py), each option that long at most: only
+    those too long for an option are written out here."""
     s = strings(language)
     lines = [
         s.written_line.format(summary=a["summary"]) for a in actions if a.get("type") == "written"
@@ -668,10 +712,125 @@ def with_waiting(text: str, actions: list[dict], conv: Conversation, language: s
             lines.append(s.draft_check.format(files=", ".join(draft["check"])))
     proposals = [a for a in actions if a.get("type") == "proposal"]
     if proposals:
-        lines += ["", s.waiting_header] if lines else [s.waiting_header]
-        lines += [f"{p['number']}. {p['summary']}" for p in proposals]
+        header = s.waiting_header if option_chars is None else s.waiting_in_poll
+        lines += ["", header] if lines else [header]
+        lines += [
+            f"{p['number']}. {p['summary']}"
+            for p in proposals
+            if option_chars is None or too_long_for_option(p["number"], p["summary"], option_chars)
+        ]
         conv.mark_shown([p["number"] for p in proposals])
     return "\n".join([text, "", *lines]) if lines else text
+
+
+def build_transcriber(settings: Settings) -> Transcriber | None:
+    """Voice messages as text, when WHISPER_MODEL is set and the "voice" extra is there."""
+    if not settings.whisper_model:
+        return None
+    if not voice_available():
+        log.error('WHISPER_MODEL needs the faster-whisper package: pip install ".[voice]"')
+        return None
+    return shared_transcriber(
+        settings.whisper_model,
+        str(Path(settings.data_dir) / "whisper"),
+        tuple(settings.whisper_languages or [settings.language]),
+    )
+
+
+@dataclass
+class Channels:
+    """The chat channels that are set up, and the loops that keep them listening."""
+
+    channels: list[ChatChannel]
+    loops: list[Coroutine[Any, Any, None]]
+
+
+def build_channels(settings: Settings, http: httpx.AsyncClient) -> Channels:
+    """One channel per chat the agent can be talked to in (docs/chat.md); none unless
+    configured. A new messaging app is one more block here."""
+    built = Channels([], [])
+    if not settings.chat_enabled:
+        return built
+    transcriber = build_transcriber(settings)
+    transcribe = transcriber.transcribe if transcriber else None
+    if transcriber:
+        built.loops.append(transcriber.warm_up())
+    if settings.whatsapp_enabled:
+        whatsapp = WhatsAppChannel(
+            Waha(http, *settings.chat_waha),
+            settings.whatsapp_chat_id,
+            language=settings.language,
+            marker=settings.whatsapp_marker,
+            poll_seconds=settings.whatsapp_poll_seconds,
+            transcribe=transcribe,
+            own_number=settings.whatsapp_own_number,
+        )
+        built.channels.append(whatsapp)
+        built.loops += whatsapp.tasks()
+    if settings.telegram_enabled:
+        api = TelegramApi(
+            http, settings.telegram_bot_token.get_secret_value(), settings.telegram_api_url
+        )
+        bot = TelegramBot(
+            api, settings.telegram_chat_ids, language=settings.language, transcribe=transcribe
+        )
+        built.loops.append(bot.run())
+        for channel in bot.channels.values():
+            built.channels.append(channel)
+            built.loops += channel.tasks()
+    return built
+
+
+def chat_conversation(app: FastAPI, channel: str) -> Conversation:
+    """A channel's conversation: kept across restarts, with its files and what waits."""
+    settings: Settings = app.state.settings
+    conv = app.state.store.get(f"chat-{channel}", settings.chat_conversation_ttl_seconds)
+    conv.kept = True
+    keep_files(settings, conv)
+    return conv
+
+
+def build_sessions(app: FastAPI, channels: list[ChatChannel]) -> dict[str, ChatSession]:
+    settings: Settings = app.state.settings
+    sessions = {}
+
+    def save(conv: Conversation) -> None:
+        app.state.store.touch(conv)
+        save_conversation(app.state.store, settings, conv)
+
+    for channel in channels:
+        tracker = Tracker(
+            channel.send, Path(settings.data_dir) / "run-durations.json", settings.language
+        )
+        session = ChatSession(
+            channel,
+            app.state.agent,
+            conversation=lambda name=channel.name: chat_conversation(app, name),
+            save=save,
+            with_waiting=lambda text, actions, conv, option_chars=None: with_waiting(
+                text, actions, conv, settings.language, option_chars
+            ),
+            language=settings.language,
+            vote_grace_seconds=settings.chat_vote_grace_seconds,
+            tracker=tracker,
+        )
+        channel.bind(session)
+        sessions[channel.name] = session
+    return sessions
+
+
+def chat_session(request: Request, deliver: str) -> ChatSession | None:
+    """The chat a request asks its reply to be sent in: None for "response"; "chat" is
+    the first channel set up, anything else a channel's name."""
+    if deliver == "response":
+        return None
+    sessions: dict[str, ChatSession] = request.app.state.chats
+    session = next(iter(sessions.values()), None) if deliver == "chat" else sessions.get(deliver)
+    if session is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, f"No chat channel is set up for {deliver!r}"
+        )
+    return session
 
 
 async def answer(request: Request, conv: Conversation, body: AskRequest) -> tuple[str, list[dict]]:
@@ -732,12 +891,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except OSError as exc:
         log.warning("Could not restore the saved conversations: %s", exc)
     app.state.ntfy = None
+    built = build_channels(settings, http)
+    app.state.chats = build_sessions(app, built.channels)
+    background = [asyncio.create_task(loop) for loop in built.loops]
+    for session in app.state.chats.values():
+        background.append(asyncio.create_task(session.tracker.run()))
+    if app.state.chats:
+        log.info("chat channels: %s", ", ".join(app.state.chats))
     if settings.ntfy_url:
         token = settings.ntfy_token.get_secret_value() if settings.ntfy_token else None
         app.state.ntfy = Ntfy(http, settings.ntfy_url, token)
     try:
         yield
     finally:
+        # First, while the channels can still say an answer was cut short.
+        for task in background:
+            task.cancel()
+        await asyncio.gather(*background, return_exceptions=True)
         if ha is not None:
             await ha.aclose()
         if home is not None:
@@ -791,6 +961,12 @@ async def health_ha(request: Request) -> dict[str, bool]:
 async def ask(body: AskRequest, request: Request) -> AskResponse:
     store: ConversationStore = request.app.state.store
     settings: Settings = request.app.state.settings
+    if (chat := chat_session(request, body.deliver)) is not None:
+        # Asked from elsewhere (a voice shortcut), answered in the chat too, where the
+        # user can go on: what waits for their go is shown there, as a choice.
+        files = [file.attachment() for file in body.files]
+        reply = await chat.request(body.text.strip(), body.context, files or None)
+        return AskResponse(reply=reply, conversation_id=chat.conversation().id)
     # A chat can be answered hours later; a voice exchange is over in minutes.
     ttl = settings.chat_conversation_ttl_seconds if body.display == "chat" else None
     conv = store.get(body.conversation_id, ttl)
@@ -859,6 +1035,11 @@ async def briefing(body: BriefingRequest, request: Request) -> BriefingResponse:
     ntfy: Ntfy | None = request.app.state.ntfy
     if body.push and ntfy is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
+    if (chat := chat_session(request, body.deliver)) is not None:
+        # In the chat the briefing can be answered: it joins that conversation, and
+        # what it would have the user approve waits there for their go.
+        reply = await chat.request(text, body.context, scheduled=True)
+        return BriefingResponse(reply=reply, delivered=True)
     conv = Conversation(id=f"briefing-{body.kind}")
     # Nobody answers a scheduler's briefing, and its conversation ends with it: nothing
     # waits for a go there.

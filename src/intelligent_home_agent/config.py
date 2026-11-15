@@ -346,6 +346,80 @@ class Settings(BaseSettings):
     ntfy_url: str | None = None
     ntfy_token: SecretStr | None = None
 
+    # --- Chat channels: talk to the agent in a messaging app (docs/chat.md) ------------
+    # WhatsApp, through a WAHA gateway (compose/waha.yml) linked to the user's number: the
+    # conversation is their "Message yourself" chat. Off without WAHA_URL, WAHA_API_KEY
+    # and WHATSAPP_CHAT_ID.
+    waha_url: str | None = None
+    waha_api_key: SecretStr | None = None
+    waha_session: str = "default"
+    # Optional: a number of the agent's own, linked to this session, so that its messages
+    # ring on the user's phone. URL and key default to WAHA_URL and WAHA_API_KEY; the
+    # WAHA_* session then only reads WHATSAPP_READABLE_CHATS.
+    agent_waha_url: str | None = None
+    agent_waha_api_key: SecretStr | None = None
+    agent_waha_session: str | None = None
+    # The chat with the user, the only one polled: their own number as <digits>@c.us
+    # (their own chat, or their side of the agent's chat when it has its own number).
+    whatsapp_chat_id: str | None = None
+    # What the agent's messages start with, which tells them from the user's in their own
+    # chat.
+    whatsapp_marker: str = "🤖"
+    whatsapp_poll_seconds: float = 5
+    # Groups and communities of the user's account the agent may read on request, by id
+    # (...@g.us); a community's id brings its groups. Empty: it reads no other chat.
+    whatsapp_readable_chats: CsvList = []
+    # Telegram, through a bot of the user's own (@BotFather gives its token). Only the
+    # private chats listed here reach the agent, by their numeric id; each is a
+    # conversation of its own. Off without both.
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_ids: Annotated[list[int], NoDecode] = []
+    # Another server speaking the Bot API (a self-hosted telegram-bot-api).
+    telegram_api_url: str = "https://api.telegram.org"
+    # A one-tap answer waits this long, so a wrong tap can be changed or taken back.
+    chat_vote_grace_seconds: float = 5
+    # Voice messages, transcribed on this machine by a faster-whisper model (tiny, base,
+    # small, medium...), downloaded once to DATA_DIR/whisper. Needs the "voice" extra.
+    # Empty: a voice message gets a line asking to write instead.
+    whisper_model: str = ""
+    # Languages the user speaks in them; the likeliest is picked for each message. Empty:
+    # LANGUAGE alone.
+    whisper_languages: CsvList = []
+
+    @property
+    def whatsapp_own_number(self) -> bool:
+        return bool(self.agent_waha_session)
+
+    @property
+    def chat_waha(self) -> tuple[str, str, str] | None:
+        """The WAHA session the chat with the user goes through: URL, key, session."""
+        if self.whatsapp_own_number:
+            url = self.agent_waha_url or self.waha_url
+            key = self.agent_waha_api_key or self.waha_api_key
+            session = self.agent_waha_session
+        else:
+            url, key, session = self.waha_url, self.waha_api_key, self.waha_session
+        if not (url and key and session):
+            return None
+        return url, key.get_secret_value(), session
+
+    @property
+    def whatsapp_enabled(self) -> bool:
+        return bool(self.chat_waha and self.whatsapp_chat_id)
+
+    @property
+    def whatsapp_reading_enabled(self) -> bool:
+        """Other chats are read on the user's own account, never the agent's."""
+        return bool(self.waha_url and self.waha_api_key and self.whatsapp_readable_chats)
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_ids)
+
+    @property
+    def chat_enabled(self) -> bool:
+        return self.whatsapp_enabled or self.telegram_enabled
+
     @field_validator(
         "ha_exposed_domains",
         "ha_sensitive_domains",
@@ -354,6 +428,9 @@ class Settings(BaseSettings):
         "brief_sections",
         "outdoor_activities",
         "web_trusted_domains",
+        "whatsapp_readable_chats",
+        "telegram_chat_ids",
+        "whisper_languages",
         mode="before",
     )
     @classmethod
