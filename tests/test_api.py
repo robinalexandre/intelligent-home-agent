@@ -1229,3 +1229,16 @@ def test_settings_that_cannot_be_used_are_named_without_their_values(monkeypatch
     missing = message(HOSTING_PROVIDER="hetzner")
     assert "- settings: HOSTING_PROVIDER=hetzner needs HOSTING_API_TOKEN" in missing
     assert "a-ve" not in missing
+
+
+def test_startup_says_what_is_on_and_what_is_off(make_client, caplog, tmp_path):
+    with caplog.at_level("INFO", logger="intelligent_home_agent.main"):
+        make_client(DATA_DIR=str(tmp_path), NTFY_URL=NTFY_URL, WEB_PAGES_ENABLED="false")
+    on = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("on: "))
+    off = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("off: "))
+    assert "model (anthropic, " in on and "web search (native)" in on
+    assert "memory (local)" in on and "push notifications (ntfy)" in on
+    assert "tasks the agent runs by itself" in on  # ntfy can carry their reports
+    for name in ("Home Assistant", "web pages", "chat", "mail", "coding jobs", "calendar"):
+        assert name in off.split(": ", 1)[1].split(", "), name
+    assert "sk-test" not in caplog.text and "secret-token" not in caplog.text

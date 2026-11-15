@@ -1807,6 +1807,49 @@ async def answer(request: Request, conv: Conversation, body: AskRequest) -> tupl
     return "\n\n".join(texts), actions
 
 
+def log_setup(settings: Settings, tools: set[str], running: dict[str, bool]) -> None:
+    """Two lines at startup, what is on and what is off, for whoever reads the log to see
+    why the agent does or doesn't do something. ``tools``: the tools that were built, which
+    say more than the settings (a library that is missing, a key that can't be used);
+    ``running``: what only the started app knows (a job that needs a way to reach the
+    user)."""
+
+    def built(tool: str, wanted: object) -> bool:
+        return tool in tools if tools else bool(wanted)
+
+    devices = has_home_devices(settings) or bool(
+        settings.nuki_api_token
+        or settings.netatmo_client_id
+        or settings.petkit_username
+        or settings.android_tv_host
+        or settings.apple_devices.strip()
+    )
+    parts = {
+        f"model ({settings.llm_provider}, {settings.llm_model})": True,
+        "Claude subscription": settings.subscription_enabled,
+        f"web search ({settings.web_search_backend})": built(
+            "web_search", settings.web_search_enabled
+        ),
+        "web pages": built("open_web_page", settings.web_pages_enabled),
+        "investigations": built("domain_lookup", settings.investigations_enabled),
+        "remote browser": built("browser_open", settings.browser_cdp_host),
+        f"memory ({settings.memory_store})": built("remember", settings.memory_store != "off"),
+        f"journal ({settings.journal_keep_days} days)": settings.journal_keep_days > 0,
+        "calendar": built("get_calendar_events", settings.caldav_url),
+        f"mail ({len(settings.mail_accounts)})": bool(settings.mail_accounts),
+        "documents": built("list_saved_files", settings.documents_enabled),
+        f"drives ({len(settings.drives)})": settings.drives_enabled,
+        f"connectors ({len(settings.mcp_servers)})": bool(settings.mcp_servers),
+        "knowledge base": bool(settings.kb_url and settings.kb_token),
+        "GitHub": settings.github_token is not None,
+        "iCloud apps": built("get_reminders", settings.icloud_apple_id),
+        "home devices": devices,
+        **running,
+    }
+    log.info("on: %s", ", ".join(name for name, on in parts.items() if on))
+    log.info("off: %s", ", ".join(name.split(" (")[0] for name, on in parts.items() if not on))
+
+
 class ConfigError(ValueError):
     """The settings can't be used; the message says which and why, never their values."""
 
@@ -1895,6 +1938,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if (pets := build_pet_alerts(settings, devices)) is not None:
         title = strings(settings.language).pet_alert_title
         jobs.append(asyncio.create_task(pets.watch(lambda text: tell_user(app, title, text))))
+    log_setup(
+        settings,
+        registry.names() if isinstance(registry, ToolRegistry) else set(),
+        {
+            "Home Assistant": ha is not None,
+            "tasks the agent runs by itself": runner is not None,
+            "coding jobs": job_runner is not None,
+            "chat (" + ", ".join(app.state.chats) + ")" if app.state.chats else "chat": bool(
+                app.state.chats
+            ),
+            "push notifications (ntfy)": app.state.ntfy is not None,
+            "departure check": app.state.departure is not None,
+            "activity alerts": alerts is not None,
+            "pet supplies alerts": pets is not None,
+            "nightly review": job_runner is not None and bool(settings.review_repo),
+        },
+    )
     try:
         yield
     finally:
