@@ -259,6 +259,18 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "delete_drive_file",
         "list_drive_trash",
         "search_drive_content",
+        "get_reminders",
+        "update_reminder",
+        "complete_reminder",
+        "search_apple_notes",
+        "read_apple_note",
+        "find_my_devices",
+        "play_sound_on_device",
+        "request_login",
+        "browser_open",
+        "browser_click",
+        "browser_type",
+        "browser_screenshot",
     }
     assert registry.jobs == []
     # What it keeps works out of the box, in local files: memory, how-tos, alerts turned
@@ -1089,3 +1101,49 @@ def test_searches_and_scans_go_to_the_subscription_first(monkeypatch):
     # An engine of its own, on the small model the searches use.
     assert seen["engine"] is main.subscription_engine(settings, settings.web_search_model)
     assert seen["engine"]._model == settings.web_search_model != settings.llm_model
+
+
+def test_an_apple_id_moves_reminders_to_icloud_with_notes_and_find_my(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.setenv("ICLOUD_APPLE_ID", "sam@example.com")
+    monkeypatch.setenv("ICLOUD_REMINDER_LISTS", "General, Shopping")
+    monkeypatch.setenv("ICLOUD_FIND_MY", "false")
+    settings = main.Settings(_env_file=None)
+    assert settings.icloud_reminder_lists == ["General", "Shopping"]
+    registry = main.build_registry(settings, ha=None, http=None, llm=None)
+    names = registry.names()
+    assert {"get_reminders", "update_reminder", "complete_reminder", "read_apple_note"} <= names
+    assert "find_my_devices" not in names
+    # One create_reminder, iCloud's: it waits for the user's go after a read.
+    assert registry.get("create_reminder").needs_clean_turn
+
+    monkeypatch.setattr(main, "icloud_available", lambda: False)
+    names = main.build_registry(settings, ha=None, http=None, llm=None).names()
+    assert "get_reminders" not in names and "create_reminder" in names
+
+
+def test_the_remote_browser_needs_its_address_and_its_page_and_a_vpn_key_for_abroad(
+    monkeypatch, tmp_path
+):
+    base_env(monkeypatch)
+    monkeypatch.setenv("BROWSER_CDP_HOST", "browser")
+    settings = main.Settings(_env_file=None)
+    assert "browser_open" not in main.build_registry(settings, None, None, None).names()
+
+    monkeypatch.setenv("BROWSER_PUBLIC_URL", "https://browser.example.com")
+    monkeypatch.setenv("WEB_TRUSTED_DOMAINS", "example.org")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, None, None, None)
+    assert {"request_login", "browser_open", "browser_click", "browser_type"} <= registry.names()
+    assert "country" not in registry.get("browser_open").input_schema["properties"]
+    assert registry.jobs == [] and not main.prompt_config(settings).browser_abroad
+
+    monkeypatch.setenv("VPN_CONTROL_KEY", "k" * 32)
+    monkeypatch.setenv("BROWSER_ABROAD_PROXY", "http://10.89.42.30:3129")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, None, None, None)
+    assert "country" in registry.get("browser_open").input_schema["properties"]
+    assert len(registry.jobs) == 1 and main.prompt_config(settings).browser_abroad
+
+    monkeypatch.setattr(main, "browser_available", lambda: False)
+    assert "browser_open" not in main.build_registry(settings, None, None, None).names()

@@ -36,6 +36,10 @@ ALL_TOOLS = {
     "get_surf_forecast",
     "get_outdoor_forecast",
     "create_reminder",
+    "get_reminders",
+    "search_apple_notes",
+    "find_my_devices",
+    "browser_open",
     "web_search",
     "list_saved_files",
     "read_saved_file",
@@ -274,6 +278,18 @@ def test_filing_from_emails_into_a_drive_needs_both():
     assert "create_pdf" not in plain
 
 
+def test_reminders_come_from_icloud_when_it_is_set_up_else_from_the_phone():
+    apple = prompt()
+    assert "get_reminders lists the user's open reminders" in apple
+    assert "Apple reminders (get_reminders with until = today)" in apple
+    assert "search_apple_notes" in apple and "find_my_devices" in apple
+    assert "Apple reminders" in apple.split("Untrusted content")[1]
+    phone = prompt(tools=ALL_TOOLS - {"get_reminders", "search_apple_notes", "find_my_devices"})
+    assert "create_reminder puts it on the user's phone" in phone
+    assert "reminders from phone_context" in phone
+    assert "get_reminders" not in phone and "Find My" not in phone
+
+
 def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
     without = prompt(
         tools=ALL_TOOLS
@@ -291,3 +307,11 @@ def test_tasks_and_notes_are_only_explained_when_their_tools_are_there():
     # Without phone reminders, a task is how the user is reminded of something.
     alone = prompt(tools={"schedule_task"})
     assert "how you remind the user" in alone and "create_reminder" not in alone
+
+
+def test_the_remote_browser_is_explained_when_it_is_there_and_abroad_only_with_a_vpn():
+    text = prompt()
+    assert "call request_login at once" in text and "Never ask for or type a password" in text
+    assert "browser_open with country" not in text
+    assert "browser_open with country" in prompt(browser_abroad=True)
+    assert "browser_open" not in prompt(tools=ALL_TOOLS - {"browser_open"})

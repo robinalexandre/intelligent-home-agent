@@ -227,6 +227,11 @@ TRAEFIK_CERTRESOLVER=letsencrypt
 
 Several files combine: `COMPOSE_FILE=docker-compose.yml:compose/caddy.yml:compose/ollama.yml`.
 
+A remote browser for sites behind your login adds its own files to that list
+(`compose/browser.yml` and, with Caddy or Traefik, a login page in front of it; with
+Tailscale, your tailnet is the login): [browser.md](browser.md). The wizard offers it with
+those three choices.
+
 ## 5. Talking to it
 
 | Channel | Free questions | Briefing | Setup |

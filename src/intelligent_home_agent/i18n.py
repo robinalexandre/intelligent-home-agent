@@ -110,6 +110,19 @@ class Strings:
     progress_late: str
     progress_share: str
     progress_item: str
+    # Apple Reminders and Find My (tools/reminders.py, tools/find_my.py): their writes as
+    # the user reads them before giving their go.
+    reminder_create_summary: str
+    reminder_update_summary: str
+    reminder_complete_summary: str
+    reminder_named: str
+    reminder_in_list: str
+    reminder_in_minutes: str
+    reminder_due: str
+    reminder_change_title: str
+    reminder_change_notes: str
+    device_ring_summary: str
+    device_owner: str
     # File drives (tools/drives.py): how a write reads in the list of what waits. A place
     # is a drive's label and a path; an item of the local trash is where it was.
     drive_place: str
@@ -292,6 +305,17 @@ LANGUAGES: dict[str, Strings] = {
         progress_late="longer than expected, {minutes} min",
         progress_share="~{percent}% ({minutes} min of ~{estimate})",
         progress_item="{label}: {state}",
+        reminder_create_summary='Create the reminder "{title}"{where}{when}{notes}',
+        reminder_update_summary="Change the reminder {reminder}: {what}",
+        reminder_complete_summary="Tick the reminder {reminder}",
+        reminder_named='"{title}" ({list})',
+        reminder_in_list=" in {list}",
+        reminder_in_minutes="{minutes} min after your go",
+        reminder_due="due {when}",
+        reminder_change_title='title "{title}"',
+        reminder_change_notes="notes: {notes}",
+        device_ring_summary='Play a sound on "{name}" ({model}{whose})',
+        device_owner=", {owner}'s",
         drive_place="{drive}: {path}",
         drive_renamed=' as "{name}"',
         drive_create_folder="Create the folder {place}",
@@ -486,6 +510,17 @@ LANGUAGES: dict[str, Strings] = {
         progress_late="plus long que prévu, {minutes} min",
         progress_share="~{percent} % ({minutes} min sur ~{estimate})",
         progress_item="{label} : {state}",
+        reminder_create_summary="Créer le rappel « {title} »{where}{when}{notes}",
+        reminder_update_summary="Modifier le rappel {reminder} : {what}",
+        reminder_complete_summary="Cocher le rappel {reminder}",
+        reminder_named="« {title} » ({list})",
+        reminder_in_list=" dans {list}",
+        reminder_in_minutes="{minutes} min après ton accord",
+        reminder_due="pour le {when}",
+        reminder_change_title="titre « {title} »",
+        reminder_change_notes="notes : {notes}",
+        device_ring_summary="Faire sonner « {name} » ({model}{whose})",
+        device_owner=", de {owner}",
         drive_place="{drive} : {path}",
         drive_renamed=" sous le nom « {name} »",
         drive_create_folder="Créer le dossier {place}",

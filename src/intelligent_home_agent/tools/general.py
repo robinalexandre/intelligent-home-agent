@@ -11,7 +11,9 @@ from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
 MAX_REMINDERS_PER_TURN = 5
 
 
-def build_general_tools(timezone: str) -> list[Tool]:
+def build_general_tools(timezone: str, phone_reminders: bool = True) -> list[Tool]:
+    """phone_reminders: create_reminder asks the client app to make it on the phone (when
+    the agent can't write to the user's reminders itself: tools/reminders.py)."""
     tz = ZoneInfo(timezone)
 
     async def get_current_datetime(_: dict[str, Any], __: ToolContext) -> dict[str, Any]:
@@ -40,13 +42,18 @@ def build_general_tools(timezone: str) -> list[Tool]:
         )
         return {"status": "will_be_created_on_the_phone", "title": title, "due": due}
 
-    return [
+    tools = [
         Tool(
             name="get_current_datetime",
             description="Get the current local date, time and weekday at home.",
             input_schema={"type": "object", "properties": {}},
             handler=get_current_datetime,
         ),
+    ]
+    if not phone_reminders:
+        return tools
+    return [
+        *tools,
         Tool(
             name="create_reminder",
             description=(

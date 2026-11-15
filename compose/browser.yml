@@ -1,0 +1,105 @@
+# A remote browser: a real Chrome on this machine that you log into from a link, and that
+# the agent then drives (sites behind your login, downloads). See docs/browser.md.
+# Needs in .env: BROWSER_PUBLIC_URL (the address of the browser's page, as you reach it),
+# EXTRAS with "browser" (e.g. EXTRAS=documents,browser), and one way to reach that page:
+#   compose/browser-login.yml + compose/browser-caddy.yml or compose/browser-traefik.yml:
+#     a public address behind a login page (Authelia: passkey, or password + one-time code);
+#   BROWSER_GATE=tailnet with compose/tailscale.yml and TS_SERVE=serve-browser: no login
+#     page, only your own Tailscale devices reach it.
+#
+# What reaches what:
+# - Chrome sits on internal networks only. Its one way to websites is browser-proxy, which
+#   refuses private addresses (compose/browser/squid.conf).
+# - Chrome's control port listens on its localhost; browser-cdp relays it on the internal
+#   "browser" network, to the agent's address alone.
+# - Chrome's page (what you see and click) is served by browser-gate, which asks the login
+#   page first (BROWSER_GATE=login, the default: without compose/browser-login.yml running
+#   it serves nothing).
+# The fixed addresses below (10.89.42.x) also appear in compose/browser/squid.conf,
+# compose/browser/squid-vpn.conf and compose/vpn.yml: change them everywhere if that range
+# is taken on your machine.
+services:
+  agent:
+    environment:
+      BROWSER_CDP_HOST: browser
+      BROWSER_DOWNLOADS_DIR: /app/browser-downloads
+    volumes:
+      - browser_downloads:/app/browser-downloads:ro
+    networks:
+      default:
+      browser:
+        ipv4_address: 10.89.42.20
+
+  browser:
+    image: lscr.io/linuxserver/chromium:d759a0f5-ls56
+    shm_size: 1gb
+    security_opt: [seccomp=unconfined]
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: ${TIMEZONE:-Etc/UTC}
+      # All traffic, localhost included, goes through the filtering proxy.
+      CHROME_CLI: >-
+        --remote-debugging-port=9222 --proxy-server=http://10.89.42.30:3128
+        --proxy-bypass-list=<-loopback>
+        --force-webrtc-ip-handling-policy=disable_non_proxied_udp --start-maximized
+        about:blank
+      # Fit a phone: the remote screen takes the window's size in CSS pixels.
+      SELKIES_USE_CSS_SCALING: "true"
+    volumes:
+      # The profile holds your sessions on the sites you logged into.
+      - browser_profile:/config
+      - browser_downloads:/downloads
+      - ./compose/browser/init-downloads.sh:/custom-cont-init.d/10-downloads:ro
+      # PDFs are downloaded, not shown: the agent can then keep the file itself.
+      - ./compose/browser/chromium-policies.json:/etc/chromium/policies/managed/home-agent.json:ro
+    networks:
+      browser:
+        ipv4_address: 10.89.42.10
+      browser_page:
+    restart: unless-stopped
+
+  # Chrome's only way to websites: refuses private destinations when it connects, so
+  # neither DNS rebinding, a redirect nor a page's own requests reach your networks.
+  browser-proxy:
+    image: ubuntu/squid:6.6-24.04_edge
+    volumes:
+      - ./compose/browser/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      browser:
+        ipv4_address: 10.89.42.30
+      browser_egress:
+    restart: unless-stopped
+
+  # Relays Chrome's control port, which only listens on localhost, to the agent: bound to
+  # the internal network's address, and only the agent's address may connect.
+  browser-cdp:
+    image: alpine/socat:1.8.0.3
+    network_mode: service:browser
+    command: TCP-LISTEN:9223,fork,reuseaddr,bind=10.89.42.10,range=10.89.42.20/32 TCP:127.0.0.1:9222
+    restart: unless-stopped
+
+  # The door to Chrome's page, in plain HTTP on port 8080 for whatever brings HTTPS (Caddy,
+  # Traefik, Tailscale, a tunnel). "login" asks browser-auth before every request;
+  # "tailnet" asks nothing and is only for an address your own devices alone can reach.
+  browser-gate:
+    image: caddy:2
+    volumes:
+      - ./compose/browser/gate-${BROWSER_GATE:-login}.Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [default, browser_page]
+    restart: unless-stopped
+
+networks:
+  browser:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.89.42.0/24
+  # Chrome's page, between Chrome and the gate only.
+  browser_page:
+    internal: true
+  browser_egress:
+
+volumes:
+  browser_profile:
+  browser_downloads:

@@ -149,6 +149,10 @@ SECRET_KEYS = {
     "WAHA_DASHBOARD_PASSWORD",
     "TELEGRAM_BOT_TOKEN",
     "AGENT_API_TOKEN",
+    "AUTH_SESSION_SECRET",
+    "AUTH_STORAGE_KEY",
+    "AUTH_JWT_SECRET",
+    "VPN_CONTROL_KEY",
     "TS_AUTHKEY",
     "TUNNEL_TOKEN",
     "WEB_SEARCH_API_KEY",
@@ -388,6 +392,49 @@ def ask_web(p: Prompter, env: dict[str, str]) -> None:
         env["INVESTIGATIONS_ENABLED"] = "true"
 
 
+# How the remote browser's page is reached, per way of reaching the agent: behind a login
+# page on a public address, or on the tailnet alone.
+BROWSER_ACCESS = {"caddy": "login", "traefik": "login", "tailscale": "tailnet"}
+
+
+def ask_browser(p: Prompter, env: dict[str, str], access: str) -> list[str]:
+    """The remote browser (docs/browser.md); returns the Compose files it adds."""
+    if not p.yes(
+        "Add a remote browser, for sites behind your login (docs/browser.md; some 700 MB "
+        "of memory)?",
+        False,
+    ):
+        return []
+    files = ["compose/browser.yml"]
+    add_extra(env, "browser")
+    if BROWSER_ACCESS[access] == "tailnet":
+        p.say("  Its page will be served to your Tailscale devices only, on port 8443.")
+        tailnet = p.ask("  Your tailnet's DNS name (admin console > DNS), e.g. tail1234.ts.net")
+        env["BROWSER_GATE"] = "tailnet"
+        env["TS_SERVE"] = "serve-browser"
+        env["BROWSER_PUBLIC_URL"] = f"https://{env['TS_HOSTNAME']}.{tailnet or '<tailnet>'}:8443"
+    else:
+        labels = env["AGENT_DOMAIN"].split(".")
+        parent = ".".join(labels[1:]) if len(labels) > 2 else env["AGENT_DOMAIN"]
+        p.say("  Its page sits behind a login page (a passkey, or a password and a code);")
+        p.say("  both need a name of their own, with a DNS record to this machine.")
+        env["BROWSER_DOMAIN"] = p.ask("  Name for the browser's page", f"browser.{parent}")
+        env["AUTH_DOMAIN"] = p.ask("  Name for its login page", f"auth.{parent}")
+        env["AUTH_COOKIE_DOMAIN"] = p.ask("  The domain both are under", parent)
+        for key in ("AUTH_SESSION_SECRET", "AUTH_STORAGE_KEY", "AUTH_JWT_SECRET"):
+            env[key] = secrets.token_hex(32)
+        env["BROWSER_PUBLIC_URL"] = f"https://{env['BROWSER_DOMAIN']}"
+        files += ["compose/browser-login.yml", f"compose/browser-{access}.yml"]
+    if p.yes("  Also open pages as seen from another country, through a VPN subscription?", False):
+        p.say("  Any provider gluetun supports: mullvad, protonvpn, nordvpn, surfshark...")
+        if provider := p.ask("  Provider, by gluetun's name for it"):
+            env["VPN_SERVICE_PROVIDER"] = provider
+            env["VPN_CONTROL_KEY"] = secrets.token_hex(32)
+            files.append("compose/vpn.yml")
+            p.say("  Add its credentials to .env yourself (docs/browser.md says which).")
+    return files
+
+
 def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
     """How clients reach the agent; returns the address they will use, when known."""
     p.say("\n# Where will clients (phone, speaker, Home Assistant) reach the agent from?")
@@ -423,6 +470,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
             env["TRAEFIK_CERTRESOLVER"] = p.ask("Traefik certificate resolver", "letsencrypt")
     if access in COMPOSE_FILES:
         files.append(f"compose/{COMPOSE_FILES[access]}.yml")
+    if access in BROWSER_ACCESS:
+        files += ask_browser(p, env, access)
     elif env.get("HA_URL") and p.yes(
         "Is Home Assistant on your Tailscale network, out of this machine's direct reach?",
         False,
@@ -633,6 +682,7 @@ DEVICES = {
     "android-tv": "a Google TV / Android TV device: a TV, a projector, a box",
     "apple": "an Apple TV, HomePods",
     "withings": "a Withings scale (weigh-ins, read-only)",
+    "icloud": "Apple Reminders, Notes and Find My, through your iCloud account",
 }
 DEVICE_STEPS = {
     "petkit": 'install the library: pip install ".[petkit]" (Docker: docs/home-devices.md)',
@@ -640,12 +690,29 @@ DEVICE_STEPS = {
     "android-tv": "on the home network, run python scripts/android_tv_pair.py <address>",
     "apple": "on the home network, run python scripts/apple_devices.py profile <addresses>",
     "withings": "run python scripts/withings_login.py and add the lines it writes to .env",
+    "icloud": (
+        "log in once, with your Apple ID password and the code your devices show: "
+        "docker compose exec agent python -m intelligent_home_agent.icloud_web "
+        '(without Docker: pip install ".[icloud]", then the same python -m command); '
+        "docs/apple.md says when to do it again"
+    ),
 }
 
 
-def ask_devices(p: Prompter, env: dict[str, str]) -> None:
+def add_extra(env: dict[str, str], name: str) -> None:
+    """One more optional part of the Docker image (the Dockerfile's EXTRAS)."""
+    extras = env.get("EXTRAS", "documents").split(",")
+    if name not in extras:
+        env["EXTRAS"] = ",".join([*extras, name])
+
+
+def ask_devices(p: Prompter, env: dict[str, str], *, docker: bool = True) -> None:
     p.say("\n# More of the home, without Home Assistant (docs/home-devices.md, docs/health.md)")
-    if not p.yes("Set up a lock, cameras, a pet feeder, a TV, Apple devices or a scale?", False):
+    if not p.yes(
+        "Set up a lock, cameras, a pet feeder, a TV, Apple devices, a scale, or Apple "
+        "Reminders, Notes and Find My?",
+        False,
+    ):
         return
     picked = p.choose("Which ones", DEVICES, [])
     if "nuki" in picked:
@@ -660,6 +727,19 @@ def ask_devices(p: Prompter, env: dict[str, str]) -> None:
         region = p.ask("  Country code of the PetKit account", env.get("HOME_COUNTRY", ""))
         if region:
             env["PETKIT_REGION"] = region
+    if "icloud" in picked:
+        p.say("  Apple has no public API for these apps: the agent uses icloud.com's own,")
+        p.say("  with a login you type once and renew when Apple ends it (docs/apple.md).")
+        if apple_id := p.ask("  Apple ID (the email of the iCloud account)"):
+            env["ICLOUD_APPLE_ID"] = apple_id
+            if not p.yes("  Read your Notes too?", True):
+                env["ICLOUD_NOTES"] = "false"
+            if not p.yes("  Find My too (where devices are, battery, a sound)?", True):
+                env["ICLOUD_FIND_MY"] = "false"
+            if docker:
+                add_extra(env, "icloud")
+        else:
+            picked.remove("icloud")
     steps = [(name, DEVICE_STEPS[name]) for name in picked if name in DEVICE_STEPS]
     if steps:
         p.say("  Once .env is written:")
@@ -932,7 +1012,26 @@ GROUPS = [
             "CARDDAV_URL",
         ],
     ),
+    (
+        "Apple Reminders, Notes and Find My (docs/apple.md)",
+        ["ICLOUD_APPLE_ID", "ICLOUD_NOTES", "ICLOUD_FIND_MY"],
+    ),
     ("Mail", ["MAIL_ACCOUNTS"]),
+    (
+        "Remote browser (docs/browser.md)",
+        [
+            "BROWSER_PUBLIC_URL",
+            "BROWSER_GATE",
+            "BROWSER_DOMAIN",
+            "AUTH_DOMAIN",
+            "AUTH_COOKIE_DOMAIN",
+            "AUTH_SESSION_SECRET",
+            "AUTH_STORAGE_KEY",
+            "AUTH_JWT_SECRET",
+            "VPN_SERVICE_PROVIDER",
+            "VPN_CONTROL_KEY",
+        ],
+    ),
     ("GitHub", ["GITHUB_TOKEN", "GITHUB_REPOSITORIES", "NOTES_REPO", "NOTES_WRITE"]),
     (
         "Documents and pictures",
@@ -1013,7 +1112,7 @@ def run(
     ask_activities(p, env)
     ask_documents(p, env)
     ask_sources(p, env, sections)
-    ask_devices(p, env)
+    ask_devices(p, env, docker=docker)
     ask_memory(p, env)
     if docker:
         ask_knowledge(p, env)
@@ -1056,6 +1155,8 @@ def run(
         if "compose/ollama.yml" in env.get("COMPOSE_FILE", ""):
             p.say(f"  Then: docker compose exec ollama ollama pull {env['LLM_MODEL']}")
         p.say(f"  The agent will answer at {address}")
+        if "BROWSER_DOMAIN" in env:
+            p.say("  Remote browser: scripts/browser-auth.sh user, before the first login.")
         if "DRIVES" in env:
             p.say("  Drives: log each one in before asking about your files (docs/drives.md).")
     else:

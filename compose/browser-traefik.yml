@@ -1,0 +1,28 @@
+# The remote browser behind your Traefik (with compose/traefik.yml, compose/browser.yml and
+# compose/browser-login.yml, in that order): two more routers, the browser's page and its
+# login page. Needs DNS records for BROWSER_DOMAIN and AUTH_DOMAIN to this machine.
+services:
+  # A public address always goes through the login, whatever BROWSER_GATE says.
+  browser-gate:
+    volumes:
+      - ./compose/browser/gate-login.Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [default, browser_page, traefik]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.home-agent-browser.rule=Host(`${BROWSER_DOMAIN:?Set BROWSER_DOMAIN in .env}`)
+      - traefik.http.routers.home-agent-browser.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.home-agent-browser.tls=true
+      - traefik.http.routers.home-agent-browser.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.home-agent-browser.loadbalancer.server.port=8080
+
+  browser-auth:
+    networks: [default, traefik]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.home-agent-auth.rule=Host(`${AUTH_DOMAIN:?Set AUTH_DOMAIN in .env}`)
+      - traefik.http.routers.home-agent-auth.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.home-agent-auth.tls=true
+      - traefik.http.routers.home-agent-auth.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.home-agent-auth.loadbalancer.server.port=9091

@@ -57,6 +57,8 @@ from intelligent_home_agent.home_devices import (
     home_network_client,
 )
 from intelligent_home_agent.i18n import strings
+from intelligent_home_agent.icloud_web import ICloudWeb, session_dir
+from intelligent_home_agent.icloud_web import available as icloud_available
 from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
@@ -75,8 +77,11 @@ from intelligent_home_agent.tools import (
     CalDavCalendar,
     CardDavBirthdays,
     EntityPolicy,
+    FindMy,
     GitHub,
     GitHubFile,
+    ICloudNotes,
+    ICloudReminders,
     ImapMailbox,
     Investigator,
     KnowledgeBase,
@@ -86,12 +91,14 @@ from intelligent_home_agent.tools import (
     MergedCalendar,
     OpenMeteo,
     ReminderRepo,
+    RemoteBrowser,
     Router,
     Tool,
     ToolRegistry,
     TurnedDown,
     WebPages,
     build_assistant_reminder_tools,
+    build_browser_tools,
     build_calendar_tools,
     build_calendar_write_tools,
     build_draft_tools,
@@ -99,15 +106,18 @@ from intelligent_home_agent.tools import (
     build_drives,
     build_email_tools,
     build_engine_web_tools,
+    build_find_my_tools,
     build_general_tools,
     build_github_tools,
     build_home_assistant_tools,
     build_knowledge_tools,
     build_memory_tools,
+    build_note_tools,
     build_osint_tools,
     build_outdoor_tools,
     build_past_conversation_tools,
     build_procedure_tools,
+    build_reminder_tools,
     build_search_engine,
     build_surf_tools,
     build_travel_tools,
@@ -125,6 +135,7 @@ from intelligent_home_agent.tools.assistant_notes import (
     RepoFolder,
     build_assistant_note_tools,
 )
+from intelligent_home_agent.tools.browser import available as browser_available
 from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
 from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
@@ -152,6 +163,7 @@ from intelligent_home_agent.tools.pdf_pages import build_pdf_page_tools
 from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.repos import Repositories, build_repository_tools
 from intelligent_home_agent.tools.scheduled_tasks import build_task_tools
+from intelligent_home_agent.tools.vpn import Vpn
 from intelligent_home_agent.tools.vulnerabilities import (
     Vulnerabilities,
     build_vulnerability_tools,
@@ -295,7 +307,21 @@ def build_registry(
         home = (settings.home_latitude, settings.home_longitude)
 
     registry = ToolRegistry()
-    registry.extend(build_general_tools(settings.timezone))
+    icloud = build_icloud(settings)
+    # With iCloud, reminders are written there; else the client app makes them on
+    # the phone.
+    registry.extend(build_general_tools(settings.timezone, phone_reminders=icloud is None))
+    if icloud is not None:
+        reminders = ICloudReminders(
+            icloud, settings.icloud_reminder_lists, settings.icloud_reminders_default_list
+        )
+        registry.extend(build_reminder_tools(reminders, settings.timezone, settings.language))
+        if settings.icloud_notes:
+            registry.extend(build_note_tools(ICloudNotes(icloud), settings.timezone))
+        if settings.icloud_find_my:
+            registry.extend(
+                build_find_my_tools(FindMy(icloud), settings.timezone, home, settings.language)
+            )
     if ha is not None:
         registry.extend(build_home_assistant_tools(ha, policy))
     # The clients others share (the pet supplies watch) and those to close at the end.
@@ -439,6 +465,11 @@ def build_registry(
     if settings.web_pages_enabled:
         trusted = trusted_domains(settings.home_country, settings.web_trusted_domains)
         registry.extend(build_web_page_tools(WebPages(trusted), language=settings.language))
+    browser = build_browser(settings, http)
+    registry.extend(build_browser_tools(browser))
+    if browser is not None and browser.vpn is not None:
+        # gluetun connects as it starts: the VPN is stopped whenever nothing browses abroad.
+        registry.jobs.append(browser.keep_vpn_off)
     if settings.investigations_enabled:
         investigator = Investigator(http, nominatim_url=settings.nominatim_url)
         registry.extend(build_osint_tools(investigator, settings.public_url))
@@ -573,6 +604,40 @@ def add_drives(
             )
 
 
+def build_browser(settings: Settings, http: httpx.AsyncClient) -> RemoteBrowser | None:
+    """The remote Chrome the user logs into (docs/browser.md), with its VPN exit when
+    compose/vpn.yml is there."""
+    if not settings.browser_cdp_host:
+        return None
+    if not settings.browser_public_url:
+        log.error("The remote browser needs BROWSER_PUBLIC_URL, the address of its page")
+        return None
+    if not browser_available():
+        log.error('BROWSER_CDP_HOST needs the playwright package: pip install ".[browser]"')
+        return None
+    key = settings.vpn_control_key
+    return RemoteBrowser(
+        settings.browser_cdp_host,
+        settings.browser_cdp_port,
+        settings.browser_public_url,
+        Path(settings.browser_downloads_dir),
+        Path(settings.data_dir) / "browser-sites.json",
+        trusted_domains(settings.home_country, settings.web_trusted_domains),
+        vpn=Vpn(http, settings.vpn_control_url, key.get_secret_value()) if key else None,
+        abroad_proxy=settings.browser_abroad_proxy or "",
+    )
+
+
+def build_icloud(settings: Settings) -> ICloudWeb | None:
+    """The iCloud web session behind Reminders, Notes and Find My (docs/apple.md)."""
+    if not settings.icloud_apple_id:
+        return None
+    if not icloud_available():
+        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[apple]"')
+        return None
+    return ICloudWeb(settings.icloud_apple_id, session_dir(settings.data_dir))
+
+
 def build_connectors(settings: Settings, http: httpx.AsyncClient) -> list[Connector]:
     connectors = []
     for server in settings.mcp_servers:
@@ -617,6 +682,7 @@ def prompt_config(settings: Settings) -> PromptConfig:
         weather_detail=settings.weather_detail,
         spot_example=spots[0].name if spots else None,
         user_name=settings.user_name,
+        browser_abroad=bool(settings.vpn_control_key and settings.browser_abroad_proxy),
     )
 
 

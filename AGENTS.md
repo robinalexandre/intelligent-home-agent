@@ -62,6 +62,8 @@ src/intelligent_home_agent/
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
                     for search; scanned PDFs read by the model where the provider can
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
+  icloud_web.py     the iCloud session behind Reminders, Notes and Find My, and its
+                    login by hand (python -m intelligent_home_agent.icloud_web)
   notify.py         ntfy push
   shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,
@@ -77,7 +79,9 @@ src/intelligent_home_agent/
                          and past_conversations.py sit beside it (docs/memory.md)
   tools/            one module per capability, each with a build_*_tools() factory
 scripts/setup.py         interactive .env writer (stdlib only)
-compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE
+compose/                 one Compose file per way to reach the agent, picked by COMPOSE_FILE;
+                         browser*.yml, vpn.yml and browser/ are the remote browser
+                         (tools/browser.py, tools/vpn.py, docs/browser.md)
 scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
 ```
 

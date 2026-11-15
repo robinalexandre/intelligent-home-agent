@@ -1,0 +1,12 @@
+# The door to the remote browser's page (browser-gate in compose/browser.yml) with no
+# login page of its own (BROWSER_GATE=tailnet): only for an address that your own devices
+# alone can reach, such as Tailscale Serve (compose/tailscale-serve-browser.json), where
+# being on your tailnet is the login. Never put a public address in front of this one.
+{
+	auto_https off
+	admin off
+}
+
+:8080 {
+	reverse_proxy browser:3000
+}
