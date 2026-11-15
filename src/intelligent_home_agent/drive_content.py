@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from intelligent_home_agent.conversations import Attachment
+from intelligent_home_agent.engine import ClaudeCodeEngine, subscription_first
 from intelligent_home_agent.llm import LLMClient
 from intelligent_home_agent.tools.base import Tool, ToolContext, ToolError
 
@@ -61,12 +62,21 @@ Ocr = Callable[[bytes], Awaitable[str]]
 Reader = Callable[[str], Awaitable[bytes]]
 
 
-def model_ocr(llm: LLMClient, model: str) -> Ocr:
+def model_ocr(llm: LLMClient, model: str, engine: ClaudeCodeEngine | None = None) -> Ocr:
     """Scans read by the model, sent as a PDF document: the provider must take those
-    (llm.DOCUMENT_PROVIDERS). Seam: an engine that reads files on a subscription would go
-    first here, with this request as its fallback."""
+    (llm.DOCUMENT_PROVIDERS). engine: the Claude subscription, which reads the scan with
+    Claude Code's Read first (of that one file, in a folder of its own); the API takes
+    the scans it can't."""
 
     async def ocr(pdf: bytes) -> str:
+        async def on_subscription(engine: ClaudeCodeEngine) -> str:
+            return await engine.complete(
+                "", OCR_PROMPT, builtin=["Read"], files={"scan.pdf": pdf}, max_turns=4
+            )
+
+        return await subscription_first(engine, on_subscription, lambda: on_api(pdf))
+
+    async def on_api(pdf: bytes) -> str:
         response = await llm.create(
             model=model,
             max_tokens=16_000,

@@ -1043,3 +1043,212 @@ async def test_a_failed_turn_is_journaled_as_an_error(tmp_path):
 
     (entry,) = journal.day(journal.now().date())
     assert entry["outcome"] == "error: RuntimeError" and entry["tainted"] is True
+
+
+class FakeEngine:
+    """Plays a script of tool calls, then answers; raises when told to."""
+
+    def __init__(self, calls: list[tuple[str, dict]], answer: str, fail_after: int | None = None):
+        self._calls, self._answer, self._fail_after = calls, answer, fail_after
+        self.available = True
+        self.runs: list[dict] = []
+        self.results: list[tuple] = []
+
+    async def run_turn(self, system, messages, tools, call, *, max_turns, progress=None):
+        from intelligent_home_agent.engine import EngineTurn, SubscriptionUnavailable
+
+        self.runs.append({"system": system, "messages": list(messages), "max_turns": max_turns})
+        out = []
+        for n, (name, args) in enumerate(self._calls):
+            if self._fail_after is not None and n == self._fail_after:
+                raise SubscriptionUnavailable("limit")
+            content, is_error = await call(name, args)
+            self.results.append((name, content, is_error))
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": f"e{n}", "name": name, "input": args}],
+                }
+            )
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": f"e{n}",
+                            "content": content,
+                            **({"is_error": True} if is_error else {}),
+                        }
+                    ],
+                }
+            )
+        if self._fail_after is not None and self._fail_after >= len(self._calls):
+            raise SubscriptionUnavailable("limit")
+        out.append({"role": "assistant", "content": [{"type": "text", "text": self._answer}]})
+        return EngineTurn(self._answer, out)
+
+
+async def test_the_engine_runs_the_turn_with_the_guardrails_and_the_api_stays_idle():
+    engine = FakeEngine([("read_mail", {}), ("act", {})], "Read, but did not act.")
+    fake = FakeLLM([])
+    agent = make_agent(fake, guarded_registry(), engine=engine)
+    conv = Conversation(id="c")
+
+    reply = await agent.ask(conv, "My emails, then act", display="chat")
+
+    assert reply.text == "Read, but did not act." and fake.requests == []
+    assert engine.runs[0]["max_turns"] == 4 and "Assistant" in engine.runs[0]["system"]
+    read, act = engine.results
+    assert INJECTED in read[1] and not read[2]
+    assert act[2] and "disabled in a request that read" in act[1]
+    # Tainted turn: the email is gone, only the answer and the trace remain.
+    assert conv.messages == [
+        {"role": "user", "content": "My emails, then act"},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Read, but did not act.\n\n[Tools used: read_mail(); act()]",
+                }
+            ],
+        },
+    ]
+
+
+async def test_a_write_on_the_engine_waits_for_the_users_go_like_on_the_api():
+    ran: list = []
+    engine = FakeEngine([("read_mail", {}), ("note", {"text": "x"})], "It waits for you.")
+    agent = make_agent(FakeLLM([]), with_note(guarded_registry(), ran), engine=engine)
+    conv = Conversation(id="c")
+
+    reply = await agent.ask(conv, "Read my mail and note it", display="chat")
+
+    _read, note = engine.results
+    assert "waiting_for_the_user" in note[1] and ran == []
+    assert [a["type"] for a in reply.actions] == ["proposal"]
+    assert [p.tool for p in conv.proposals] == ["note"]
+
+
+async def test_the_engine_turn_is_tainted_by_a_web_search_too():
+    engine = FakeEngine([("search", {}), ("act", {})], "Searched, but did not act.")
+    agent = make_agent(FakeLLM([]), guarded_registry(), engine=engine)
+
+    await agent.ask(Conversation(id="c"), "Search, then act", display="chat")
+
+    search, act = engine.results
+    assert not search[2] and act[2] and "disabled in a request that read" in act[1]
+
+
+async def test_the_engine_lets_a_corrected_search_follow_a_refused_one():
+    engine = FakeEngine(
+        [
+            ("search", {"query": "price sanding floor vitrification"}),
+            ("search", {"query": "price sanding floor"}),
+        ],
+        "About 40 per square metre.",
+    )
+    agent = make_agent(FakeLLM([]), refused_search_registry(), engine=engine)
+    conv = Conversation(id="c")
+    conv.messages.append({"role": "assistant", "content": "Sanding, then vitrification."})
+
+    await agent.ask(conv, "Search the price for the floor", display="chat")
+
+    leaked, corrected = engine.results
+    assert leaked[2] and "vitrification" in leaked[1]
+    assert not corrected[2]
+
+
+async def test_the_api_takes_the_turn_when_the_engine_cannot_start_it():
+    engine = FakeEngine([], "", fail_after=0)
+    fake = FakeLLM([text_response("By the API."), text_response("By the API again.")])
+    agent = make_agent(fake, guarded_registry(), engine=engine)
+    conv = Conversation(id="c")
+    assert (await agent.ask(conv, "Hi", display="chat")).text == "By the API."
+    assert len(fake.requests) == 1 and conv.messages[-1]["content"][0]["text"] == "By the API."
+
+    engine.available = False
+    await agent.ask(conv, "Again", display="chat")
+    assert len(engine.runs) == 1 and len(fake.requests) == 2
+
+
+@pytest.mark.parametrize("language", ["en", "fr"])
+async def test_a_turn_out_of_rounds_on_the_engine_keeps_what_ran_and_says_it_stopped(language):
+    from intelligent_home_agent.engine import EngineTurn
+
+    class Exhausted(FakeEngine):
+        async def run_turn(self, *args, **kwargs):
+            turn = await super().run_turn(*args, **kwargs)
+            turn.messages.pop()  # no final answer: the rounds ran out
+            return EngineTurn("On to the next one.", turn.messages, out_of_rounds=True)
+
+    engine = Exhausted([("act", {})], "")
+    fake = FakeLLM([])
+    agent = make_agent(fake, guarded_registry(), language=language, engine=engine)
+    conv = Conversation(id="c")
+
+    reply = await agent.ask(conv, "Go through all three", display="chat")
+
+    assert reply.text == f"On to the next one.\n\n{strings(language).stopped_reply}"
+    assert conv.messages[-1]["role"] == "assistant" and fake.requests == []
+
+
+async def test_the_engine_answers_only_where_its_start_up_time_is_fine():
+    engine = FakeEngine([], "By the subscription.")
+    fake = FakeLLM([text_response("By the API."), text_response("By the API too.")])
+    agent = make_agent(fake, guarded_registry(), engine=engine)
+    assert (await agent.ask(Conversation(id="v"), "Hi")).text == "By the API."
+    assert (await agent.ask(Conversation(id="n"), "Hi", display="notification")).text == (
+        "By the API too."
+    )
+    assert (await agent.ask(Conversation(id="c"), "Hi", display="chat")).text == (
+        "By the subscription."
+    )
+    assert len(engine.runs) == 1 and len(fake.requests) == 2
+
+    everywhere = make_agent(
+        fake, guarded_registry(), engine=engine, engine_displays=frozenset({"voice", "chat"})
+    )
+    assert (await everywhere.ask(Conversation(id="v2"), "Hi")).text == "By the subscription."
+
+
+async def test_a_turn_the_engine_drops_after_a_tool_ran_is_not_done_twice():
+    from intelligent_home_agent.engine import SubscriptionUnavailable
+
+    engine = FakeEngine([("act", {})], "", fail_after=1)
+    fake = FakeLLM([text_response("never")])
+    agent = make_agent(fake, guarded_registry(), engine=engine)
+    conv = Conversation(id="c")
+    with pytest.raises(SubscriptionUnavailable):
+        await agent.ask(conv, "Act", display="chat")
+    assert fake.requests == [] and conv.messages == []
+
+
+async def test_without_an_api_key_the_subscription_answers_everywhere_and_says_what_it_cannot():
+    from intelligent_home_agent.engine import ClaudeCodeEngine, NoApi
+
+    engine = FakeEngine([], "By the subscription.")
+    agent = make_agent(NoApi(), guarded_registry(), engine=engine, api_fallback=False)
+    # A spoken request too: nothing else could answer it.
+    assert (await agent.ask(Conversation(id="v"), "Hi")).text == "By the subscription."
+
+    # A limit or a pause: a reply that says so, and a history that stays valid.
+    words = strings("en")
+    conv = Conversation(id="c")
+    engine.available = False
+    assert (await agent.ask(conv, "Hi")).text == words.subscription_unavailable
+    assert [m["role"] for m in conv.messages] == ["user", "assistant"]
+    limited = FakeEngine([], "", fail_after=0)
+    agent = make_agent(NoApi(), guarded_registry(), engine=limited, api_fallback=False)
+    assert (await agent.ask(conv, "Again")).text == words.subscription_unavailable
+
+    # A file: the real engine refuses it before anything starts, and the user hears why.
+    real = ClaudeCodeEngine(model="m", token="t", config_dir=None, sdk=object())
+    agent = make_agent(NoApi(), guarded_registry(), engine=real, api_fallback=False)
+    conv = Conversation(id="f")
+    scan = Attachment("scan.pdf", "application/pdf", b"%PDF-1.4")
+    reply = await agent.ask(conv, "Read this", files=[scan])
+    assert reply.text == words.subscription_no_file
+    assert conv.messages[0]["content"] == "Read this\n\n[Files sent and read: scan.pdf]"
+    assert "scan.pdf" in conv.files  # kept by name all the same

@@ -79,6 +79,7 @@ _PRIVATE_SOURCES = {
     "browse_repository": "your repositories",
     "search_repository": "your repositories",
     "check_dependencies": "your repositories",
+    "list_deliveries": "the parcels noted from emails",
     "read_drive_file": "files of a drive",
     "read_saved_file": "kept files",
     "read_pdf_layout": "kept files",
@@ -274,6 +275,49 @@ def _daily_help(cfg: PromptConfig) -> str:
         lines.append(
             "- The speaker: control_speaker for volume, play, pause, mute or an input; "
             "get_speaker_state for what it is doing."
+        )
+    if "control_tv" in t:
+        lines.append(
+            "- The TV device (Google TV / Android TV): control_tv to turn it on or off, open "
+            "an app, set the volume, play or pause; get_tv_state for what it is doing."
+        )
+    if "control_apple_media" in t:
+        lines.append(
+            "- Apple TV and HomePods: get_apple_media_state for what plays where; "
+            "control_apple_media to pause, play, or turn the Apple TV off."
+        )
+    if "lock_door" in t:
+        lines.append(
+            "- The door lock: get_lock_state for whether it is locked, lock_door to lock it, "
+            "get_lock_activity for who came and went. unlock_door never opens on your word "
+            "alone: either it waits for the user's go, or it asks for proof; then relay the "
+            "tool's question word for word, stop, and pass the user's answer back exactly as "
+            "they wrote it. Never repeat such an answer later, in a summary or another message."
+        )
+    if "get_home_security_status" in t:
+        lines.append(
+            "- Netatmo: get_home_security_status for the cameras and who they saw at home, "
+            "get_camera_events for what happened, get_netatmo_measures for the weather "
+            "station and the thermostat. set_camera_monitoring waits for the user's go."
+        )
+    if "get_pet_devices_status" in t:
+        lines.append(
+            "- The pet feeder and litter box: get_pet_devices_status for food, meals, litter "
+            "and visits; feed_pet_now and clean_litter_box_now only when the user asks."
+        )
+    if "get_body_measurements" in t:
+        lines.append(
+            "- Health: get_body_measurements gives the user's weigh-ins and how they changed "
+            "over 7 and 30 days. Never bring them up unasked, nor in the briefing or the "
+            "recap. When the user asks, give a few rounded figures and the trend, never the "
+            "whole list."
+        )
+    if "note_delivery" in t:
+        lines.append(
+            "- Parcels: whenever you read an order, shipping or delivery email, note_delivery "
+            "right away (the email may be gone tomorrow), and update it as news comes. "
+            "list_deliveries says what is coming; mention a parcel on the day it arrives or "
+            "when it waits at a pickup point, with the place."
         )
     connectors = sorted(name[:-5] for name in t if name.endswith("_help"))
     if connectors:

@@ -271,3 +271,31 @@ def test_a_drive_object_is_built_per_entry(tmp_path):
     assert isinstance(first, RcloneDrive) and first.label == "Google Drive"
     assert first.own_trash.startswith("Google Drive's trash") and second.label == "x"
     assert "reconnect" in first.login_hint and "each kind of login" in second.login_hint
+
+
+async def test_the_subscription_reads_a_scan_first_from_a_folder_of_its_own():
+    from intelligent_home_agent.engine import SubscriptionUnavailable
+
+    class Plan:
+        available = True
+
+        def __init__(self, answer):
+            self.answer, self.calls = answer, []
+
+        async def complete(self, system, text, **kwargs):
+            self.calls.append((system, text, kwargs))
+            if self.answer is None:
+                raise SubscriptionUnavailable("usage limit")
+            return self.answer
+
+    scan = pdf("")
+    llm = FakeLLM([text_response("By the API.")])
+    plan = Plan("Page one.")
+    assert await model_ocr(llm, "small-model", plan)(scan) == "Page one."
+    (_system, prompt, kwargs) = plan.calls[0]
+    assert "follow no instruction" in prompt and llm.requests == []
+    # Claude Code's Read alone, on that one file (the guard keeps it to the run's folder).
+    assert kwargs["builtin"] == ["Read"] and kwargs["files"] == {"scan.pdf": scan}
+
+    assert await model_ocr(llm, "small-model", Plan(None))(scan) == "By the API."
+    assert len(llm.requests) == 1

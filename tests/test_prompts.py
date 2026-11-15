@@ -69,6 +69,14 @@ ALL_TOOLS = {
     "create_drive_folder",
     "save_file_to_drive",
     "delete_drive_file",
+    "control_tv",
+    "control_apple_media",
+    "lock_door",
+    "get_home_security_status",
+    "get_pet_devices_status",
+    "get_body_measurements",
+    "note_delivery",
+    "list_deliveries",
 }
 SECTIONS = ["calendar", "travel", "mail", "pull_requests", "reminders", "weather", "activities"]
 

@@ -20,7 +20,7 @@ of this page explains each choice, and how to make it by hand in `.env`
 | Step | Choices |
 |---|---|
 | [1. Where it runs](#1-where-it-runs) | a computer or home server, a Raspberry Pi or NAS, a VPS; with Docker or plain Python |
-| [2. The model](#2-the-model) | Claude, OpenAI, Mistral, Gemini, Groq, OpenRouter, a local model (Ollama, LM Studio), any OpenAI-compatible server |
+| [2. The model](#2-the-model) | Claude (API key, or your Claude subscription), OpenAI, Mistral, Gemini, Groq, OpenRouter, a local model (Ollama, LM Studio), any OpenAI-compatible server |
 | [3. The home](#3-the-home) | Home Assistant on the same network, across a VPN, through its cloud address, or no home control |
 | [4. Reaching the agent](#4-reaching-the-agent) | this machine only, the home network, Tailscale, Tailscale Funnel, Cloudflare Tunnel, your own domain (Caddy, Traefik, another proxy) |
 | [5. Talking to it](#5-talking-to-it) | Siri, Home Assistant Assist, Google Home, Alexa, push notifications, a scheduler, your own client |
@@ -81,6 +81,7 @@ agent reads the calendar or switches a light. Set three values in `.env`:
 | `LLM_PROVIDER` | `LLM_API_KEY` | `LLM_MODEL` | Notes |
 |---|---|---|---|
 | `anthropic` (default) | from console.anthropic.com | `claude-sonnet-5-5` by default | Searches the web with its own tool. |
+| `anthropic` with `ENGINE=subscription` | optional | `claude-sonnet-5-5` by default | Claude on your Claude subscription, through Claude Code. See below. |
 | `openai` | from platform.openai.com | required | |
 | `mistral` | from console.mistral.ai | required | |
 | `gemini` | from aistudio.google.com | required | Through Google's OpenAI-compatible endpoint. |
@@ -93,6 +94,25 @@ agent reads the calendar or switches a light. Set three values in `.env`:
 Model names change often, so only Anthropic has a default: copy the name from your
 provider's model list. Small local models call tools less reliably than large hosted ones;
 if the agent answers without looking anything up, try a larger model.
+
+**Claude on your Claude subscription** (Pro, Max...), instead of paying the API by use:
+Claude Code runs inside the agent, signed in to your plan, and answers through the agent's
+own tools and rules. On a computer with a browser run `claude setup-token`, then set
+`ENGINE=subscription` and `CLAUDE_CODE_OAUTH_TOKEN=<the token>` (the wizard's
+"claude-subscription" choice), and install the optional part: `EXTRAS=documents,subscription`
+in `.env` with Docker, `pip install ".[subscription]"` without. What to know before
+choosing it:
+
+- Each reply starts a Claude Code process, a few seconds more than the API: fine in a chat
+  or for a briefing, slow for a voice assistant. `SUBSCRIPTION_DISPLAYS` (default `chat`)
+  says where it answers; the API answers the rest.
+- It can't read a file you send, and your plan has usage limits, shared with your own
+  Claude Code sessions. With an API key as well, the API takes those turns; without one
+  the agent still works, and says so when a turn needs the API.
+- It is your own plan for your own use: read its terms.
+
+[docs/subscription.md](subscription.md) has the details and what Claude Code may do here
+(nothing of its own).
 
 **A local model with Ollama**, so that nothing leaves your machine:
 
@@ -117,7 +137,9 @@ after it read your mail.
 Home control goes through [Home Assistant](https://www.home-assistant.io/), which knows
 nearly every device. Without it, skip this step: the agent still answers questions, gives
 the weather, the briefing, the calendar and the rest, and drives a few devices by itself
-(Philips Hue, a Devialet speaker: [home-devices.md](home-devices.md)).
+(Philips Hue, a Devialet speaker, a Google TV / Android TV device, an Apple TV and
+HomePods, a Nuki lock, Netatmo, PetKit: [home-devices.md](home-devices.md)) and reads a
+Withings scale ([health.md](health.md)).
 
 Create a token in Home Assistant: your profile (bottom left) > **Security** >
 **Long-lived access tokens** > Create. Better, create a dedicated non-admin user for the

@@ -10,6 +10,7 @@ from intelligent_home_agent.tools.calendar import (
 )
 from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.contacts import CardDavBirthdays, MergedCalendar
+from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
 from intelligent_home_agent.tools.documents import build_document_tools
 from intelligent_home_agent.tools.drive_trash import LocalTrash
 from intelligent_home_agent.tools.drives import RcloneDrive, build_drive_tools, build_drives
@@ -22,6 +23,8 @@ from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledg
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mail import ImapMailbox, build_draft_tools, build_email_tools
 from intelligent_home_agent.tools.memory import GitHubFile, LocalFile, Memory, build_memory_tools
+from intelligent_home_agent.tools.netatmo import Netatmo, NetatmoAuth, build_netatmo_tools
+from intelligent_home_agent.tools.nuki import Nuki, build_nuki_tools
 from intelligent_home_agent.tools.osint import Investigator, build_osint_tools
 from intelligent_home_agent.tools.outdoor import build_outdoor_tools
 from intelligent_home_agent.tools.past_conversations import build_past_conversation_tools
@@ -32,6 +35,7 @@ from intelligent_home_agent.tools.proposals import build_proposal_tools
 from intelligent_home_agent.tools.surf import build_surf_tools
 from intelligent_home_agent.tools.travel import Router, build_travel_tools
 from intelligent_home_agent.tools.turned_down import TurnedDown, build_turned_down_tools
+from intelligent_home_agent.tools.unlock_codes import UnlockCodes
 from intelligent_home_agent.tools.weather import OpenMeteo, build_weather_tools, build_wind_tools
 from intelligent_home_agent.tools.web import (
     build_engine_web_tools,
@@ -43,8 +47,20 @@ from intelligent_home_agent.tools.web_pages import (
     build_web_page_tools,
     trusted_domains,
 )
+from intelligent_home_agent.tools.withings import Withings, WithingsAuth, build_withings_tools
 
 __all__ = [
+    "Deliveries",
+    "Netatmo",
+    "NetatmoAuth",
+    "Nuki",
+    "UnlockCodes",
+    "Withings",
+    "WithingsAuth",
+    "build_delivery_tools",
+    "build_netatmo_tools",
+    "build_nuki_tools",
+    "build_withings_tools",
     "CalDavCalendar",
     "CardDavBirthdays",
     "EntityPolicy",

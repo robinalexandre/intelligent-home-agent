@@ -34,11 +34,15 @@ from intelligent_home_agent.conversations import (
     FileStore,
 )
 from intelligent_home_agent.deliver import Delivery, NtfyReports, Outbox
+from intelligent_home_agent.departure import Departure
+from intelligent_home_agent.departure import record as record_departure
 from intelligent_home_agent.drive_content import (
     build_drive_content_tools,
     build_drive_contents,
     model_ocr,
 )
+from intelligent_home_agent.engine import NoApi, SubscriptionFirst
+from intelligent_home_agent.engines import check_subscription, subscription_engine
 from intelligent_home_agent.ha_client import HomeAssistantClient
 from intelligent_home_agent.home_devices import (
     build_home_device_tools,
@@ -49,6 +53,7 @@ from intelligent_home_agent.i18n import strings
 from intelligent_home_agent.journal import Journal
 from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
+from intelligent_home_agent.pet_alerts import PetAlerts
 from intelligent_home_agent.prompts import PromptConfig
 from intelligent_home_agent.shared_links import LINKS
 from intelligent_home_agent.tasks import (
@@ -113,6 +118,7 @@ from intelligent_home_agent.tools.assistant_notes import (
 )
 from intelligent_home_agent.tools.code_runner import build_code_tools
 from intelligent_home_agent.tools.connectors import Connector, build_connector_tools
+from intelligent_home_agent.tools.deliveries import Deliveries, build_delivery_tools
 from intelligent_home_agent.tools.documents import FONT_DIR, build_document_tools, paper_for
 from intelligent_home_agent.tools.generation import (
     OPENAI_URL,
@@ -141,6 +147,7 @@ from intelligent_home_agent.tools.vulnerabilities import (
     Vulnerabilities,
     build_vulnerability_tools,
 )
+from intelligent_home_agent.tools.withings import Withings, WithingsAuth, build_withings_tools
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger(__name__)
@@ -219,6 +226,22 @@ class BriefingResponse(BaseModel):
     pushed: bool = False
 
 
+class DepartureRequest(BaseModel):
+    # The conversation the user answers in: their yes there runs the fixes.
+    conversation_id: str = Field(default=DEFAULT_CONVERSATION, max_length=64)
+    # Also send the message as a push notification (needs NTFY_URL).
+    push: bool = False
+
+
+class DepartureResponse(BaseModel):
+    # Empty when everything is locked and off: say nothing then.
+    reply: str
+    conversation_id: str
+    pushed: bool = False
+    # Fixes wait for the user's yes in this conversation.
+    follow_up: bool | None = None
+
+
 def closes_conversation(text: str, language: str = "en", assistant_name: str = "") -> bool:
     """True when the message only says thanks or goodbye ("no thanks", "that's all")."""
     closing = strings(language).closing_words | strings("en").closing_words
@@ -239,6 +262,8 @@ def build_registry(
         settings.ha_exposed_domains, settings.ha_sensitive_domains, settings.ha_entity_denylist
     )
     meteo = OpenMeteo(http, settings.timezone)
+    # The client for the home network; `home` is the home's coordinates from here on.
+    home_network = home
     home = None
     if settings.home_latitude is not None and settings.home_longitude is not None:
         home = (settings.home_latitude, settings.home_longitude)
@@ -247,7 +272,19 @@ def build_registry(
     registry.extend(build_general_tools(settings.timezone))
     if ha is not None:
         registry.extend(build_home_assistant_tools(ha, policy))
-    registry.extend(build_home_device_tools(settings, home))
+    # The clients others share (the pet supplies watch) and those to close at the end.
+    registry.devices = {}
+    registry.extend(build_home_device_tools(settings, home_network, http, registry.devices))
+    if settings.withings_client_id and settings.withings_client_secret:
+        token = settings.withings_refresh_token
+        auth = WithingsAuth(
+            http,
+            settings.withings_client_id,
+            settings.withings_client_secret.get_secret_value(),
+            token.get_secret_value() if token else None,
+            Path(settings.data_dir) / "withings.json",
+        )
+        registry.extend(build_withings_tools(Withings(http, auth), settings.timezone))
     registry.extend(build_weather_tools(meteo, home=home, language=settings.language))
     registry.extend(build_wind_tools(meteo, settings.wind_spots, model=settings.wind_model))
     registry.extend(build_surf_tools(meteo, settings.surf_spots, model=settings.wind_model))
@@ -287,6 +324,9 @@ def build_registry(
     mailboxes = [ImapMailbox(account) for account in settings.mail_accounts]
     registry.extend(build_email_tools(mailboxes, settings.timezone))
     registry.extend(build_draft_tools([m for m in mailboxes if m.writable], settings.language))
+    if mailboxes and settings.deliveries_enabled:
+        deliveries = Deliveries(Path(settings.data_dir) / "deliveries.json")
+        registry.extend(build_delivery_tools(deliveries))
     if settings.travel_enabled:
         router = Router(
             http,
@@ -336,6 +376,7 @@ def build_registry(
                 country=settings.home_country,
                 timezone=settings.timezone,
                 language=settings.language,
+                engine=subscription_engine(settings, settings.web_search_model),
             )
         )
     elif settings.web_search_enabled:
@@ -350,7 +391,8 @@ def build_registry(
         )
         registry.extend(
             build_engine_web_tools(
-                llm,
+                # The answer written from the results: on the Claude subscription first.
+                SubscriptionFirst(subscription_engine(settings, settings.web_search_model), llm),
                 engine,
                 model=settings.web_search_model,
                 max_results=settings.web_search_results,
@@ -475,7 +517,10 @@ def add_drives(
             "listed by name, only text layers are indexed.",
             settings.llm_provider,
         )
-    ocr = model_ocr(llm, settings.drive_ocr_model) if settings.drive_ocr_enabled else None
+    ocr = None
+    if settings.drive_ocr_enabled:
+        plan = subscription_engine(settings, settings.drive_ocr_model)
+        ocr = model_ocr(llm, settings.drive_ocr_model, plan)
     contents = build_drive_contents(drives, data, ocr)
     registry.extend(build_drive_content_tools(contents, ocr=ocr is not None))
     for drive in drives:
@@ -529,6 +574,23 @@ def prompt_config(settings: Settings) -> PromptConfig:
         weather_detail=settings.weather_detail,
         spot_example=spots[0].name if spots else None,
         user_name=settings.user_name,
+    )
+
+
+def build_pet_alerts(settings: Settings, devices: dict) -> PetAlerts | None:
+    """The pet supplies watch, when the PetKit tools and a push channel are set up."""
+    if not (settings.petkit_alerts and settings.ntfy_url and "petkit" in devices):
+        return None
+    return PetAlerts(
+        devices["petkit"].status,
+        Path(settings.data_dir) / "pet-alerts.json",
+        settings.timezone,
+        language=settings.language,
+        litter_percent=settings.petkit_litter_alert_percent,
+        food_percent=settings.petkit_food_alert_percent,
+        remind_minutes=settings.petkit_bin_remind_minutes,
+        check_minutes=settings.petkit_check_minutes,
+        quiet=(settings.petkit_quiet_start, settings.petkit_quiet_end),
     )
 
 
@@ -961,7 +1023,23 @@ def build_agent(
     home: httpx.AsyncClient | None = None,
 ) -> Agent:
     key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
-    llm = build_llm_client(settings.llm_provider, key, settings.llm_base_url)
+    check_subscription(settings)
+    # The Claude subscription (docs/subscription.md): it takes the turns it can, the API
+    # the others; without an API key, NoApi stands there and says what needs one.
+    keyless = settings.subscription_enabled and key is None
+    llm: LLMClient = (
+        NoApi() if keyless else build_llm_client(settings.llm_provider, key, settings.llm_base_url)
+    )
+    engine = subscription_engine(settings, settings.subscription_model or settings.llm_model)
+    if engine is not None:
+        log.info(
+            "engine: Claude subscription (%s) for %s, %s",
+            settings.subscription_model or settings.llm_model,
+            "every display" if keyless else ", ".join(settings.subscription_displays),
+            "no API key for the rest"
+            if keyless
+            else f"the API ({settings.llm_model}) for the rest",
+        )
     kept = build_kept(settings, http)
     registry = build_registry(settings, ha, http, llm, home, kept)
     return Agent(
@@ -976,6 +1054,9 @@ def build_agent(
         max_history_messages=settings.max_history_messages,
         memory=kept.prompt_text,
         journal=kept.journal,
+        engine=engine,
+        engine_displays=frozenset(settings.subscription_displays),
+        api_fallback=not keyless,
     )
 
 
@@ -1135,12 +1216,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if (runner := build_task_runner(app, http)) is not None:
         background.append(runner.run)
     jobs = [asyncio.create_task(job()) for job in background]
+    # Home devices: the departure check and the pet supplies watch (docs/home-devices.md).
+    devices = getattr(registry, "devices", {})
+    app.state.departure = None
+    if settings.departure_check and isinstance(registry, ToolRegistry):
+        check = Departure(registry, language=settings.language, tv_name=settings.android_tv_name)
+        app.state.departure = check if check.watches_something else None
+    if (pets := build_pet_alerts(settings, devices)) is not None:
+        s = strings(settings.language)
+        ntfy = app.state.ntfy
+        jobs.append(
+            asyncio.create_task(pets.watch(lambda text: ntfy.send(s.pet_alert_title, text)))
+        )
     try:
         yield
     finally:
         for job in jobs:
             job.cancel()
         await asyncio.gather(*jobs, return_exceptions=True)
+        if "petkit" in devices:
+            await devices["petkit"].aclose()
         if ha is not None:
             await ha.aclose()
         if home is not None:
@@ -1286,6 +1381,52 @@ async def task_reports(request: Request, since: str | None = None) -> dict[str, 
     ``since`` (the ``at`` of the last one already fetched), only the later ones."""
     outbox = request.app.state.delivery.outbox
     return {"reports": outbox.since(since) if outbox else []}
+
+
+@app.post(
+    "/v1/departure",
+    response_model=DepartureResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_token)],
+)
+async def left_home(body: DepartureRequest, request: Request) -> DepartureResponse:
+    """The user left home (a phone automation calls this): what is still unlocked, on or
+    playing, written by the code, each fix waiting for their yes in the conversation."""
+    check: Departure | None = request.app.state.departure
+    if check is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Departure check is off")
+    settings: Settings = request.app.state.settings
+    ntfy: Ntfy | None = request.app.state.ntfy
+    if body.push and ntfy is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "push needs NTFY_URL")
+    store: ConversationStore = request.app.state.store
+    conv = store.get(body.conversation_id)
+    async with conv.lock:
+        report = await check.check(conv)
+        if not report.text:
+            return DepartureResponse(reply="", conversation_id=conv.id)
+        text = with_waiting(report.text, report.actions, conv, settings.language)
+        record_departure(conv, text)
+        # The answer may come a while after leaving: kept as long as a chat, and
+        # across a restart like one.
+        conv.ttl_seconds = settings.chat_conversation_ttl_seconds
+        conv.kept = True
+        store.touch(conv)
+        save_conversation(store, settings, conv)
+    pushed = False
+    if body.push and ntfy is not None:
+        title = strings(settings.language).departure_title
+        try:
+            await ntfy.send(f"{settings.assistant_name} · {title}", text)
+            pushed = True
+        except NotifyError as exc:
+            log.warning("departure push failed: %s", exc)
+    return DepartureResponse(
+        reply=text,
+        conversation_id=conv.id,
+        pushed=pushed,
+        follow_up=True if report.actions else None,
+    )
 
 
 @app.post("/v1/reset", status_code=204, dependencies=[Depends(require_token)])
