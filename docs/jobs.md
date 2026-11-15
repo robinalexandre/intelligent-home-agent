@@ -251,6 +251,27 @@ disk, which is not a documented interface, and on cross-session messaging: an up
 Claude Code may break the list or the relay (the jobs don't depend on them). They are on
 with the coder's jobs and off without them; there is nothing to set up.
 
+## Updating without ending its sessions
+
+`docker compose up -d --build` after a `git pull` rebuilds every image; when the coder's
+image changed (or the build cache is cold) Compose recreates the container, and that
+ends every Claude Code session running in it: the jobs' turns and your Remote Control
+sessions. `scripts/update.sh` updates the server without that:
+
+```bash
+scripts/update.sh                      # git pull, then rebuild; the coder only if it changed
+UPDATE_CODER=always scripts/update.sh  # the coder too
+UPDATE_PULL=no scripts/update.sh       # rebuild what is checked out
+```
+
+It reads the stack from `COMPOSE_FILE` in `.env`, as `docker compose` does. The coder is
+rebuilt when its files (`coder/`, `agents/`) changed since the commit it was last built
+from, or when its Compose settings did (a variable of `compose/coder.yml` you changed in
+`.env`); otherwise every other service is updated and the coder is left alone. What it
+was last built from is kept in `.coder-deployed`, beside `.env`. The first run has
+nothing to compare with and rebuilds everything. A turn cut by a rebuild is reported as
+such, and a cut Remote Control session is named in the chat (above).
+
 ## Not included
 
 Compared with the setup this feature comes from, two things are left out: a proxy

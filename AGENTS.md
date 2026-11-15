@@ -95,6 +95,8 @@ compose/                 one Compose file per way to reach the agent, picked by 
 coder/                   the coder container (its own image, compose/coder.yml): Claude
                          Code for the coding jobs; agents/coder.md holds its house rules
 scripts/build_shortcuts.py  Siri Shortcuts builder (macOS)
+scripts/update.sh        git pull and rebuild on the server, the coder left running
+                         unless it changed (docs/jobs.md)
 ```
 
 ## Conventions

@@ -56,7 +56,9 @@ curl -s https://agent.example.com/health
 curl -s https://agent.example.com/health/ha -H "Authorization: Bearer $AGENT_API_TOKEN"
 ```
 
-Update: `git pull && docker compose up -d --build`.
+Update: `git pull && docker compose up -d --build`, or `scripts/update.sh` (the same,
+keeping the coder container of the [coding jobs](jobs.md#updating-without-ending-its-sessions)
+running unless it changed).
 
 ## Reaching Home Assistant from a VPS
 

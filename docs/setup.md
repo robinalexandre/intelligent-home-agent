@@ -283,7 +283,9 @@ If something is off:
 | `The model server answered 404` | `LLM_MODEL` isn't a model of that provider, or `LLM_BASE_URL` lacks its `/v1`. |
 | The Tailscale address has no certificate | Enable HTTPS certificates in the tailnet's DNS settings, then restart the sidecar. |
 
-Update: `git pull && docker compose up -d --build`.
+Update: `git pull && docker compose up -d --build`, or `scripts/update.sh`, which does
+both and, with the coding jobs' coder container ([jobs.md](jobs.md)), leaves it running
+unless what it is made of changed.
 
 Back up `.env`: it holds every secret and every choice. The agent itself keeps nothing on
 disk; the Compose volumes only hold what can be recreated (certificates, the Tailscale
