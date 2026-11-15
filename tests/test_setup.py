@@ -49,6 +49,7 @@ ANSWERS = [
     "",  # memory: local files
     "",  # no knowledge base
     "",  # no file drives
+    "",  # no chat
     "",  # access: this machine only
     "siri,push",  # channels
     "https://ntfy.example.com/topic",
@@ -145,7 +146,7 @@ def test_a_local_model_reached_over_tailscale(tmp_path):
     # file drives,
     # access, node name, channel.
     answers += ["n", "y", "http://192.168.1.20", "", "", "y", "someone/notes", ""]
-    answers += ["funnel", "agent"]
+    answers += ["", "funnel", "agent"]  # no chat, then the access
     answers += ["scheduled"]
     env, output = run_with(tmp_path, answers, ["", "hue-key", "kb-github-secret", "tskey-secret"])
     assert env["HUE_BRIDGE_URL"] == "http://192.168.1.20" and "hue-key" not in output
@@ -173,7 +174,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
     # Then no Home Assistant, no Hue, no other devices, no memory.
     answers += ["n", "y", *NOTHING_ELSE[2:], "n", "", "", "off"]
     # No knowledge base, no file drives.
-    answers += ["", "", "caddy", "", "agent.example.com", "siri"]
+    answers += ["", "", "", "caddy", "", "agent.example.com", "siri"]
     env, output = run_with(tmp_path, answers, [""])
     assert env["WEB_PAGES_ENABLED"] == "false" and env["INVESTIGATIONS_ENABLED"] == "true"
     assert env["PUBLIC_URL"] == "https://agent.example.com"
@@ -196,6 +197,7 @@ def test_own_domain_with_another_server_and_missing_secrets(tmp_path):
         "",  # memory: local files
         "",
         "",
+        "",  # no chat
         "cloudflare",
         "siri",
     ]
@@ -208,7 +210,7 @@ def test_file_drives_get_a_sidecar_a_password_and_their_list(tmp_path, monkeypat
     # Anthropic, nothing else; then two drives (one read-only) and scans read by the model.
     answers = ["", *START, "", "claude-test", *NOTHING_ELSE, "", "n", "", "", "", ""]
     answers += ["y", "drive", "", "", "y", "sftp", "Bad Name", "nas", "n", "n", "y"]
-    answers += ["", "siri"]
+    answers += ["", "", "siri"]  # no chat, this machine only
     env, output = run_with(tmp_path, answers, ["sk-secret"])
     assert json.loads(env["DRIVES"]) == [
         {"name": "gdrive", "remote": "gdrive:", "backend": "drive"},
@@ -231,7 +233,7 @@ def test_without_docker_no_compose_question(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "searxng", "http://10.0.0.6:8080"]
     # No Home Assistant, no Hue, no other devices, memory in a repository (asked twice:
     # owner/repo), channel.
-    answers += [*NOTHING_ELSE, "n", "", "", "github", "notes", "someone/config", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "", "github", "notes", "someone/config", "", "siri"]
     env, output = run_with(tmp_path, answers, ["", "gh-write-secret"])
     assert "COMPOSE_FILE" not in env and "LLM_BASE_URL" not in env
     # Not Anthropic: the code sandbox is not offered. No country: A4.
@@ -246,7 +248,7 @@ def test_other_devices_ask_what_the_wizard_can_take_and_say_the_rest(tmp_path):
     answers = ["n", *START, "lmstudio", "m", "off", *NOTHING_ELSE, "n", ""]
     # Other devices: yes; which; the PetKit account and its country.
     answers += ["y", "nuki, petkit, netatmo, android-tv, withings", "pets@example.com", "GB"]
-    answers += ["", "siri"]  # memory in local files, channel
+    answers += ["", "", "siri"]  # memory in local files, no chat, channel
     env, output = run_with(tmp_path, answers, ["", "nuki-secret", "petkit-secret"])
     assert env["NUKI_API_TOKEN"] == "nuki-secret" and env["PETKIT_PASSWORD"] == "petkit-secret"
     assert (env["PETKIT_USERNAME"], env["PETKIT_REGION"]) == ("pets@example.com", "GB")
@@ -263,7 +265,7 @@ def test_wizard_offers_every_provider_and_every_compose_file():
     assert set(setup.MODELS) == set(llm.PROVIDERS)
     assert setup.KEYLESS == {p for p in llm.PROVIDERS if not llm.needs_key(p)}
     shipped = {f.stem for f in (SCRIPT.parent.parent / "compose").glob("*.yml")}
-    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive"}
+    assert shipped == {*setup.COMPOSE_FILES.values(), "ollama", "searxng", "kb", "drive", "waha"}
     from intelligent_home_agent.tools.web import ENGINES
 
     assert set(setup.SEARCH) == {*ENGINES, "off"}
@@ -366,7 +368,7 @@ def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
     # A4, no pictures, no code sandbox; then nothing else, as in the tests above.
     # No Home Assistant, Hue, other devices; memory in local files; no knowledge base, no
     # drives; this machine only.
-    answers += [*NOTHING_ELSE, "", "n", "", "", "", "", "", "", "siri"]
+    answers += [*NOTHING_ELSE, "", "n", "", "", "", "", "", "", "", "siri"]
     env, output = run_with(tmp_path, answers, ["oat-secret", "sk-secret"])
     assert (env["LLM_PROVIDER"], env["ENGINE"]) == ("anthropic", "subscription")
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "oat-secret" and env["LLM_API_KEY"] == "sk-secret"
@@ -383,7 +385,7 @@ def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
     # extra to install.
     (tmp_path / "alone").mkdir()
     answers = ["n", *START, "claude-subscription", "claude-test"]
-    answers += [*NOTHING_ELSE, "n", "", "", "", "siri"]
+    answers += [*NOTHING_ELSE, "n", "", "", "", "", "siri"]
     env, output = run_with(tmp_path / "alone", answers, ["oat-secret", ""])
     assert env["ENGINE"] == "subscription" and "LLM_API_KEY" not in env
     assert "SUBSCRIPTION_DISPLAYS" not in env and "EXTRAS" not in env
@@ -395,3 +397,81 @@ def test_claude_on_a_subscription_with_or_without_an_api_key(tmp_path):
     (tmp_path / "later").mkdir()
     env, output = run_with(tmp_path / "later", answers, ["", ""])
     assert "Still empty, add to .env before starting: CLAUDE_CODE_OAUTH_TOKEN." in output
+
+
+def chat_run(tmp_path, chat_answers, secrets_typed, *, docker=True, find_chat=None, tasks=True):
+    """The wizard with nothing but a chat: its answers come where the chat is asked."""
+    answers = ["" if docker else "n", *START, "lmstudio", "m", "off", *NOTHING_ELSE, "n", ""]
+    # No other devices, memory in local files; with Docker no knowledge base nor drives.
+    answers += ["", "", *(["", ""] if docker else [])]
+    # The access with Docker, the channel, and with a chat set up the tasks' two times.
+    answers += [*chat_answers, *([""] if docker else []), "siri", *(["", ""] if tasks else [])]
+    read, queue = scripted(answers)
+    typed = ["", *secrets_typed]  # no key for the local model
+    output: list[str] = []
+    prompter = setup.Prompter(read=read, read_secret=lambda _p: typed.pop(0), write=output.append)
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / ".env"
+    assert setup.run(
+        prompter, path, lookup=lambda *_: None, find_chat=find_chat or (lambda _t: None)
+    )
+    assert queue == [] and typed == []
+    env = dict(line.split("=", 1) for line in path.read_text().splitlines() if "=" in line)
+    return env, "\n".join(output)
+
+
+def test_whatsapp_in_ones_own_chat_brings_the_gateway_and_voice(tmp_path):
+    # WhatsApp; no number of its own; the number, typed as people write it; voice messages.
+    env, output = chat_run(tmp_path, ["whatsapp", "n", "+1 555 0100", "y"], [])
+    assert env["WHATSAPP_CHAT_ID"] == "15550100@c.us" and "AGENT_WAHA_SESSION" not in env
+    assert env["COMPOSE_FILE"] == "docker-compose.yml:compose/waha.yml"
+    assert "WAHA_URL" not in env  # compose/waha.yml sets it
+    assert (env["WHISPER_MODEL"], env["EXTRAS"]) == ("small", "documents,voice")
+    for secret in (env["WAHA_API_KEY"], env["WAHA_DASHBOARD_PASSWORD"]):
+        assert len(secret) >= 24 and secret not in output
+    # A chat is somewhere the tasks can report: the briefing's time was asked.
+    assert "sent in the chat" in output and "link the number in WAHA's dashboard" in output
+
+
+def test_a_number_of_its_own_and_a_gateway_run_elsewhere(tmp_path):
+    answers = ["whatsapp", "y", "none", "15550100", "http://192.168.1.60:3000", "n"]
+    env, output = chat_run(tmp_path, answers, [], docker=False)
+    assert env["AGENT_WAHA_SESSION"] == "default" and env["WAHA_URL"] == "http://192.168.1.60:3000"
+    assert "WAHA_DASHBOARD_PASSWORD" not in env and "WHISPER_MODEL" not in env
+    assert "Digits only" in output
+
+
+def test_telegram_finds_the_chat_that_wrote_to_the_bot(tmp_path):
+    asked = []
+
+    def find_chat(token):
+        asked.append(token)
+        return 4242, "Sam"
+
+    env, output = chat_run(
+        tmp_path, ["telegram", "", "", "n"], ["123:bot-secret"], find_chat=find_chat
+    )
+    assert asked == ["123:bot-secret"] and "Is this you: Sam (chat 4242)?" not in output
+    assert (env["TELEGRAM_BOT_TOKEN"], env["TELEGRAM_CHAT_IDS"]) == ("123:bot-secret", "4242")
+    assert "123:bot-secret" not in output and "COMPOSE_FILE" not in env
+    assert "Telegram: write to your bot" in output
+
+
+def test_telegram_without_a_chat_found_takes_the_id_typed_or_says_what_is_missing(tmp_path):
+    env, _ = chat_run(
+        tmp_path / "a", ["both", "n", "15550100", "", "", "77", "n"], ["123:s"], docker=False
+    )
+    assert env["TELEGRAM_CHAT_IDS"] == "77" and env["WHATSAPP_CHAT_ID"] == "15550100@c.us"
+
+    # Someone else wrote to the bot last: not confirmed, and no id typed.
+    env, output = chat_run(
+        tmp_path / "b",
+        ["telegram", "", "n", "", "n"],
+        ["123:s"],
+        find_chat=lambda _t: (666, "X"),
+        tasks=False,
+    )
+    assert "TELEGRAM_CHAT_IDS" not in env and "TELEGRAM_CHAT_IDS." in output
+
+    env, output = chat_run(tmp_path / "c", ["telegram", "n"], [""], tasks=False)
+    assert "TELEGRAM_BOT_TOKEN" not in env and "Skipped" in output

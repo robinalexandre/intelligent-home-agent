@@ -137,7 +137,17 @@ CHANNELS = {
     "scheduled": "a scheduler that calls the briefing endpoint (cron, Home Assistant, or a "
     "scheduled task in a chat or coding-assistant app)",
 }
+CHAT = {
+    "none": "no chat: voice, push notifications or your own client only",
+    "whatsapp": "WhatsApp, through a WAHA gateway you run (an unofficial WhatsApp client)",
+    "telegram": "Telegram, through a bot you create with @BotFather (nothing else to run)",
+    "both": "WhatsApp and Telegram",
+}
+TELEGRAM_API = "https://api.telegram.org"
 SECRET_KEYS = {
+    "WAHA_API_KEY",
+    "WAHA_DASHBOARD_PASSWORD",
+    "TELEGRAM_BOT_TOKEN",
     "AGENT_API_TOKEN",
     "TS_AUTHKEY",
     "TUNNEL_TOKEN",
@@ -428,6 +438,8 @@ def ask_access(p: Prompter, env: dict[str, str]) -> str | None:
         files.append("compose/kb.yml")
     if env.pop("_COMPOSE_DRIVE", None):
         files.append("compose/drive.yml")
+    if env.pop("_COMPOSE_WAHA", None):
+        files.append("compose/waha.yml")
     if len(files) > 1:
         # ":" on every system, Windows included.
         env["COMPOSE_PATH_SEPARATOR"] = ":"
@@ -730,6 +742,96 @@ def ask_drives(p: Prompter, env: dict[str, str]) -> None:
         env["DRIVE_OCR"] = "model"
 
 
+def telegram_chat(token: str) -> tuple[int, str] | None:
+    """The private chat that last wrote to the bot, as (id, first name): asks Telegram
+    itself, with the token just typed, and nobody else."""
+    try:
+        with urllib.request.urlopen(f"{TELEGRAM_API}/bot{token}/getUpdates", timeout=10) as resp:  # noqa: S310
+            updates = json.load(resp).get("result") or []
+    except (OSError, ValueError):
+        return None
+    for update in reversed(updates):
+        message = update.get("message") or {}
+        chat = message.get("chat") or {}
+        if chat.get("type") == "private" and isinstance(chat.get("id"), int):
+            return chat["id"], str(chat.get("first_name") or "")
+    return None
+
+
+def ask_whatsapp(p: Prompter, env: dict[str, str], *, docker: bool) -> None:
+    p.say("  WAHA links to a WhatsApp number as WhatsApp Web does. Linked to your own")
+    p.say('  number, the assistant talks in your "Message yourself" chat (it never rings);')
+    p.say("  linked to a number of its own, it is a contact like any other.")
+    own = p.yes("Does the assistant have a WhatsApp number of its own?", False)
+    while not (
+        digits := "".join(
+            c for c in p.ask("Your WhatsApp number, with its country code") if c.isdigit()
+        )
+    ):
+        p.say("  Digits only, e.g. 15550100 for +1 555 0100.")
+    env["WHATSAPP_CHAT_ID"] = f"{digits}@c.us"
+    if own:
+        # The one session of the gateway is the assistant's account.
+        env["AGENT_WAHA_SESSION"] = "default"
+    env["WAHA_API_KEY"] = secrets.token_hex(24)
+    if docker:
+        env["WAHA_DASHBOARD_PASSWORD"] = secrets.token_urlsafe(18)
+        env["_COMPOSE_WAHA"] = "1"
+    else:
+        env["WAHA_URL"] = p.ask("Address of your WAHA gateway", "http://127.0.0.1:3000")
+        p.say("  Give WAHA the key written in .env as its WAHA_API_KEY.")
+
+
+def ask_telegram(
+    p: Prompter, env: dict[str, str], find_chat: Callable[[str], tuple[int, str] | None]
+) -> None:
+    p.say("  In Telegram, talk to @BotFather, send /newbot and follow it: it gives a token.")
+    token = p.secret("The bot's token")
+    if not token:
+        p.say("  Skipped: add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_IDS to .env later.")
+        return
+    env["TELEGRAM_BOT_TOKEN"] = token
+    p.say("  Only your own chat with the bot may reach the assistant. Open the bot in")
+    p.say("  Telegram and send it any message, so that your chat's id can be read.")
+    p.ask("Press Enter once it is sent")
+    found = find_chat(token)
+    if found and p.yes(f"Is this you: {found[1] or 'chat'} (chat {found[0]})?", True):
+        env["TELEGRAM_CHAT_IDS"] = str(found[0])
+        return
+    typed = p.ask("Your chat's id (a number; empty to set TELEGRAM_CHAT_IDS later)")
+    if typed.lstrip("-").isdigit():
+        env["TELEGRAM_CHAT_IDS"] = typed
+
+
+def ask_chat(
+    p: Prompter,
+    env: dict[str, str],
+    *,
+    docker: bool,
+    find_chat: Callable[[str], tuple[int, str] | None] = telegram_chat,
+) -> None:
+    p.say("\n# A chat with the assistant in a messaging app (docs/chat.md)")
+    p.say("  Write to it, send it files and voice messages, approve what it proposes with a")
+    p.say("  tap; its briefings and the tasks it runs by itself arrive there.")
+    chat = p.pick("Chat", CHAT, "none")
+    if chat == "none":
+        return
+    if chat in {"whatsapp", "both"}:
+        ask_whatsapp(p, env, docker=docker)
+    if chat in {"telegram", "both"}:
+        ask_telegram(p, env, find_chat)
+    if p.yes(
+        "Understand voice messages, with a speech model on this machine (about 500 MB, and "
+        "a few seconds of CPU per message)?",
+        False,
+    ):
+        env["WHISPER_MODEL"] = "small"
+        if docker:
+            env["EXTRAS"] = f"{env.get('EXTRAS', 'documents')},voice"
+        else:
+            p.say('  Install it with: pip install ".[voice]"')
+
+
 def ask_channels(p: Prompter, env: dict[str, str]) -> list[str]:
     p.say("\n# How will you reach the assistant?")
     channels = p.choose("Channels", CHANNELS, ["siri"])
@@ -753,10 +855,12 @@ def ask_time(p: Prompter, question: str) -> str:
 
 
 def ask_tasks(p: Prompter, env: dict[str, str]) -> None:
-    """Tasks the assistant runs by itself reach the user as a push: asked only with one."""
-    if "NTFY_URL" not in env:
+    """Tasks the assistant runs by itself reach the user in a chat or as a push: asked only
+    with one of them."""
+    if not {"NTFY_URL", "WHATSAPP_CHAT_ID", "TELEGRAM_CHAT_IDS"} & set(env):
         return
-    p.say("\n# Tasks the assistant runs by itself, sent as a push (docs/tasks.md)")
+    where = "in the chat" if {"WHATSAPP_CHAT_ID", "TELEGRAM_CHAT_IDS"} & set(env) else "as a push"
+    p.say(f"\n# Tasks the assistant runs by itself, sent {where} (docs/tasks.md)")
     p.say("  You can then ask it to check or remind you of something later, or every week.")
     if at := ask_time(p, "Send the morning briefing every day at (HH:MM, empty: only when asked)"):
         env["MORNING_BRIEFING_AT"] = at
@@ -843,6 +947,19 @@ GROUPS = [
     ("Knowledge base", ["KB_REPO", "KB_GITHUB_TOKEN", "KB_TOKEN"]),
     ("File drives", ["DRIVE_PASSWORD", "DRIVES", "DRIVE_OCR"]),
     ("Push", ["NTFY_URL", "NTFY_TOKEN"]),
+    (
+        "Chat channels (docs/chat.md)",
+        [
+            "WAHA_URL",
+            "WAHA_API_KEY",
+            "WAHA_DASHBOARD_PASSWORD",
+            "AGENT_WAHA_SESSION",
+            "WHATSAPP_CHAT_ID",
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_CHAT_IDS",
+            "WHISPER_MODEL",
+        ],
+    ),
     ("Tasks", ["TASKS_STORE", "MORNING_BRIEFING_AT", "EVENING_RECAP_AT"]),
 ]
 
@@ -875,7 +992,12 @@ NEXT_STEPS = {
 }
 
 
-def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geocode) -> bool:
+def run(
+    p: Prompter,
+    path: Path,
+    lookup: Callable[[str, str], dict | None] = geocode,
+    find_chat: Callable[[str], tuple[int, str] | None] = telegram_chat,
+) -> bool:
     p.say("intelligent-home-agent setup. Press Enter to keep the value in brackets.")
     if path.exists() and not p.yes(f"{path} exists. Replace it?", False):
         p.say("Nothing written.")
@@ -896,7 +1018,9 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     if docker:
         ask_knowledge(p, env)
         ask_drives(p, env)
+    ask_chat(p, env, docker=docker, find_chat=find_chat)
     address = ask_access(p, env) if docker else None
+    env.pop("_COMPOSE_WAHA", None)
     env.pop("_COMPOSE_KB", None)
     env.pop("_COMPOSE_DRIVE", None)
     env.pop("_COMPOSE_OLLAMA", None)
@@ -915,6 +1039,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
         for key, needed in (
             ("LLM_API_KEY", env["LLM_PROVIDER"] not in KEYLESS and "ENGINE" not in env),
             ("CLAUDE_CODE_OAUTH_TOKEN", "ENGINE" in env),
+            ("TELEGRAM_CHAT_IDS", "TELEGRAM_BOT_TOKEN" in env),
             ("TS_AUTHKEY", "compose/tailscale.yml" in env.get("COMPOSE_FILE", "")),
             ("TUNNEL_TOKEN", "compose/cloudflared.yml" in env.get("COMPOSE_FILE", "")),
             ("WEB_SEARCH_API_KEY", env.get("WEB_SEARCH_BACKEND") in {"brave", "tavily"}),
@@ -939,6 +1064,11 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     p.say("  Check: docs/setup.md, step 6. Clients authenticate with AGENT_API_TOKEN from .env.")
     for channel in channels:
         p.say(f"  {NEXT_STEPS[channel]}")
+    if "WHATSAPP_CHAT_ID" in env:
+        p.say("  WhatsApp: link the number in WAHA's dashboard, then write in the chat")
+        p.say("  (docs/chat.md).")
+    if "TELEGRAM_BOT_TOKEN" in env:
+        p.say("  Telegram: write to your bot once the agent runs (docs/chat.md).")
     p.say("  Later: your bank, hosting provider or any service with an MCP server")
     p.say("  (docs/connectors.md), devices without Home Assistant (docs/home-devices.md).")
     return True
