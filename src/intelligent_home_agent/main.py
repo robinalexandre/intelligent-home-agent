@@ -20,8 +20,9 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 
 from intelligent_home_agent import __version__, curation
 from intelligent_home_agent.activities import CATALOG
@@ -74,7 +75,7 @@ from intelligent_home_agent.jobs import STOPPED as JOB_STOPPED
 from intelligent_home_agent.jobs import Backend, Job, JobRunner, JobStore
 from intelligent_home_agent.jobs_claude_code import ClaudeCodeBackend
 from intelligent_home_agent.journal import Journal
-from intelligent_home_agent.llm import ANTHROPIC, LLMClient, build_llm_client
+from intelligent_home_agent.llm import ANTHROPIC, LLMClient, LLMError, build_llm_client
 from intelligent_home_agent.notify import NotifyError, Ntfy
 from intelligent_home_agent.pet_alerts import PetAlerts
 from intelligent_home_agent.progress import Tracker
@@ -716,7 +717,7 @@ def build_icloud(settings: Settings) -> ICloudWeb | None:
     if not settings.icloud_apple_id:
         return None
     if not icloud_available():
-        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[apple]"')
+        log.error('ICLOUD_APPLE_ID needs the pyicloud package: pip install ".[icloud]"')
         return None
     return ICloudWeb(settings.icloud_apple_id, session_dir(settings.data_dir))
 
@@ -1806,9 +1807,28 @@ async def answer(request: Request, conv: Conversation, body: AskRequest) -> tupl
     return "\n\n".join(texts), actions
 
 
+class ConfigError(ValueError):
+    """The settings can't be used; the message says which and why, never their values."""
+
+
+def load_settings() -> Settings:
+    """The settings, or one line per mistake. pydantic's own message quotes what it was
+    given, which for a rule on several settings is the start of the first of them, the API
+    token: none of that belongs in a log."""
+    try:
+        return get_settings()
+    except ValidationError as exc:
+        lines = [
+            f"- {'.'.join(str(part) for part in error['loc']).upper() or 'settings'}: "
+            f"{error['msg'].removeprefix('Value error, ')}"
+            for error in exc.errors(include_input=False, include_context=False, include_url=False)
+        ]
+        raise ConfigError("The settings (.env) can't be used:\n" + "\n".join(lines)) from None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
+    settings = load_settings()
     ha = None
     if settings.ha_token:
         ha = HomeAssistantClient(
@@ -1898,6 +1918,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="intelligent-home-agent", version=__version__, lifespan=lifespan)
 _bearer = HTTPBearer(auto_error=False)
+
+
+@app.exception_handler(LLMError)
+async def model_failed(request: Request, exc: LLMError) -> JSONResponse:
+    """The model's server is down or refused the request: said in one line, to the client
+    and in the log, instead of a crash."""
+    log.error("The model could not answer: %s", exc)
+    return JSONResponse({"detail": str(exc)}, status_code=status.HTTP_502_BAD_GATEWAY)
 
 
 def require_token(

@@ -286,3 +286,28 @@ async def test_out_of_rounds_asks_for_words_and_cache_markers_are_not_sent():
     body = json.loads(route.calls.last.request.content)
     assert body["tool_choice"] == "none"
     assert "cache_control" not in json.dumps(body)
+
+
+async def test_anthropic_errors_come_out_as_one_line_without_the_key():
+    import anthropic
+
+    client = AnthropicClient("sk-test-key")
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    class Refusing:
+        async def create(self, **kwargs):
+            raise anthropic.AuthenticationError(
+                "invalid x-api-key", response=httpx.Response(401, request=request), body=None
+            )
+
+    class Unreachable:
+        async def create(self, **kwargs):
+            raise anthropic.APIConnectionError(request=request)
+
+    client._messages = Refusing()
+    with pytest.raises(LLMError, match="answered 401: invalid x-api-key") as caught:
+        await client.create(model="m", max_tokens=5, messages=[])
+    assert "sk-test-key" not in str(caught.value)
+    client._messages = Unreachable()
+    with pytest.raises(LLMError, match="can't be reached: APIConnectionError"):
+        await client.create(model="m", max_tokens=5, messages=[])

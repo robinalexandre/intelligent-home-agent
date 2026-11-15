@@ -99,7 +99,15 @@ class AnthropicClient:
         self.files = getattr(sdk, "files", None)
 
     async def create(self, **kwargs: Any) -> LLMResponse:
-        response = await self._messages.create(**kwargs)
+        from anthropic import APIError, APIStatusError
+
+        try:
+            response = await self._messages.create(**kwargs)
+        except APIStatusError as exc:
+            # The API says why (a wrong key, an unknown model, no credit), never the key.
+            raise LLMError(f"Anthropic's API answered {exc.status_code}: {exc.message}") from exc
+        except APIError as exc:
+            raise LLMError(f"Anthropic's API can't be reached: {type(exc).__name__}") from exc
         return LLMResponse(
             stop_reason=response.stop_reason or "end_turn",
             content=[block.model_dump(exclude_none=True) for block in response.content],

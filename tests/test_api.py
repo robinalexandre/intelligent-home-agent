@@ -8,6 +8,7 @@ from intelligent_home_agent import main
 from intelligent_home_agent.agent import AgentReply
 from intelligent_home_agent.config import get_settings
 from intelligent_home_agent.conversations import Attachment
+from intelligent_home_agent.llm import LLMError
 
 NTFY_URL = "https://ntfy.example.com/some-random-topic"
 
@@ -1191,3 +1192,40 @@ def test_live_wind_needs_a_source_and_alerts_need_a_way_to_reach_the_user(monkey
     assert [(a.activity, a.lead_hours) for a in alerts.alerts] == [("wingfoil", 12)]
     assert alerts.conditions.home() == (1.0, 2.0)  # home moved
     assert alerts.conditions.live is not None
+
+
+def test_a_model_that_cannot_answer_is_a_502_with_its_reason(client):
+    async def down(*args, **kwargs):
+        raise LLMError("The model server can't be reached: ConnectError")
+
+    client.stub.ask = down
+    resp = client.post("/v1/ask", headers=AUTH, json={"text": "hello"})
+    assert resp.status_code == 502
+    assert resp.json() == {"detail": "The model server can't be reached: ConnectError"}
+    # The app is still there for the next request.
+    assert client.get("/health").status_code == 200
+
+
+def test_settings_that_cannot_be_used_are_named_without_their_values(monkeypatch):
+    def message(**env) -> str:
+        base_env(monkeypatch)
+        monkeypatch.setenv("AGENT_API_TOKEN", "a-very-secret-token")
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        get_settings.cache_clear()
+        try:
+            with pytest.raises(main.ConfigError) as caught:
+                main.load_settings()
+        finally:
+            get_settings.cache_clear()
+            for name in env:
+                monkeypatch.delenv(name)
+        return str(caught.value)
+
+    wrong = message(TRAVEL_MARGIN_MINUTES="soon")
+    assert "- TRAVEL_MARGIN_MINUTES: Input should be a valid integer" in wrong
+    assert "soon" not in wrong
+    # A rule on several settings: pydantic would quote the start of the first of them.
+    missing = message(HOSTING_PROVIDER="hetzner")
+    assert "- settings: HOSTING_PROVIDER=hetzner needs HOSTING_API_TOKEN" in missing
+    assert "a-ve" not in missing
