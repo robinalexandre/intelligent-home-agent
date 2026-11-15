@@ -34,7 +34,7 @@ class StubAgent:
     async def ask(self, conv, text, context=None, **options):
         self.calls.append((conv.id, text, context, options))
         actions = []
-        if text.startswith("park"):
+        if "park" in text:
             proposal, _ = conv.propose("note", {"text": "milk"}, "Note — text: milk")
             actions.append({"type": "proposal", "number": proposal.number, "summary": "S"})
         return AgentReply(f"echo: {text}", actions)
@@ -239,3 +239,49 @@ def test_the_agent_starts_and_stops_with_a_telegram_channel(make_client):
 
     assert list(client.app.state.chats) == ["telegram", "telegram-77"]
     assert client.get("/health").status_code == 200
+
+
+@respx.mock
+def test_what_the_agent_says_by_itself_goes_to_the_chat_first(make_client, monkeypatch):
+    waha_quiet()
+    send = respx.post("http://waha.test/api/sendText").mock(
+        return_value=httpx.Response(201, json={"id": "out1"})
+    )
+    poll = respx.post("http://waha.test/api/sendPoll").mock(
+        return_value=httpx.Response(201, json={"id": "P1"})
+    )
+    respx.put("http://waha.test/api/reaction").mock(return_value=httpx.Response(200, json={}))
+    ntfy = respx.post("https://ntfy.example.com/topic").mock(return_value=httpx.Response(200))
+    client = make_client(**WHATSAPP, NTFY_URL="https://ntfy.example.com/topic")
+
+    delivery = client.app.state.delivery
+    assert [c.name for c in delivery.channels] == ["whatsapp", "ntfy"]
+    assert delivery.channel.display == "chat"
+    assert delivery.channel.conversation_id == "chat-whatsapp"
+
+    client.portal.call(main.run_task, client.app, "Bills", "park the note")
+
+    conv_id, text, _, options = client.stub.calls[0]
+    # The task runs in the chat's conversation, so what it parks can be approved there.
+    assert conv_id == "chat-whatsapp"
+    assert text.startswith("[Scheduled task the user left you: Bills]")
+    assert options["display"] == "chat" and options["scheduled"] is True
+    (said,) = [httpx.Response(200, content=c.request.content).json()["text"] for c in send.calls]
+    assert said.startswith("🤖 ⏰ Bills\n\necho: [Scheduled task") and "pick below" in said
+    options = httpx.Response(200, content=poll.calls[0].request.content).json()["poll"]["options"]
+    assert options[0] == "Note — text: milk"
+    assert not ntfy.called
+
+    # A chat that can't be reached leaves the report to the push notification.
+    send.mock(return_value=httpx.Response(502))
+    client.portal.call(main.run_task, client.app, "Bills", "again")
+    assert ntfy.call_count == 1
+    client.portal.call(main.tell_user, client.app, "Pets", "The bin is full.")
+    assert ntfy.call_count == 2
+
+
+def test_a_chat_alone_turns_the_tasks_on(monkeypatch):
+    assert main.reports_reach(settings_with(monkeypatch)) is None
+    reach = main.reports_reach(settings_with(monkeypatch, **TELEGRAM))
+    assert reach == "a message in the chat they talk to you in"
+    assert main.reports_reach(settings_with(monkeypatch, **TELEGRAM, TASKS_STORE="off")) is None
