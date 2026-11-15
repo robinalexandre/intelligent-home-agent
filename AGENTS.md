@@ -54,6 +54,8 @@ src/intelligent_home_agent/
   drive_content.py  the text inside the files of the drives (tools/drives.py), indexed
                     for search; scanned PDFs read by the model where the provider can
   office.py         Word, Excel, PowerPoint, OpenDocument and iWork files as text or preview
+  icloud_web.py     the iCloud session behind Reminders, Notes and Find My, and its
+                    login by hand (python -m intelligent_home_agent.icloud_web)
   notify.py         ntfy push
   shared_links.py   short-lived public links to a picture (reverse image search)
   home_devices.py   devices driven without Home Assistant (Hue, Devialet, Android TV,

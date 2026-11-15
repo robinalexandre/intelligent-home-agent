@@ -14,6 +14,7 @@ services:
         # EXTRAS=documents,devices adds the libraries of some home devices
         # (docs/home-devices.md), EXTRAS=documents,subscription Claude Code for a
         # Claude subscription (docs/subscription.md).
+        # EXTRAS=documents,icloud is Apple Reminders, Notes and Find My (docs/apple.md).
         EXTRAS: "${EXTRAS:-documents}"
     env_file: .env
     ports:

@@ -76,6 +76,10 @@ spoken morning briefing and evening recap.
     OpenStreetMap, reverse image search links. Never to identify a private person. See
     [docs/web.md](docs/web.md) for the three.
   - Reminders created on the phone by the Siri Shortcut from the agent's `actions`.
+  - If you use Apple devices, and only if you want it: your Apple Reminders read, added,
+    changed and ticked (repeating ones too), your Notes searched and read, your devices
+    found, through an iCloud login you type once and renew
+    ([docs/apple.md](docs/apple.md)).
 - The briefing and recap follow your settings: which sections, how detailed the weather,
   which activities. The language of the replies and of the few fixed strings is a setting
   (English by default, French supported).
@@ -158,6 +162,9 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `INVESTIGATIONS_ENABLED`, `PUBLIC_URL` | `false`, unset | Investigation tools; the agent's public address, for reverse image search. |
 | `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`, `CALDAV_CALENDARS` | unset | Calendar, read-only. |
 | `CALDAV_WRITE`, `CALDAV_DEFAULT_CALENDAR` | `false`, unset | Let the agent add events, and to which calendar (default: the server's). |
+| `ICLOUD_APPLE_ID` | unset | Apple Reminders, Notes and Find My through iCloud's web services, after a login by hand: [docs/apple.md](docs/apple.md). |
+| `ICLOUD_REMINDER_LISTS`, `ICLOUD_REMINDERS_DEFAULT_LIST` | all, the busiest | Reminders lists the agent sees, and where a new reminder goes. |
+| `ICLOUD_NOTES`, `ICLOUD_FIND_MY` | `true` | Set to `false` to leave Notes or Find My out. |
 | `CARDDAV_URL`, `CARDDAV_USERNAME`, `CARDDAV_PASSWORD` | unset | Contacts' birthdays in the agenda; the login defaults to CalDAV's. |
 | `MAIL_ACCOUNTS` | `[]` | IMAP accounts (JSON), read-only; `"write": true` on an account allows drafts, flags and filing there. |
 | `TRAVEL_ENABLED`, `TRAVEL_MARGIN_MINUTES` | `true`, `10` | When to leave (needs home). |
@@ -282,6 +289,10 @@ The guardrails are enforced in code, not only in the prompt.
   report is yours, not public: after reading it, a web search in that request waits
   for your go, so no query can carry it out. Weigh-ins are never brought up unasked
   nor put in a briefing.
+- **iCloud apps**: the agent keeps a session to your iCloud account, never the
+  password; reminders and notes taint a request like an email, a reminder written after
+  a read waits for your go, and after a Find My read no new site opens and a search
+  waits, so a position can't leave.
 - **Web search**: a query is text that leaves the house. After private content was read
   the search waits for your go like a write; in any request, a query that repeats a
   number, an email address, a long token or a run of words from what the request holds

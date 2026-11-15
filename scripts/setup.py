@@ -621,6 +621,7 @@ DEVICES = {
     "android-tv": "a Google TV / Android TV device: a TV, a projector, a box",
     "apple": "an Apple TV, HomePods",
     "withings": "a Withings scale (weigh-ins, read-only)",
+    "icloud": "Apple Reminders, Notes and Find My, through your iCloud account",
 }
 DEVICE_STEPS = {
     "petkit": 'install the library: pip install ".[petkit]" (Docker: docs/home-devices.md)',
@@ -628,12 +629,29 @@ DEVICE_STEPS = {
     "android-tv": "on the home network, run python scripts/android_tv_pair.py <address>",
     "apple": "on the home network, run python scripts/apple_devices.py profile <addresses>",
     "withings": "run python scripts/withings_login.py and add the lines it writes to .env",
+    "icloud": (
+        "log in once, with your Apple ID password and the code your devices show: "
+        "docker compose exec agent python -m intelligent_home_agent.icloud_web "
+        '(without Docker: pip install ".[icloud]", then the same python -m command); '
+        "docs/apple.md says when to do it again"
+    ),
 }
 
 
-def ask_devices(p: Prompter, env: dict[str, str]) -> None:
+def add_extra(env: dict[str, str], name: str) -> None:
+    """One more optional part of the Docker image (the Dockerfile's EXTRAS)."""
+    extras = env.get("EXTRAS", "documents").split(",")
+    if name not in extras:
+        env["EXTRAS"] = ",".join([*extras, name])
+
+
+def ask_devices(p: Prompter, env: dict[str, str], *, docker: bool = True) -> None:
     p.say("\n# More of the home, without Home Assistant (docs/home-devices.md, docs/health.md)")
-    if not p.yes("Set up a lock, cameras, a pet feeder, a TV, Apple devices or a scale?", False):
+    if not p.yes(
+        "Set up a lock, cameras, a pet feeder, a TV, Apple devices, a scale, or Apple "
+        "Reminders, Notes and Find My?",
+        False,
+    ):
         return
     picked = p.choose("Which ones", DEVICES, [])
     if "nuki" in picked:
@@ -648,6 +666,19 @@ def ask_devices(p: Prompter, env: dict[str, str]) -> None:
         region = p.ask("  Country code of the PetKit account", env.get("HOME_COUNTRY", ""))
         if region:
             env["PETKIT_REGION"] = region
+    if "icloud" in picked:
+        p.say("  Apple has no public API for these apps: the agent uses icloud.com's own,")
+        p.say("  with a login you type once and renew when Apple ends it (docs/apple.md).")
+        if apple_id := p.ask("  Apple ID (the email of the iCloud account)"):
+            env["ICLOUD_APPLE_ID"] = apple_id
+            if not p.yes("  Read your Notes too?", True):
+                env["ICLOUD_NOTES"] = "false"
+            if not p.yes("  Find My too (where devices are, battery, a sound)?", True):
+                env["ICLOUD_FIND_MY"] = "false"
+            if docker:
+                add_extra(env, "icloud")
+        else:
+            picked.remove("icloud")
     steps = [(name, DEVICE_STEPS[name]) for name in picked if name in DEVICE_STEPS]
     if steps:
         p.say("  Once .env is written:")
@@ -828,6 +859,10 @@ GROUPS = [
             "CARDDAV_URL",
         ],
     ),
+    (
+        "Apple Reminders, Notes and Find My (docs/apple.md)",
+        ["ICLOUD_APPLE_ID", "ICLOUD_NOTES", "ICLOUD_FIND_MY"],
+    ),
     ("Mail", ["MAIL_ACCOUNTS"]),
     ("GitHub", ["GITHUB_TOKEN", "GITHUB_REPOSITORIES", "NOTES_REPO", "NOTES_WRITE"]),
     (
@@ -891,7 +926,7 @@ def run(p: Prompter, path: Path, lookup: Callable[[str, str], dict | None] = geo
     ask_activities(p, env)
     ask_documents(p, env)
     ask_sources(p, env, sections)
-    ask_devices(p, env)
+    ask_devices(p, env, docker=docker)
     ask_memory(p, env)
     if docker:
         ask_knowledge(p, env)

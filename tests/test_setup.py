@@ -257,6 +257,27 @@ def test_other_devices_ask_what_the_wizard_can_take_and_say_the_rest(tmp_path):
     assert "apple_devices" not in output
 
 
+def test_apple_reminders_notes_and_find_my_are_one_of_the_other_devices():
+    printed = []
+    read, queue = scripted(["y", "icloud", "sam@example.com", "", "n"])
+    env = {"EXTRAS": "documents,subscription"}
+    setup.ask_devices(setup.Prompter(read, lambda _: "", printed.append), env, docker=True)
+    assert queue == []
+    assert env == {
+        "EXTRAS": "documents,subscription,icloud",
+        "ICLOUD_APPLE_ID": "sam@example.com",
+        "ICLOUD_FIND_MY": "false",
+    }
+    output = "\n".join(printed)
+    assert "python -m intelligent_home_agent.icloud_web" in output and "docs/apple.md" in output
+
+    # No Apple ID given: nothing is set, and no step is promised.
+    read, _ = scripted(["y", "icloud", ""])
+    env, printed[:] = {}, []
+    setup.ask_devices(setup.Prompter(read, lambda _: "", printed.append), env, docker=False)
+    assert env == {} and "icloud_web" not in "\n".join(printed)
+
+
 def test_wizard_offers_every_provider_and_every_compose_file():
     from intelligent_home_agent import llm
 
