@@ -9,8 +9,8 @@ Pairing, once, from where the agent runs while the device shows its wireless deb
 pairing code: see scripts/android_tv_adb.py. Android closes the fixed port 5555 when the
 device restarts.
 
-Nothing uses this client yet: it is the seam for a helper that sees the screen and reaches
-something inside an app, which needs a second model loop (see home_devices.py).
+The navigator uses it (tools/tv_navigator.py): a helper model that sees the screen and
+presses the remote's keys to reach something inside an app.
 """
 
 from __future__ import annotations

@@ -327,7 +327,7 @@ def build_registry(
         registry.extend(build_home_assistant_tools(ha, policy))
     # The clients others share (the pet supplies watch) and those to close at the end.
     registry.devices = {}
-    registry.extend(build_home_device_tools(settings, home_network, http, registry.devices))
+    registry.extend(build_home_device_tools(settings, home_network, http, registry.devices, llm))
     if settings.withings_client_id and settings.withings_client_secret:
         token = settings.withings_refresh_token
         auth = WithingsAuth(

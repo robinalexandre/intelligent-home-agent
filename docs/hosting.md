@@ -32,7 +32,7 @@ The tools are the same whatever the provider (`list_servers`, `get_server_metric
 | Restart the server (`restart_server`) | yes | yes (a soft reboot) |
 | Snapshot (`take_server_snapshot`) | yes, it replaces the previous one | yes, each one is kept and billed until you delete it |
 | Where the token is made | hPanel > API | Cloud Console > the project > Security > API tokens |
-| Tested | used daily against the real API before it was published here | **written from Hetzner's documentation, never run against the real API** |
+| Tested | used against the real API, in the private setup it was ported from | **written from Hetzner's documentation, never run against the real API** |
 
 Read the last row: the Hetzner provider's calls are checked by tests against what the
 documentation describes, not against Hetzner. Expect to fix a detail the first time you

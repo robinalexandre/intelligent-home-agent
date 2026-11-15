@@ -694,7 +694,10 @@ HOSTING = {
 DEVICE_STEPS = {
     "petkit": 'install the library: pip install ".[petkit]" (Docker: docs/home-devices.md)',
     "netatmo": "run python scripts/netatmo_login.py and add the lines it writes to .env",
-    "android-tv": "on the home network, run python scripts/android_tv_pair.py <address>",
+    "android-tv": (
+        "on the home network, run python scripts/android_tv_pair.py <address>; to let it "
+        "find and start a film inside an app (ANDROID_TV_NAVIGATOR), docs/home-devices.md"
+    ),
     "apple": "on the home network, run python scripts/apple_devices.py profile <addresses>",
     "withings": "run python scripts/withings_login.py and add the lines it writes to .env",
     "icloud": (

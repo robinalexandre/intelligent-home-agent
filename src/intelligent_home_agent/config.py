@@ -230,6 +230,13 @@ class Settings(BaseSettings):
     # and names for those numbers, as JSON: {"news one": 1}. Empty: no live channels.
     android_tv_channel_app: str | None = None
     android_tv_channels: dict[str, Any] = {}
+    # navigate_tv: a helper model that sees the device's screen over ADB and presses the
+    # remote's keys to reach something inside an app. Needs the adb program and the device
+    # paired with scripts/android_tv_adb.py. The model must read pictures; empty: a small
+    # Claude model with Anthropic, LLM_MODEL otherwise. At most that many actions per goal.
+    android_tv_navigator: bool = False
+    android_tv_navigator_model: str = ""
+    android_tv_navigator_actions: int = Field(25, ge=1, le=100)
     # Apple TV and HomePods through pyatv (the apple extra): the profile JSON that
     # `scripts/apple_devices.py profile` prints on the home network, and the Apple TV's
     # pairing from `scripts/apple_devices.py pair`. Empty profile: no tool.
@@ -717,6 +724,10 @@ class Settings(BaseSettings):
             if self.llm_provider != ANTHROPIC:
                 raise ValueError(f"set LLM_MODEL to a model of {self.llm_provider}")
             self.llm_model = DEFAULT_ANTHROPIC_MODEL
+        if not self.android_tv_navigator_model:
+            self.android_tv_navigator_model = (
+                DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model
+            )
         if not self.drive_ocr_model:
             self.drive_ocr_model = (
                 DEFAULT_ANTHROPIC_SEARCH_MODEL if self.llm_provider == ANTHROPIC else self.llm_model

@@ -82,6 +82,7 @@ ALL_TOOLS = {
     "save_file_to_drive",
     "delete_drive_file",
     "control_tv",
+    "navigate_tv",
     "control_apple_media",
     "lock_door",
     "get_home_security_status",
@@ -293,6 +294,13 @@ def test_reminders_come_from_icloud_when_it_is_set_up_else_from_the_phone():
     assert "create_reminder puts it on the user's phone" in phone
     assert "reminders from phone_context" in phone
     assert "get_reminders" not in phone and "Find My" not in phone
+
+
+def test_the_tv_navigator_is_only_explained_when_it_is_there():
+    text = prompt(tools=set(ALL_TOOLS))
+    assert "navigate_tv, with the goal as one sentence" in text
+    without = prompt(tools=ALL_TOOLS - {"navigate_tv"})
+    assert "navigate_tv" not in without and "control_tv to turn it on" in without
 
 
 def test_servers_are_explained_with_what_the_provider_can_do():

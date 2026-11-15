@@ -16,6 +16,8 @@ services:
         # Claude subscription (docs/subscription.md).
         # EXTRAS=documents,icloud is Apple Reminders, Notes and Find My (docs/apple.md).
         EXTRAS: "${EXTRAS:-documents}"
+        # Debian packages a feature needs, e.g. SYSTEM_PACKAGES=adb for the TV navigator.
+        SYSTEM_PACKAGES: "${SYSTEM_PACKAGES:-}"
     env_file: .env
     ports:
       - "${AGENT_BIND:-127.0.0.1}:8000:8000"

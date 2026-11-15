@@ -866,6 +866,7 @@ def test_home_and_health_tools_come_with_their_settings(monkeypatch, tmp_path):
         "get_home_security_status",
         "get_pet_devices_status",
         "get_tv_state",
+        "navigate_tv",
         "get_apple_media_state",
         "get_body_measurements",
         "note_delivery",
@@ -906,7 +907,7 @@ def test_the_home_network_client_reaches_the_devices_whatever_the_home_coordinat
     monkeypatch.setattr(
         main,
         "build_home_device_tools",
-        lambda settings, home, http, found: seen.update(home=home, http=http) or [],
+        lambda settings, home, http, found, llm=None: seen.update(home=home, http=http) or [],
     )
     main.build_registry(main.Settings(_env_file=None), None, "cloud", None, "home-network")
     assert seen == {"home": "home-network", "http": "cloud"}

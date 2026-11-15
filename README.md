@@ -34,8 +34,9 @@ spoken morning briefing and evening recap.
 - Tools, each one on only when configured:
   - Home Assistant: find devices, read states, call services, HA weather.
   - Some devices directly, without Home Assistant: Philips Hue lights, a Devialet
-    speaker, a Google TV / Android TV device, an Apple TV and HomePods, a Nuki smart
-    lock, Netatmo cameras and sensors, a PetKit feeder and litter box
+    speaker, a Google TV / Android TV device (and, with its screen read over ADB,
+    finding and starting a film or an episode inside an app), an Apple TV and HomePods,
+    a Nuki smart lock, Netatmo cameras and sensors, a PetKit feeder and litter box
     ([docs/home-devices.md](docs/home-devices.md)).
   - Weigh-ins from a Withings scale, said only when you ask
     ([docs/health.md](docs/health.md)).
@@ -160,6 +161,7 @@ Environment variables or `.env`. `scripts/setup.py` writes the common ones;
 | `HUE_BRIDGE_URL`, `HUE_APP_KEY` | unset | Philips Hue lights, straight from the bridge. |
 | `DEVIALET_URL`, `DEVIALET_MAX_VOLUME` | unset, `70` | A Devialet Phantom speaker. |
 | `ANDROID_TV_HOST`, `ANDROID_TV_CLIENT_CERT`, `ANDROID_TV_CLIENT_KEY`, `ANDROID_TV_NAME`, `ANDROID_TV_MAX_VOLUME` | unset | A Google TV / Android TV device (`android-tv` extra); `ANDROID_TV_APPS`, `ANDROID_TV_CHANNEL_APP`, `ANDROID_TV_CHANNELS` add apps and live channels. |
+| `ANDROID_TV_NAVIGATOR`, `ANDROID_TV_NAVIGATOR_MODEL`, `ANDROID_TV_NAVIGATOR_ACTIONS` | `false`, a small model, `25` | Find and start something inside an app of that device: a helper model reads the screen over ADB and presses the remote's keys ([docs/home-devices.md](docs/home-devices.md)). |
 | `APPLE_DEVICES`, `APPLE_TV_COMPANION_CREDENTIALS`, `APPLE_TV_AIRPLAY_CREDENTIALS` | unset | Apple TV and HomePods (`apple` extra). |
 | `NUKI_API_TOKEN`, `UNLOCK_TOTP_SECRET`, `UNLOCK_PHRASE` | unset | A Nuki smart lock; a code or secret phrase asked before it opens. |
 | `NETATMO_CLIENT_ID`, `NETATMO_CLIENT_SECRET`, `NETATMO_REFRESH_TOKEN` | unset | Netatmo cameras, weather station, thermostat. |

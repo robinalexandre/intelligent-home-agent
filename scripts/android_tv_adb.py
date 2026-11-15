@@ -1,8 +1,9 @@
 """Give the agent ADB on the Android TV device, so a helper can see its screen.
 
-Nothing in the agent uses ADB yet (tools/adb.py is the seam for an in-app navigation
-helper); this script is here for whoever builds on it. It runs where the agent runs, with
-its settings (ANDROID_TV_HOST, HOME_PROXY_URL, DATA_DIR) and the `adb` binary installed.
+The navigator needs it (ANDROID_TV_NAVIGATOR, docs/home-devices.md): navigate_tv reads
+the screen over ADB to find and start something inside an app. This script runs where the
+agent runs, with its settings (ANDROID_TV_HOST, HOME_PROXY_URL, DATA_DIR) and the `adb`
+binary installed.
 
 On the device: Settings > System > About, press Build 7 times; then Developer options >
 Wireless debugging on. Then:
