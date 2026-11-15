@@ -1,10 +1,10 @@
 """News of the sub-tasks that run in the background for a request of the user's own.
 
-A coding job goes on after the reply left. Each one gets an estimate from how long the last ones of its kind took (its default until there
-are some), said when it starts; then, about each quarter of that time, the user hears in
-one line where every running one stands, through the channel the reports leave by
-(deliver.py). Tasks the user left earlier and the code's own
-runs (the nightly review) are not tracked: nobody is waiting for them.
+A coding job goes on after the reply left. Each one gets an estimate from how long the
+last ones of its kind took (its default until there are some), said when it starts; then,
+about each quarter of that time, the user hears in one line where every running one
+stands, through the channel the reports leave by (deliver.py). Tasks the user left earlier
+and the code's own runs (the nightly review) are not tracked: nobody is waiting for them.
 """
 
 from __future__ import annotations

@@ -167,6 +167,33 @@ class Strings:
     progress_waiting: str
     progress_late: str
     progress_share: str
+    # Coding jobs (docs/jobs.md): how their writes read before the user's go, the line the
+    # code writes above a coder's report, and the few words a runner adds to the coder's.
+    job_on_repo: str
+    job_start_summary: str
+    job_ask_summary: str
+    job_stop_summary: str
+    job_label: str
+    job_news_title: str
+    job_head: str
+    job_idle_head: str
+    job_done_head: str
+    job_failed_head: str
+    job_stopped_head: str
+    job_gone: str
+    job_call_refused: str
+    job_evaluation: str
+    job_budget_reached: str
+    # The nightly review (docs/review.md).
+    review_title: str
+    review_pull_request: str
+    # A permission prompt of Claude Code in the coder (coder_approvals.py).
+    coder_permission_title: str
+    coder_permission_where: str
+    coder_permission_question: str
+    coder_permission_summary: str
+    coder_permission_in_app: str
+    coder_permission_timeout: str
 
 
 LANGUAGES: dict[str, Strings] = {
@@ -326,6 +353,30 @@ LANGUAGES: dict[str, Strings] = {
         progress_waiting="waiting",
         progress_late="longer than expected, {minutes} min",
         progress_share="~{percent}% ({minutes} min of ~{estimate})",
+        job_on_repo=" on {repo}",
+        job_start_summary='Start the job "{title}"{where}: {request}',
+        job_ask_summary="Tell job {job}: {message}",
+        job_stop_summary="Stop job {job}",
+        job_label="Job {id}",
+        job_news_title="Coding jobs",
+        job_head='🛠️ Job {id} "{title}"',
+        job_idle_head='🛠️ Job {id} "{title}" waits for your answer',
+        job_done_head='✅ Job {id} "{title}" is done',
+        job_failed_head='❌ Job {id} "{title}" failed',
+        job_stopped_head='⏹️ Job {id} "{title}" stopped',
+        job_gone="⚠️ The runner no longer knows this session: job closed. Start it again if needed.",
+        job_call_refused="⛔ Call to {tool} refused: nobody watches the run.",
+        job_evaluation="Evaluation: {result}. {explanation}",
+        job_budget_reached="💸 The session's budget is reached: the job is paused.",
+        review_title="Nightly review of {day}",
+        review_pull_request="🌙 {title}: a pull request to read",
+        coder_permission_title="Claude Code asks",
+        coder_permission_where=", {folder}",
+        coder_permission_question="🔐 Claude (code{where}) asks: {tool}",
+        coder_permission_summary="Allow Claude Code{where}: {tool} {detail}",
+        coder_permission_in_app="🔐 Claude (code{where}) waits for your go in the Claude "
+        "app: {tool}.",
+        coder_permission_timeout="⏱️ No answer: the request stays open in the Claude app.",
     ),
     "fr": Strings(
         name="French",
@@ -488,6 +539,30 @@ LANGUAGES: dict[str, Strings] = {
         progress_waiting="en attente",
         progress_late="plus long que prévu, {minutes} min",
         progress_share="~{percent} % ({minutes} min sur ~{estimate})",
+        job_on_repo=" sur {repo}",
+        job_start_summary="Lancer le job « {title} »{where} : {request}",
+        job_ask_summary="Dire au job {job} : {message}",
+        job_stop_summary="Arrêter le job {job}",
+        job_label="Job {id}",
+        job_news_title="Jobs de code",
+        job_head="🛠️ Job {id} « {title} »",
+        job_idle_head="🛠️ Job {id} « {title} » attend ta réponse",
+        job_done_head="✅ Job {id} « {title} » terminé",
+        job_failed_head="❌ Job {id} « {title} » en échec",
+        job_stopped_head="⏹️ Job {id} « {title} » arrêté",
+        job_gone="⚠️ Le runner ne connaît plus cette session : job fermé. Relance-le si besoin.",
+        job_call_refused="⛔ Appel {tool} refusé : personne ne surveille.",
+        job_evaluation="Évaluation : {result}. {explanation}",
+        job_budget_reached="💸 Budget de la session atteint : le job est en pause.",
+        review_title="Revue de la nuit du {day}",
+        review_pull_request="🌙 {title} : une PR à relire",
+        coder_permission_title="Claude Code demande",
+        coder_permission_where=", {folder}",
+        coder_permission_question="🔐 Claude (code{where}) demande : {tool}",
+        coder_permission_summary="Autoriser Claude Code{where} : {tool} {detail}",
+        coder_permission_in_app="🔐 Claude (code{where}) attend ton accord dans l'app "
+        "Claude : {tool}.",
+        coder_permission_timeout="⏱️ Pas de réponse : la demande reste ouverte dans l'app Claude.",
     ),
 }
 

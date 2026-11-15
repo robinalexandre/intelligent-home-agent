@@ -1,0 +1,14 @@
+# Sandbox for the coding jobs of JOBS_RUNNER=managed (docs/jobs.md). Applied by
+# scripts/jobs_setup.py, or by `ant apply`. Network: package registries and GitHub only.
+name: intelligent-home-agent coder
+description: Sandbox for intelligent-home-agent's coding jobs; package managers and GitHub only.
+config:
+  type: cloud
+  networking:
+    type: limited
+    allow_package_managers: true
+    allowed_hosts:
+      - github.com
+      - api.github.com
+      - "*.github.com"
+      - "*.githubusercontent.com"

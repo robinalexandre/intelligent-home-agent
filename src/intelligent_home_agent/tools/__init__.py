@@ -146,3 +146,7 @@ __all__ += [
     "build_task_tools",
     "build_vulnerability_tools",
 ]
+
+from intelligent_home_agent.tools.jobs import build_job_tools  # noqa: E402
+
+__all__ += ["build_job_tools"]
