@@ -35,6 +35,11 @@ ALL_TOOLS = {
     "get_wind_forecast",
     "get_surf_forecast",
     "get_outdoor_forecast",
+    "get_live_wind",
+    "set_activity_alert",
+    "list_activity_alerts",
+    "mute_activity_alert",
+    "resume_activity_alert",
     "create_reminder",
     "get_reminders",
     "search_apple_notes",
@@ -110,6 +115,27 @@ def test_full_prompt_mentions_everything_configured():
     assert "wave height and period" in text
     assert "first appointment, its time and when to leave" in text
     assert "get_outdoor_forecast for today and tomorrow" in text
+
+
+def test_live_wind_and_alerts_are_only_mentioned_with_their_tools():
+    text = prompt()
+    assert "also call get_live_wind" in text
+    assert "set_activity_alert, for one activity" in text
+    assert "mute_activity_alert" in text
+    bare = prompt(
+        tools=ALL_TOOLS
+        - {
+            "get_live_wind",
+            "set_activity_alert",
+            "list_activity_alerts",
+            "mute_activity_alert",
+            "resume_activity_alert",
+        }
+    )
+    assert "get_live_wind" not in bare and "activity_alert" not in bare
+    # Someone with no activity listed can still ask for an alert when a push can carry it.
+    only = prompt(tools={"get_weather", "set_activity_alert"}, activities=[])
+    assert "Outdoor activities:" in only and "set_activity_alert" in only
 
 
 def test_briefing_follows_the_enabled_sections():

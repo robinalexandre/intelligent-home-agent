@@ -25,6 +25,11 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from intelligent_home_agent import __version__
 from intelligent_home_agent.activities import CATALOG
+from intelligent_home_agent.activity_alerts import (
+    ActivityAlerts,
+    Conditions,
+    build_activity_alert_tools,
+)
 from intelligent_home_agent.agent import REPEATING_TAG, TASK_TAG, Agent
 from intelligent_home_agent.config import Place, Settings, get_settings, home_on
 from intelligent_home_agent.config_crypt import ConfigCrypt, CryptError, patterns_from_attributes
@@ -104,6 +109,8 @@ from intelligent_home_agent.tools import (
     build_github_tools,
     build_home_assistant_tools,
     build_knowledge_tools,
+    build_live_sources,
+    build_live_wind_tools,
     build_memory_tools,
     build_note_tools,
     build_osint_tools,
@@ -119,6 +126,7 @@ from intelligent_home_agent.tools import (
     build_web_page_tools,
     build_web_tools,
     build_wind_tools,
+    live_wind_reporter,
     trusted_domains,
 )
 from intelligent_home_agent.tools.assistant_notes import (
@@ -327,6 +335,50 @@ def build_registry(
     registry.extend(
         build_outdoor_tools(meteo, activities, home=home_today, language=settings.language)
     )
+    # Wind measured now, from the sources named in LIVE_WIND_SOURCES (docs/outdoor.md).
+    mf_id = settings.meteofrance_application_id
+    live_sources = build_live_sources(
+        http,
+        settings.live_wind_sources,
+        meteofrance_application_id=mf_id.get_secret_value() if mf_id else None,
+    )
+    spots = [*settings.wind_spots, *settings.surf_spots]
+    registry.extend(
+        build_live_wind_tools(
+            spots,
+            live_sources,
+            timezone=settings.timezone,
+            radius_km=settings.live_wind_radius_km,
+            home=home_today,
+        )
+    )
+    # Activity alerts: only when something can carry them to the user.
+    registry.activity_alerts = None
+    if alerts_reach(settings):
+        live = None
+        if live_sources:
+            live = live_wind_reporter(
+                live_sources, timezone=settings.timezone, radius_km=settings.live_wind_radius_km
+            )
+        registry.activity_alerts = ActivityAlerts(
+            Path(settings.data_dir) / "activity-alerts.json",
+            Conditions(
+                meteo,
+                wind_spots=settings.wind_spots,
+                surf_spots=settings.surf_spots,
+                model=settings.wind_model,
+                home=home_today,
+                live=live,
+            ),
+            settings.timezone,
+            language=settings.language,
+            lead_hours=settings.activity_alerts_lead_hours,
+            quiet=(settings.activity_alerts_quiet_start, settings.activity_alerts_quiet_end),
+        )
+        registry.activity_alerts.seed(settings.activity_alerts)
+        registry.extend(
+            build_activity_alert_tools(registry.activity_alerts, language=settings.language)
+        )
     calendars: list = []
     if settings.caldav_url and settings.caldav_username and settings.caldav_password:
         calendar = CalDavCalendar(
@@ -868,6 +920,13 @@ def reports_reach(settings: Settings) -> str | None:
     return NtfyReports.reaches if settings.ntfy_url else None
 
 
+def alerts_reach(settings: Settings) -> str | None:
+    """How a message the code sends by itself (an activity alert) reaches the user; None
+    when nothing does, and then there are no alerts. They leave through the same channels
+    as a task's report (build_delivery), whether or not the tasks are on."""
+    return NtfyReports.reaches if settings.ntfy_url else None
+
+
 def build_delivery(settings: Settings, ntfy: Ntfy | None) -> Delivery:
     channels = [NtfyReports(ntfy, settings.assistant_name)] if ntfy is not None else []
     return Delivery(channels, Outbox(Path(settings.data_dir) / "task-outbox.json"))
@@ -1299,6 +1358,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.departure_check and isinstance(registry, ToolRegistry):
         check = Departure(registry, language=settings.language, tv_name=settings.android_tv_name)
         app.state.departure = check if check.watches_something else None
+    if (alerts := getattr(registry, "activity_alerts", None)) is not None:
+        alert_title = strings(settings.language).activity_alert_title
+        delivery = app.state.delivery
+        jobs.append(
+            asyncio.create_task(alerts.watch(lambda text: delivery.deliver(alert_title, text)))
+        )
     if (pets := build_pet_alerts(settings, devices)) is not None:
         s = strings(settings.language)
         ntfy = app.state.ntfy

@@ -215,6 +215,11 @@ def test_registry_only_has_configured_tools(monkeypatch):
         "list_entities",
         "call_service",
         "get_surf_forecast",
+        "get_live_wind",
+        "set_activity_alert",
+        "list_activity_alerts",
+        "mute_activity_alert",
+        "resume_activity_alert",
         "get_calendar_events",
         "get_recent_emails",
         "create_calendar_event",
@@ -1143,3 +1148,32 @@ def test_the_remote_browser_needs_its_address_and_its_page_and_a_vpn_key_for_abr
 
     monkeypatch.setattr(main, "browser_available", lambda: False)
     assert "browser_open" not in main.build_registry(settings, None, None, None).names()
+
+
+def test_live_wind_needs_a_source_and_alerts_need_a_way_to_reach_the_user(monkeypatch):
+    base_env(monkeypatch)
+    monkeypatch.delenv("NTFY_URL", raising=False)
+    monkeypatch.setenv("WIND_SPOTS", '[{"name": "North Beach", "latitude": 0.0, "longitude": 0.0}]')
+    monkeypatch.setenv("OUTDOOR_ACTIVITIES", "wingfoil,cycling")
+    monkeypatch.setenv("ACTIVITY_ALERTS", "wing,surf")
+    monkeypatch.setenv("ACTIVITY_ALERTS_LEAD_HOURS", "12")
+    monkeypatch.setenv("LIVE_WIND_SOURCES", "openwindmap, meteofrance")
+    monkeypatch.setenv("HOME_LATITUDE", "0.0")
+    monkeypatch.setenv("HOME_LONGITUDE", "0.0")
+    monkeypatch.setenv("HOME_MOVES", '[{"active_from":"2020-01-01","latitude":1,"longitude":2}]')
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, ha=None, http=None, llm=None)
+    assert "get_live_wind" in registry.names()
+    assert "OpenWindMap" in registry.get("get_live_wind").description
+    assert "Météo-France" not in registry.get("get_live_wind").description  # no key
+    assert "set_activity_alert" not in registry.names() and registry.activity_alerts is None
+
+    monkeypatch.setenv("NTFY_URL", "https://ntfy.example.com/topic")
+    settings = main.Settings(_env_file=None)
+    registry = main.build_registry(settings, ha=None, http=None, llm=None)
+    assert {"set_activity_alert", "mute_activity_alert"} <= registry.names()
+    alerts = registry.activity_alerts
+    # The settings' alerts: wingfoil (surf has no beach to be judged at), told 12 hours ahead.
+    assert [(a.activity, a.lead_hours) for a in alerts.alerts] == [("wingfoil", 12)]
+    assert alerts.conditions.home() == (1.0, 2.0)  # home moved
+    assert alerts.conditions.live is not None

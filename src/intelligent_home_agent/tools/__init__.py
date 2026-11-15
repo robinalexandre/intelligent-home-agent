@@ -23,6 +23,11 @@ from intelligent_home_agent.tools.github import GitHub, build_github_tools
 from intelligent_home_agent.tools.home_assistant import EntityPolicy, build_home_assistant_tools
 from intelligent_home_agent.tools.illustrations import build_illustration_tools
 from intelligent_home_agent.tools.knowledge import KnowledgeBase, build_knowledge_tools
+from intelligent_home_agent.tools.live_wind import (
+    build_live_sources,
+    build_live_wind_tools,
+    live_wind_reporter,
+)
 from intelligent_home_agent.tools.long_results import build_long_result_tools
 from intelligent_home_agent.tools.mail import ImapMailbox, build_draft_tools, build_email_tools
 from intelligent_home_agent.tools.memory import GitHubFile, LocalFile, Memory, build_memory_tools
@@ -115,6 +120,9 @@ __all__ = [
     "build_memory_tools",
     "build_note_tools",
     "build_osint_tools",
+    "build_live_sources",
+    "build_live_wind_tools",
+    "live_wind_reporter",
     "build_outdoor_tools",
     "build_pdf_form_tools",
     "build_pdf_page_tools",

@@ -689,6 +689,32 @@ def _activities(cfg: PromptConfig) -> str | None:
             f"- {', '.join(weather)}: use get_outdoor_forecast with the activity; it gives the "
             "hours with suitable weather."
         )
+    if "get_live_wind" in t:
+        lines.append(
+            '- Wind right now ("is it windy?", "I\'m leaving for the beach") and any check '
+            "before going out today: also call get_live_wind and say what the anemometers "
+            "measure, with the station, its distance, the time of the reading and the "
+            'gusts, before or against the forecast ("15 kn forecast, the beacon 3 km away '
+            'measured 9 kn at 11:40"). A reading taken on the spot outweighs one from '
+            "kilometres away."
+        )
+    if "get_wind_forecast" in t or "get_surf_forecast" in t:
+        lines.append(
+            "- Strong weather at the user's spots (wind of 25 kn or more, gusts of 30 kn or "
+            "more, waves of 3 m or more) is worth saying even when it is too much to go "
+            "out: say when, how strong, and that it is not for a session."
+        )
+    if "set_activity_alert" in t:
+        lines.append(
+            '- Alerts ("tell me when it\'s good for surf", "warn me the day before a dry '
+            'window for a ride"): set_activity_alert, for one activity (and one spot or '
+            "place when the user names it); the code then watches the forecast and writes "
+            "to the user by itself when a good window is coming, and says nothing "
+            "otherwise. Say how early they will be told. When the user turns one of these "
+            'messages down ("not today", "stop with the surf"), call mute_activity_alert '
+            "(list_activity_alerts gives its number, also written at the end of the "
+            "message); resume_activity_alert brings one back."
+        )
     if not lines:
         return None
     needs = []
